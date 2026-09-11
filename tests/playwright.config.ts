@@ -11,7 +11,7 @@ export default defineConfig({
      per worker on port 4320 + worker index and points baseURL at it, so no
      webServer is needed here. */
   workers: process.env.CI ? 2 : 4,
-  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
+  reporter: process.env.CI ? [["list"], ["blob", { outputDir: "blob-report" }]] : [["list"]],
   use: {
     trace: "retain-on-failure",
   },

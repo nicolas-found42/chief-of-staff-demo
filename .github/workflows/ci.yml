@@ -28,13 +28,14 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run typecheck
-      - run: pnpm run lint
-      - run: pnpm run format:check
-      - run: pnpm run knip
-  test:
+      - run: pnpm run check:static
+  test-shard:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -45,9 +46,52 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run test:coverage
-      - name: Add coverage to the job summary
+      - run: pnpm --filter @chief-of-staff-demo/shared build
+      # Coverage data travels inside the blob report; per-shard thresholds are
+      # zeroed because each shard only sees a third of the suite. The rollup
+      # `test` job merges blobs and enforces the real coverage floors.
+      - name: Run unit test shard
+        run: >-
+          pnpm --filter @chief-of-staff-demo/tests exec vitest run
+          --shard=${{ matrix.shard }}/3
+          --coverage
+          --coverage.thresholds.lines=0
+          --coverage.thresholds.statements=0
+          --coverage.thresholds.functions=0
+          --coverage.thresholds.branches=0
+          --reporter=blob
+      - name: Upload blob report
         if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-blob-${{ matrix.shard }}
+          path: .vitest/blob
+          retention-days: 1
+          if-no-files-found: error
+
+  test:
+    needs: [test-shard]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: vitest-blob-*
+          path: tests/.vitest/blob
+          merge-multiple: true
+      - name: Merge shards and enforce coverage floors
+        run: pnpm --filter @chief-of-staff-demo/tests exec vitest run --coverage --merge-reports
+      - name: Add coverage to the job summary
         run: |
           if [[ ! -f coverage/coverage-summary.txt ]]; then
             echo "::error::No coverage report was produced - the coverage gate did not run."
@@ -59,10 +103,13 @@ jobs:
             cat coverage/coverage-summary.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
-  e2e:
+  e2e-shard:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -79,30 +126,96 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm --filter @chief-of-staff-demo/tests exec playwright install --with-deps chromium
       - run: pnpm run build
-      - run: pnpm --filter @chief-of-staff-demo/tests exec playwright test
-      - name: Upload Playwright report
+      - run: pnpm --filter @chief-of-staff-demo/tests exec playwright test --shard=${{ matrix.shard }}/4
+      - name: Upload blob report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-blob-${{ matrix.shard }}
+          path: tests/blob-report
+          retention-days: 1
+          if-no-files-found: error
+
+  e2e:
+    needs: [e2e-shard]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        if: always()
+        with:
+          pattern: e2e-blob-*
+          path: tests/blob
+          merge-multiple: true
+      - name: Merge shard reports into the HTML report
+        if: always()
+        run: |
+          if compgen -G "tests/blob/*" >/dev/null; then
+            pnpm --filter @chief-of-staff-demo/tests exec playwright merge-reports --reporter html ./blob
+          else
+            echo "No shard blob reports present (no shard failed); nothing to merge."
+          fi
+      - name: Fail the rollup if any shard failed
+        if: always()
+        run: |
+          if [[ "${{ needs.e2e-shard.result }}" != "success" ]]; then
+            echo "::error::e2e shards finished as '${{ needs.e2e-shard.result }}'."
+            exit 1
+          fi
+      - name: Upload merged Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
-          path: |
-            tests/playwright-report
-            tests/test-results
+          path: tests/playwright-report
           if-no-files-found: error
 
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v7
-      - run: docker compose build
+      # Buildx with the docker-container driver so type=gha layer caching
+      # works; `load: true` exports the finished image into the runner's
+      # Docker daemon so `docker compose` canaries and `up` use it directly.
+      - uses: docker/setup-buildx-action@v3
+      - name: Build app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: chief-of-staff-demo-app
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,scope=app,mode=max
+      - name: Build relay image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: relay/Dockerfile
+          load: true
+          tags: chief-of-staff-demo-relay
+          cache-from: type=gha,scope=relay
+          cache-to: type=gha,scope=relay,mode=max
       - run: install -d -m 0777 workspace
       - name: Compose canaries from the production image without external calls
         run: |
           docker compose run --rm --no-deps \
             --volume "$PWD/scripts:/app/scripts:ro" \
             app node /app/scripts/run-canaries.mjs --check
-      - run: docker compose up -d
+      - run: docker compose up -d --no-build
       - name: Wait for the health endpoint
         run: |
           for attempt in {1..30}; do

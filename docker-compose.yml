@@ -1,6 +1,6 @@
 services:
   app:
-    build: .
+    image: chief-of-staff-demo-app
     # 127.0.0.1 on the left is load-bearing: without it Docker publishes on all
     # host interfaces and an app with no authentication (ADR-0001) is reachable
     # from the network. 4317 on the right must match the registered Google
@@ -61,6 +61,7 @@ services:
         - action: rebuild
           path: ./Dockerfile
   relay:
+    image: chief-of-staff-demo-relay
     build:
       context: .
       dockerfile: relay/Dockerfile

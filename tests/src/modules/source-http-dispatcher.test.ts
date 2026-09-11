@@ -157,10 +157,10 @@ describe("Source HTTP pooled dispatch", () => {
       () => "resolved",
       (error: unknown) => error,
     );
-    expect(outcome).toBeInstanceOf(Error);
-    const failure = outcome as Error;
-    expect(failure.name).toBe("AbortError");
-    expect(failure.message).toBe("This operation was aborted");
+    expect(outcome).toMatchObject({
+      name: "AbortError",
+      message: "This operation was aborted",
+    });
   });
 
   it("propagates a DNS failure as a fetch error instead of crashing", async () => {
