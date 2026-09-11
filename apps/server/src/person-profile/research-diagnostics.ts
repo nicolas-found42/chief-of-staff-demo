@@ -16,9 +16,9 @@ import { sanitizeModelBoundaryDiagnostic } from "../llm/failure.js";
  */
 const COLLECTOR_VERSIONS = {
   "public-search": "2026-09-06",
-  "html-reader": "2026-09-06.1",
+  "html-reader": "2026-09-11",
   "text-reader": "2026-09-06",
-  "document-reader": "2026-09-06",
+  "document-reader": "2026-09-11",
   "feed-reader": "2026-09-06",
   "caption-reader": "2026-09-09",
   "social-reader": "2026-09-06",
@@ -28,7 +28,7 @@ const COLLECTOR_VERSIONS = {
   "workspace-transcript": "2026-09-06",
   extraction: "2026-09-06",
   planner: "2026-09-06",
-  selection: "2026-09-06",
+  selection: "2026-09-11",
   publication: "2026-09-06",
 } as const;
 export type CollectorName = keyof typeof COLLECTOR_VERSIONS;

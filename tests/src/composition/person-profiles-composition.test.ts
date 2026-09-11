@@ -11,6 +11,7 @@ import {
 import { modelBoundaryFailure } from "../../../apps/server/src/llm/failure";
 import { PublicSearchUnavailableError } from "../../../apps/server/src/source-adapters/search";
 import { PersonResearchStatusSchema } from "@chief-of-staff-demo/shared";
+import { deckBytes } from "../modules/presentation-deck-fixture.js";
 
 /**
  * The Person Profiles product, composed without a Shell.
@@ -1735,6 +1736,212 @@ it("retains a podcast feed and investigates its publisher transcript link", asyn
   expect(retained.text).not.toContain("Maya explains the work");
   expect(retained.provenanceNote).toContain("transcript");
   expect(retained.provenanceNote).toContain("https://example.com/maya-transcript");
+});
+
+it("follows a read page's document attachments as leads and records the bound", async () => {
+  /* The deck states a fact the page does not: the claim extracted from it
+     must cite the deck, not dedupe into the page's identical statement. */
+  const deck = await deckBytes([
+    {
+      part: "slide1",
+      paragraphs: ["Maya Chen's deck reports the 2024 buoy deployment at Ocean Lab."],
+    },
+  ]);
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body:
+          "<html><head><title>Maya Chen</title></head><body><article><h1>Maya Chen</h1>" +
+          `<p>${"Maya Chen leads the ocean sensor programme at Ocean Lab. ".repeat(6)}</p>` +
+          '<a href="/deck-one.pptx">First deck</a><a href="/deck-two.pptx">Second deck</a>' +
+          '<a href="/deck-three.pptx">Third deck</a><a href="/deck-four.pptx">Fourth deck</a>' +
+          "</article></body></html>",
+      }),
+      fetchBytes: async (url) => ({
+        url,
+        status: 200,
+        contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        retryAfter: null,
+        bytes: deck,
+      }),
+    },
+    complete: () => async (request) => {
+      const { document } = JSON.parse(request.user) as {
+        document: { url: string; text: string };
+      };
+      /* Each source is answered with its own text, so the claims do not
+         collapse into one identical statement across sources. */
+      const quote = document.url.endsWith(".pptx")
+        ? "Maya Chen's deck reports the 2024 buoy deployment at Ocean Lab."
+        : "Maya Chen leads the ocean sensor programme at Ocean Lab.";
+      const name = new URL(document.url).pathname.split("/").pop() ?? "root";
+      const base = extractedClaim(quote);
+      return {
+        ...base,
+        claims: base.claims.map((claim) => ({
+          ...claim,
+          /* Claim ids are schema-constrained to [A-Za-z0-9_-]. */
+          id: `work-${name.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+        })),
+      };
+    },
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya Chen",
+    currentEmployer: "Ocean Lab",
+    profileUrls: ["https://example.com/maya"],
+  });
+  const outcome = await h.people.research.runNow(profile.id);
+
+  /* The page's first three documents are followed as their own leads; the
+     fourth is a recorded decision, not a silent drop. */
+  const attachments = (outcome?.leads ?? []).filter((lead) => lead.origin === "document-link");
+  expect(attachments.map((lead) => lead.target)).toEqual([
+    "https://example.com/deck-one.pptx",
+    "https://example.com/deck-two.pptx",
+    "https://example.com/deck-three.pptx",
+  ]);
+  expect(attachments.map((lead) => lead.disposition)).toEqual([
+    "investigated",
+    "investigated",
+    "investigated",
+  ]);
+  const skipped = (outcome?.attempts ?? []).filter(
+    (attempt) =>
+      attempt.code === "selection-deferred" && attempt.reason.includes("attachment bound"),
+  );
+  expect(skipped).toHaveLength(1);
+  expect(skipped[0]).toMatchObject({
+    stage: "selection",
+    outcome: "skipped",
+    targetKind: "document",
+    target: "https://example.com/deck-four.pptx",
+  });
+
+  /* A followed deck is retained with the slide markers a citation uses, and
+     the claim extracted from it cites that deck's source — the retained text
+     grounds a dossier claim end to end. */
+  const retained = h.people.research
+    .sources(profile.id)
+    .find((source) => source.url === "https://example.com/deck-one.pptx");
+  expect(retained?.text).toContain("[slide 1]");
+  expect(retained?.text).toContain("2024 buoy deployment");
+  expect(retained?.anchors?.some((anchor) => anchor.kind === "page")).toBe(true);
+  const deckSourceIds = new Set(
+    h.people.research
+      .sources(profile.id)
+      .filter((source) => source.url === "https://example.com/deck-one.pptx")
+      .map((source) => source.id),
+  );
+  const deckClaim = h.people.dossiers
+    .get(profile.id)
+    ?.claims.find((claim) =>
+      claim.citations.some((citation) => citation.quote.includes("2024 buoy deployment")),
+    );
+  expect(deckClaim?.citations.some((citation) => deckSourceIds.has(citation.sourceId))).toBe(true);
+});
+
+it("does not re-queue a document an existing lead already covers", async () => {
+  const deck = await deckBytes([
+    { part: "slide1", paragraphs: ["Maya Chen leads the ocean sensor programme at Ocean Lab."] },
+  ]);
+  let deckFetches = 0;
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body:
+          "<html><head><title>Maya Chen</title></head><body><article><h1>Maya Chen</h1>" +
+          `<p>${"Maya Chen leads the ocean sensor programme at Ocean Lab. ".repeat(6)}</p>` +
+          '<a href="/deck.pptx">Biography deck</a></article></body></html>',
+      }),
+      fetchBytes: async (url) => {
+        deckFetches += 1;
+        return {
+          url,
+          status: 200,
+          contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          retryAfter: null,
+          bytes: deck,
+        };
+      },
+    },
+    complete: () => async () =>
+      extractedClaim("Maya Chen leads the ocean sensor programme at Ocean Lab."),
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya Chen",
+    currentEmployer: "Ocean Lab",
+    /* The deck is already a lead the Profile named; the page that links it
+       must not queue a second read of the same document. */
+    profileUrls: ["https://example.com/maya", "https://example.com/deck.pptx"],
+  });
+  const outcome = await h.people.research.runNow(profile.id);
+
+  expect(deckFetches).toBe(1);
+  expect(outcome?.attempts).toContainEqual(
+    expect.objectContaining({
+      code: "duplicate-suppressed",
+      outcome: "skipped",
+      target: "https://example.com/deck.pptx",
+    }),
+  );
+});
+
+it("records a linked deck's exact unsupported format when the reader cannot open it", async () => {
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body:
+          "<html><head><title>Maya Chen</title></head><body><article><h1>Maya Chen</h1>" +
+          `<p>${"Maya Chen leads the ocean sensor programme at Ocean Lab. ".repeat(6)}</p>` +
+          '<a href="/talk.key">Keynote talk</a></article></body></html>',
+      }),
+      fetchBytes: async (url) => ({
+        url,
+        status: 200,
+        contentType: "application/octet-stream",
+        retryAfter: null,
+        bytes: Buffer.from("a keynote package this reader does not implement"),
+      }),
+    },
+    complete: () => async () =>
+      extractedClaim("Maya Chen leads the ocean sensor programme at Ocean Lab."),
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya Chen",
+    profileUrls: ["https://example.com/maya"],
+  });
+  const outcome = await h.people.research.runNow(profile.id);
+
+  const keynote = (outcome?.leads ?? []).find(
+    (lead) => lead.target === "https://example.com/talk.key",
+  );
+  expect(keynote?.disposition).toBe("inaccessible");
+  expect(keynote?.reason).toContain("Unsupported file format: key");
+  expect(outcome?.attempts).toContainEqual(
+    expect.objectContaining({
+      code: "unsupported-format",
+      reason: expect.stringContaining("Unsupported file format: key"),
+    }),
+  );
 });
 
 it("reports absent captions without presenting a video description as spoken evidence", async () => {

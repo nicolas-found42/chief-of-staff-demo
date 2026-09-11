@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { promisify } from "node:util";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { normalizeTextLf, SourceError } from "./convert.js";
+import { isProgrammingFailure, normalizeTextLf, SourceError } from "./convert.js";
 
 /**
  * Scanned PDFs as grounded evidence (issue #247).
@@ -45,18 +45,6 @@ export interface ScannedPdfExtraction {
 export interface OcrEngine {
   readonly name: string;
   recognizePdf(pdfBytes: Buffer): Promise<string[]>;
-}
-
-/* convert.ts keeps this private; the scanned path needs the same
-   file-versus-converter distinction so an unparseable document keeps its
-   parser location instead of reading as a programming failure (#247). */
-function isProgrammingFailure(error: unknown): boolean {
-  return (
-    error instanceof TypeError ||
-    error instanceof ReferenceError ||
-    error instanceof RangeError ||
-    (error instanceof Error && error.name === "AssertionError")
-  );
 }
 
 function pdfTextItems(content: { items: unknown[] }): string {

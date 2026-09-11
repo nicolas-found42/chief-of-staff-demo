@@ -49,7 +49,13 @@ function isPlausibleDocx(bytes: Buffer): boolean {
   );
 }
 
-function isProgrammingFailure(error: unknown): boolean {
+/**
+ * Whether a thrown error looks like a bug in this code rather than a fact
+ * about the file being read. Shared with the sibling extractors
+ * (`scanned-documents.ts`, `presentations.ts`) so all three classify a
+ * converter crash the same way.
+ */
+export function isProgrammingFailure(error: unknown): boolean {
   return (
     error instanceof TypeError ||
     error instanceof ReferenceError ||

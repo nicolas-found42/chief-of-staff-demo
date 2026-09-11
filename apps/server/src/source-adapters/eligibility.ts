@@ -390,6 +390,17 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
       "No binary is installed in CI or added by this change: detectSystemTesseract resolves null there and scanned PDFs take the unsupported-format gap path, which the new tests pin. Where the binary exists it is used only when detected at runtime.",
   },
   {
+    route: "document-reader-presentations",
+    family: "documents-publishers",
+    terms:
+      "Presentation bytes arrive through the same anonymous GET the document reader already makes, and OOXML packages are parsed in-process (JSZip, already a dependency) with no subprocess, account, key, payment, or additional network call.",
+    documentation: "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "Live 2026-09-11: a 34-slide, 421,382-byte UCLA lecture deck (labs.dgsom.ucla.edu/file/72685) read as 34 slides in deck order, 8,713 characters of text, 1 slide without text; a 190,000-byte FAU master template read as 5 slides of which 4 carry placeholder text only; a one-slide PowerPoint-authored sample read as its title and subtitle. Keynote, legacy PowerPoint and OpenDocument decks are recorded as named unsupported-format gaps rather than read.",
+  },
+  {
     route: "mwmbl",
     family: "general-discovery",
     terms: "Open, non-commercial web index; public API needs no account or key.",
