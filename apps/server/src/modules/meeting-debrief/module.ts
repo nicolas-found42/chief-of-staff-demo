@@ -325,6 +325,7 @@ function modelExtractionOptions(
   identity: DebriefIdentityReview,
   deps: MeetingDebriefModuleDeps,
   useCheckpoints: boolean,
+  contextChecksum: string,
 ): CandidateExtractionOptions {
   if (!deps.getCompleteJson) {
     throw new Error("Meeting Debrief extraction provider is unavailable");
@@ -334,6 +335,7 @@ function modelExtractionOptions(
   return {
     record,
     identity,
+    contextChecksum,
     complete: deps.getCompleteJson(),
     operationId: ctx.runId,
     runId: ctx.runId,
@@ -544,6 +546,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         identity,
         deps,
         options.useCheckpoints,
+        match.contextChecksum,
       );
       let core: DebriefStoredCore<DebriefCheckedCorePayload> | null = options.reuseCore
         ? resumableCheckedCore<DebriefCheckedCorePayload>(stream, ctx.artifactNames(), match)

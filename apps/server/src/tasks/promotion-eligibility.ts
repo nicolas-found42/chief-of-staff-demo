@@ -1,5 +1,6 @@
 import type { ActionItem, ResponsibilityClaim } from "@chief-of-staff-demo/shared";
 import {
+  RESPONSIBILITY_CLAIM_VALIDATOR_VERSION,
   ResponsibilityClaimSchema,
   actionItemProposal,
   currentReconciliation,
@@ -25,9 +26,6 @@ import {
  *   unsupported contract version or a source binding that does not match the
  *   record itself all read as unknown, and unknown waits for review.
  */
-
-/** The claim validator this build understands; a claim checked by another is not trusted. */
-export const RESPONSIBILITY_CLAIM_VALIDATOR_VERSION = 1;
 
 /** What one gate decision says: whether, which rule, and the sentence a surface shows. */
 export interface PromotionEligibility {

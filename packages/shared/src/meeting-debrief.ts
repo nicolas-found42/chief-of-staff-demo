@@ -433,6 +433,14 @@ export type MeetingHandoffRecord = MeetingHandoff | StoredMeetingHandoff;
 export const RESPONSIBILITY_CLAIM_VERSION = 1 as const;
 
 /**
+ * The deterministic validator that produced a claim. A claim checked by any
+ * other version authorizes nothing: the promotion gate compares this against
+ * the version it knows, so changing the claim rules is a visible release
+ * decision rather than a silent widening of what automation may accept.
+ */
+export const RESPONSIBILITY_CLAIM_VALIDATOR_VERSION = 1 as const;
+
+/**
  * How the obligation came to exist, as the source shows it. Only a performer's
  * own commitment (`self-commitment`) or a request that performer unambiguously
  * accepted for *this* obligation (`accepted-request`) can authorize automatic
