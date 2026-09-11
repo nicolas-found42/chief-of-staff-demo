@@ -150,6 +150,7 @@ export class WorkspacePromotionAuthorization {
       release: {
         state: "released",
         basis: `release-evidence:${evidence.reference}`,
+        since: state.release.since,
         releasedAt: this.now().toISOString(),
         evidence: { reference: evidence.reference, checksum: evidence.checksum },
       },

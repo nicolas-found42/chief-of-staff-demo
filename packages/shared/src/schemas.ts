@@ -74,6 +74,10 @@ const PromotionReleaseSchema = z.union([
   z.strictObject({
     state: z.literal("released"),
     basis: z.string().min(1),
+    /* The restriction's own start, carried forward. The config is deep-merged
+       over its defaults before parsing, so a released record that omitted this
+       would inherit the restricted branch's null and fail to parse. */
+    since: z.string().nullable().default(null),
     releasedAt: z.string().min(1),
     /** The retained release evidence this release stands on, identified only. */
     evidence: z.strictObject({ reference: z.string().min(1), checksum: z.string().min(1) }),

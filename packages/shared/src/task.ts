@@ -311,6 +311,12 @@ export type AutomaticPromotionRelease =
   | {
       state: "released";
       basis: string;
+      /**
+       * When the restriction the release lifted began; null when the record
+       * predates the field. Carried forward so the history stays readable
+       * after the release.
+       */
+      since: string | null;
       releasedAt: string;
       /** The retained release evidence this release stands on, identified — never copied. */
       evidence: { reference: string; checksum: string };
