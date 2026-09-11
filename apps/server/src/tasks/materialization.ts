@@ -6,6 +6,7 @@ import type {
   ActionItemOccurrence,
   HandoffDependencyTarget,
   MeetingHandoffRecord,
+  ResponsibilityClaim,
   TaskResponsiblePerson,
 } from "@chief-of-staff-demo/shared";
 import { handoffDependencies } from "@chief-of-staff-demo/shared";
@@ -49,6 +50,13 @@ export interface CheckedEntryPayload {
    * field and disagree here are two entries, not one.
    */
   handoff: MeetingHandoffRecord | null;
+  /**
+   * The structured responsibility claim this entry was checked under (#360),
+   * or null when the pipeline produced none. Part of the checked content on
+   * purpose: the relationship this records is what automatic promotion reads,
+   * so it distinguishes two otherwise identical entries.
+   */
+  responsibilityClaim: ResponsibilityClaim | null;
 }
 
 /** One checked output entry with the local accounting the pipeline kept for it. */

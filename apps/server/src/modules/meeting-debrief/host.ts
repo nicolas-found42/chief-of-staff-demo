@@ -263,6 +263,7 @@ export class MeetingDebriefHost implements HostedModule {
     runId: string;
   }): DebriefFirstExtractionReservation {
     const at = this.now().toISOString();
+    const snapshot = this.policy?.() ?? null;
     const lineage = this.retainedFirstReservation(input.transcriptId, input.runId);
     if (lineage) {
       return {
@@ -270,23 +271,47 @@ export class MeetingDebriefHost implements HostedModule {
         basis: `first-extraction-reserved-by:${lineage}`,
         reservedAt: at,
         lineageRunId: lineage,
+        authorization: snapshot?.authorization ?? null,
       };
     }
-    const policy = this.policy?.() ?? null;
-    if (!policy) {
+    if (!snapshot) {
       return {
         claim: "unknown",
         basis: "no-action-item-policy-wired",
         reservedAt: at,
         lineageRunId: null,
+        authorization: null,
       };
     }
-    if (policy.actionItemPolicy !== "auto-create-mine") {
+    const authorization = snapshot.authorization;
+    /* The release restriction is checked here, before any lineage is spent:
+       a saved preference can never lift it, and an operation reserved while it
+       holds stays review-only however the release later turns out (#360). */
+    if (authorization === null || !authorization.released) {
       return {
         claim: "review-only",
-        basis: `action-item-policy:${policy.actionItemPolicy}`,
+        basis: authorization ? `release-restriction:${authorization.basis}` : "release-restriction",
         reservedAt: at,
         lineageRunId: null,
+        authorization,
+      };
+    }
+    if (authorization.enabledAt === null) {
+      return {
+        claim: "review-only",
+        basis: `not-enabled:${authorization.basis}`,
+        reservedAt: at,
+        lineageRunId: null,
+        authorization,
+      };
+    }
+    if (authorization.preference !== "auto-create-mine") {
+      return {
+        claim: "review-only",
+        basis: `action-item-policy:${authorization.preference}`,
+        reservedAt: at,
+        lineageRunId: null,
+        authorization,
       };
     }
     return {
@@ -294,6 +319,7 @@ export class MeetingDebriefHost implements HostedModule {
       basis: "no-retained-first-reservation",
       reservedAt: at,
       lineageRunId: null,
+      authorization,
     };
   }
 

@@ -12,6 +12,7 @@ import type {
   ActionItemReconciliation,
   ActionItemState,
   ActionItemVersions,
+  AutomaticPromotionAuthorizationFacts,
   HandoffDependencyTarget,
   HandoffDependencyUnresolved,
   MeetingDebriefActionItem,
@@ -73,10 +74,18 @@ export interface ActionItemMaterialization {
 }
 
 /** The reservation one Debrief operation carries, as the Tasks side reads it. */
-interface DebriefExtractionReservation {
+export interface DebriefExtractionReservation {
   operationId: string;
   claim: "first" | "review-only" | "unknown";
   basis: string;
+  /** When the operation was reserved; the authorization facts are dated by it. */
+  reservedAt: string;
+  /**
+   * The automatic-promotion authorization facts captured with the reservation
+   * (#360). A later release or enablement never rewrites them, so a replay and
+   * a restart reach the verdict the operation was reserved under.
+   */
+  authorization: AutomaticPromotionAuthorizationFacts | null;
 }
 
 /** What an Action Item query narrows on. Everything is optional. */
@@ -769,6 +778,10 @@ export class WorkspaceActionItems {
         : this.proposedResponsiblePerson(proposed.ownerProfileId),
       occurrence,
       handoff: proposed.handoff ?? null,
+      /* The structured claim is checked content, like the handoff: two entries
+         that agree on every displayed field and disagree on who committed to
+         what are two entries, and the promotion gate reads exactly this. */
+      responsibilityClaim: proposed.responsibilityClaim ?? null,
     };
     return { candidateAlias, payload };
   }
@@ -830,6 +843,10 @@ export class WorkspaceActionItems {
          responsibility basis to decline what only the owner can judge. Its
          dependencies carry the targets resolved against the checked output;
          the artifact the model produced keeps the claims without them. */
+      /* The claim travels with the record for the same reason: it is what the
+         promotion gate reads to tell a supported commitment from a
+         relationship only the owner can judge. */
+      ...(payload.responsibilityClaim ? { responsibilityClaim: payload.responsibilityClaim } : {}),
       ...(payload.handoff
         ? { handoff: withDependencyTargets(payload.handoff, input.targets) }
         : {}),
@@ -839,6 +856,17 @@ export class WorkspaceActionItems {
         transcriptId: input.input.transcriptId,
         meetingId: input.input.meetingId,
         ...(input.input.reviewOnly === true ? { reviewOnly: true } : {}),
+        ...(input.input.firstExtraction
+          ? {
+              promotion: {
+                claim: input.input.firstExtraction.claim,
+                basis: input.input.firstExtraction.basis,
+                operationId: input.input.firstExtraction.operationId,
+                reservedAt: input.input.firstExtraction.reservedAt,
+                authorization: input.input.firstExtraction.authorization,
+              },
+            }
+          : {}),
       },
       extractionRevision: input.revision,
       evidence: {

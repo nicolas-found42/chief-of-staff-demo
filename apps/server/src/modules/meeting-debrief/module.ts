@@ -6,6 +6,7 @@ import type {
   MeetingDebriefReviewState,
   ExtractionContextSnapshot,
   ActionItemMaterializationMapping,
+  AutomaticPromotionAuthorizationFacts,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -161,12 +162,18 @@ interface DebriefActionItemHandover {
   /**
    * The lineage reservation recorded before inference, passed through so the
    * Tasks side decides eligibility on what was reserved rather than on what
-   * the queue happens to hold now (#358).
+   * the queue happens to hold now (#358). It carries the automatic-promotion
+   * authorization facts too (#360): the release restriction and the owner's
+   * explicit enablement as they stood before the model was asked anything, so
+   * a later release never reopens this operation and a later enablement never
+   * sweeps it up.
    */
   firstExtraction?: {
     operationId: string;
     claim: "first" | "review-only" | "unknown";
     basis: string;
+    reservedAt: string;
+    authorization: AutomaticPromotionAuthorizationFacts | null;
   };
 }
 
@@ -449,10 +456,15 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       basis: "no-lineage-resolver-wired",
       reservedAt: now().toISOString(),
       lineageRunId: null,
+      authorization: null,
     };
 
   const policySnapshot = (): DebriefPolicySnapshot =>
-    deps.policy?.() ?? { capturedAt: now().toISOString(), actionItemPolicy: null };
+    deps.policy?.() ?? {
+      capturedAt: now().toISOString(),
+      actionItemPolicy: null,
+      authorization: null,
+    };
 
   const ensureReviewState = (
     ctx: RunContext,
@@ -652,6 +664,8 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
                   operationId: `op-${ctx.runId}`,
                   claim: reservation.claim,
                   basis: reservation.basis,
+                  reservedAt: reservation.reservedAt,
+                  authorization: reservation.authorization,
                 },
               }
             : {}),

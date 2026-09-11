@@ -32,6 +32,7 @@ import {
 } from "./external-link.js";
 import { WorkspaceActionItems, type ActionItemMaterialization } from "./action-items.js";
 import { materializeUnderPolicy } from "./auto-promotion.js";
+import { WorkspacePromotionAuthorization } from "./promotion-authorization.js";
 import { materializationIndex } from "./materialization.js";
 import { TaskStore } from "./store.js";
 import { WorkspaceTasks } from "./tasks.js";
@@ -64,6 +65,13 @@ export interface TasksCompositionDeps {
 export interface TasksComposition {
   tasks: WorkspaceTasks;
   actionItems: WorkspaceActionItems;
+  /**
+   * The automatic-promotion release restriction and the owner's explicit
+   * enablement (#360). Handed out so the Debrief records the facts that were in
+   * force before it asks the model anything, and so the policy surface can say
+   * which of the two is holding automation back.
+   */
+  promotion: WorkspacePromotionAuthorization;
   linking: TaskLinking;
   asanaLinking: AsanaLinking;
   /** The Google Tasks connector, for the one caller outside linking: receipt migration. */
@@ -95,6 +103,7 @@ export function composeTasks(deps: TasksCompositionDeps): TasksComposition {
     timezone: deps.timezone,
   });
   const actionItems = new WorkspaceActionItems({ store, ownerProfileId: deps.ownerProfileId });
+  const promotion = new WorkspacePromotionAuthorization({ configStore: deps.configStore });
 
   /* Google Tasks and Asana as optional Task Destinations (issues #184, #185,
      #189). The Workspace write always commits first; linking only ever adds a
@@ -231,7 +240,7 @@ export function composeTasks(deps: TasksCompositionDeps): TasksComposition {
       {
         tasks,
         actionItems,
-        policy: () => deps.configStore.get().tasks.actionItemPolicy,
+        authorization: () => promotion.facts(deps.configStore.get().tasks.actionItemPolicy),
         deliver: (taskId) => linking.link(taskId),
         log,
       },
@@ -248,6 +257,7 @@ export function composeTasks(deps: TasksCompositionDeps): TasksComposition {
   return {
     tasks,
     actionItems,
+    promotion,
     linking,
     asanaLinking,
     googleConnector,
