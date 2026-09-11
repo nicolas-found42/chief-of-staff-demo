@@ -1,5 +1,9 @@
 services:
   app:
+    # `build` keeps the local dev loop (`docker compose up --build --watch`)
+    # working; `image` pins the name CI's build-push step loads into the
+    # daemon, and matches compose's own default for this directory.
+    build: .
     image: chief-of-staff-demo-app
     # 127.0.0.1 on the left is load-bearing: without it Docker publishes on all
     # host interfaces and an app with no authentication (ADR-0001) is reachable
