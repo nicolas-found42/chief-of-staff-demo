@@ -1,5 +1,6 @@
 import {
   BenchmarkComparisonSchema,
+  BenchmarkGroupSummarySchema,
   type BenchmarkComparison,
   type BenchmarkGroupSummary,
   type BenchmarkPerson,
@@ -276,6 +277,152 @@ function completeEvaluation(report: BenchmarkReport): boolean {
   );
 }
 
+/**
+ * The labelled slices both reports aggregated, joined on (dimension, key).
+ * Each side keeps its own denominator; a group one arm recorded and the other
+ * did not stays null on the absent side, because an unmeasured slice is not a
+ * zero.
+ */
+function joinedGroups(
+  baseline: BenchmarkReport,
+  candidate: BenchmarkReport,
+): NonNullable<BenchmarkComparison["groups"]> {
+  const before = new Map<string, BenchmarkGroupSummary>();
+  for (const group of baseline.groups) before.set(`${group.dimension}\u0000${group.key}`, group);
+  const after = new Map<string, BenchmarkGroupSummary>();
+  for (const group of candidate.groups) after.set(`${group.dimension}\u0000${group.key}`, group);
+  const dimensions = BenchmarkGroupSummarySchema.shape.dimension.options as readonly string[];
+  const keys = [...new Set([...before.keys(), ...after.keys()])].sort((a, b) => {
+    const [dimensionA = "", valueA = ""] = a.split("\u0000");
+    const [dimensionB = "", valueB = ""] = b.split("\u0000");
+    return (
+      dimensions.indexOf(dimensionA) - dimensions.indexOf(dimensionB) ||
+      valueA.localeCompare(valueB)
+    );
+  });
+  const groups: NonNullable<BenchmarkComparison["groups"]> = [];
+  for (const key of keys) {
+    const baselineGroup = before.get(key);
+    const candidateGroup = after.get(key);
+    const present = baselineGroup ?? candidateGroup;
+    if (!present) throw new Error(`joined group ${key} lost both sides`);
+    groups.push({
+      dimension: present.dimension,
+      key: present.key,
+      baseline: baselineGroup
+        ? {
+            people: baselineGroup.people,
+            referenceFacts: baselineGroup.referenceFacts,
+            recovered: baselineGroup.recovered,
+            ambiguous: baselineGroup.ambiguous,
+            criticalFindings: baselineGroup.criticalFindings,
+            overclaims: baselineGroup.overclaims,
+          }
+        : null,
+      candidate: candidateGroup
+        ? {
+            people: candidateGroup.people,
+            referenceFacts: candidateGroup.referenceFacts,
+            recovered: candidateGroup.recovered,
+            ambiguous: candidateGroup.ambiguous,
+            criticalFindings: candidateGroup.criticalFindings,
+            overclaims: candidateGroup.overclaims,
+          }
+        : null,
+    });
+  }
+  return groups;
+}
+
+/**
+ * One side's recorded failures: the people whose result carries a failure
+ * beside the attempt codes their operations recorded. Both are the report's
+ * own records — the comparison names them rather than counting them into a
+ * single number.
+ */
+function failureBreakdown(
+  report: BenchmarkReport,
+): NonNullable<BenchmarkComparison["failures"]>["baseline"] {
+  const assessmentFailures = report.people.flatMap((person) =>
+    person.failure === null ? [] : [{ slug: person.slug, reason: person.failure }],
+  );
+  const attemptsByCode = new Map<string, number>();
+  for (const person of report.people)
+    for (const [code, attempts] of Object.entries(person.operational.failuresByCode))
+      attemptsByCode.set(code, (attemptsByCode.get(code) ?? 0) + attempts);
+  return {
+    assessmentFailures,
+    researchCodes: [...attemptsByCode.entries()]
+      .map(([code, attempts]) => ({ code, attempts }))
+      .sort((a, b) => b.attempts - a.attempts || a.code.localeCompare(b.code)),
+  };
+}
+
+/**
+ * #259: the comparison credits a positive recovery only when the report's own
+ * judgement carries the reference text and the claim excerpt it was checked
+ * against — the judge's exact-claim guard verifies the excerpt against the
+ * named claim at assessment time, and a verdict naming no claim was never
+ * checked — and when the rationale records no withheld verdict. A credit that
+ * fails the audit is rejected and named, never silently discounted.
+ */
+interface RecoveryAudit {
+  recorded: number;
+  credited: number;
+  rejected: {
+    slug: string;
+    factId: string;
+    reason:
+      | "no-reference-quote"
+      | "no-claim-quote"
+      | "no-claim-identity"
+      | "withheld-in-rationale"
+      | "credit-exceeds-checkable-judgements";
+  }[];
+  /** The verified fact ids per person: the only recoveries the comparison credits. */
+  creditedFactIds: Map<string, Set<string>>;
+}
+
+function auditRecoveries(report: BenchmarkReport): RecoveryAudit {
+  const rejected: RecoveryAudit["rejected"] = [];
+  const creditedFactIds = new Map<string, Set<string>>();
+  let recorded = 0;
+  let credited = 0;
+  for (const person of report.people) {
+    recorded += person.completeness.recovered;
+    const creditedFacts = new Set<string>();
+    for (const judgement of person.completeness.judgements) {
+      if (judgement.verdict !== "recovered") continue;
+      const withheld =
+        judgement.rationale.startsWith(EVALUATOR_DOWNGRADE_PREFIX) ||
+        judgement.rationale.includes("(Downgraded");
+      const reason: RecoveryAudit["rejected"][number]["reason"] | null = withheld
+        ? "withheld-in-rationale"
+        : judgement.referenceQuote.trim().length === 0
+          ? "no-reference-quote"
+          : judgement.claimId === null
+            ? "no-claim-identity"
+            : (judgement.evidenceQuote ?? "").trim().length === 0
+              ? "no-claim-quote"
+              : null;
+      if (reason === null) creditedFacts.add(judgement.factId);
+      else rejected.push({ slug: person.slug, factId: judgement.factId, reason });
+    }
+    /* A recorded count above its checkable judgements credits something the
+       report cannot check at all; the excess is rejected rather than dropped
+       in silence. */
+    if (person.completeness.recovered > creditedFacts.size)
+      rejected.push({
+        slug: person.slug,
+        factId: "",
+        reason: "credit-exceeds-checkable-judgements",
+      });
+    creditedFactIds.set(person.slug, creditedFacts);
+    credited += creditedFacts.size;
+  }
+  return { recorded, credited, rejected, creditedFactIds };
+}
+
 export function compareReports(
   baseline: BenchmarkReport,
   candidate: BenchmarkReport,
@@ -380,6 +527,26 @@ export function compareReports(
     completeEvaluation(baseline) &&
     completeEvaluation(candidate);
 
+  /* #259: a credited recovery the report cannot check against its own
+     reference and claim text is rejected before it can move the verdict, and
+     the audit says what was recorded against what was verified. */
+  const baselineRecovery = auditRecoveries(baseline);
+  const candidateRecovery = auditRecoveries(candidate);
+  const noteRecoveryAudit = (label: string, audit: RecoveryAudit) => {
+    if (audit.rejected.length === 0 && audit.recorded === audit.credited) return;
+    const rejected = audit.rejected
+      .map((entry) => `${entry.slug}/${entry.factId || "unattributed"} (${entry.reason})`)
+      .join(", ");
+    conditionChanges.push(
+      `${label} recovery audit: ${String(audit.credited)} of ${String(audit.recorded)} credited recoveries verified against their reference and claim text${rejected ? `; rejected ${rejected}` : ""}`.slice(
+        0,
+        1000,
+      ),
+    );
+  };
+  noteRecoveryAudit("Baseline", baselineRecovery);
+  noteRecoveryAudit("Candidate", candidateRecovery);
+
   const baselineBySlug = new Map(baseline.people.map((entry) => [entry.slug, entry]));
   /* Recovery credit is withheld while the assessment phases are incomplete,
      so a zero from an unmeasured side is not evidence (#271, #281): the pair
@@ -391,8 +558,8 @@ export function compareReports(
     perPerson.push({
       slug: entry.slug,
       referenceFacts: entry.completeness.referenceFacts,
-      baselineRecovered: before.completeness.recovered,
-      candidateRecovered: entry.completeness.recovered,
+      baselineRecovered: baselineRecovery.creditedFactIds.get(before.slug)?.size ?? 0,
+      candidateRecovered: candidateRecovery.creditedFactIds.get(entry.slug)?.size ?? 0,
       baselineConclusion: before.operational.conclusion,
       candidateConclusion: entry.operational.conclusion,
       /* ADR-0067: recovery credit is withheld while the support/usefulness
@@ -495,11 +662,32 @@ export function compareReports(
       .sort()
       .map((family) => ({
         family,
-        baseline: contributionTotals(baseline.people, family),
-        candidate: contributionTotals(candidate.people, family),
+        baseline: contributionTotals(baseline.people, family, baselineRecovery.creditedFactIds),
+        candidate: contributionTotals(candidate.people, family, candidateRecovery.creditedFactIds),
       })),
     totals,
     perPerson,
+    groups: joinedGroups(baseline, candidate),
+    coverageGaps: {
+      baseline: baseline.coverageGaps ? { ...baseline.coverageGaps } : null,
+      candidate: candidate.coverageGaps ? { ...candidate.coverageGaps } : null,
+    },
+    failures: {
+      baseline: failureBreakdown(baseline),
+      candidate: failureBreakdown(candidate),
+    },
+    recoveryAudit: {
+      baseline: {
+        recorded: baselineRecovery.recorded,
+        credited: baselineRecovery.credited,
+        rejected: baselineRecovery.rejected,
+      },
+      candidate: {
+        recorded: candidateRecovery.recorded,
+        credited: candidateRecovery.credited,
+        rejected: candidateRecovery.rejected,
+      },
+    },
     operational,
     verdict,
     verdictDetail: !comparable
@@ -530,23 +718,35 @@ function renderSourceVersion(source: { sourceVersion?: string | null | undefined
 function contributionTotals(
   people: BenchmarkPersonResult[],
   family: NonNullable<BenchmarkPersonResult["sourceContributions"]>[number]["family"],
+  creditedFactIds: Map<string, Set<string>>,
 ) {
   if (people.some((person) => person.sourceContributions === undefined)) return null;
-  const entries = people.flatMap((person) =>
-    (person.sourceContributions ?? []).filter((entry) => entry.family === family),
-  );
+  let peopleCount = 0;
+  let retainedSources = 0;
+  let citedSources = 0;
+  let recoveredFacts = 0;
+  let exclusiveRecoveredFacts = 0;
+  for (const person of people) {
+    const credited = creditedFactIds.get(person.slug);
+    for (const entry of person.sourceContributions ?? []) {
+      if (entry.family !== family) continue;
+      peopleCount += 1;
+      retainedSources += entry.sources.length;
+      citedSources += entry.sources.filter((source) => source.cited).length;
+      /* Only the audit-verified credits count: a rejected credit must not
+         reappear as a family contribution. */
+      recoveredFacts += entry.recoveredFactIds.filter((id) => credited?.has(id)).length;
+      exclusiveRecoveredFacts += entry.exclusiveRecoveredFactIds.filter((id) =>
+        credited?.has(id),
+      ).length;
+    }
+  }
   return {
-    people: entries.length,
-    retainedSources: entries.reduce((sum, entry) => sum + entry.sources.length, 0),
-    citedSources: entries.reduce(
-      (sum, entry) => sum + entry.sources.filter((source) => source.cited).length,
-      0,
-    ),
-    recoveredFacts: entries.reduce((sum, entry) => sum + entry.recoveredFactIds.length, 0),
-    exclusiveRecoveredFacts: entries.reduce(
-      (sum, entry) => sum + entry.exclusiveRecoveredFactIds.length,
-      0,
-    ),
+    people: peopleCount,
+    retainedSources,
+    citedSources,
+    recoveredFacts,
+    exclusiveRecoveredFacts,
   };
 }
 
@@ -973,6 +1173,103 @@ export function renderComparison(comparison: BenchmarkComparison): string {
       `| ${entry.slug} | ${String(entry.referenceFacts)} | ${entry.baselineAssessed ? String(entry.baselineRecovered) : "unmeasured"} | ${entry.candidateAssessed ? String(entry.candidateRecovered) : "unmeasured"} | ${entry.baselineConclusion} | ${entry.candidateConclusion} | ${String(entry.newCriticalFindings)} | ${String(entry.newWrongPersonAttributions ?? 0)} | ${String(entry.newOverclaims)} |`,
     );
   lines.push("");
+  /* A side's recovery credit is withheld while any pair on that side lacks a
+     completed assessment (#271, #281): the grouped and source-family tables
+     read `unmeasured` for those recovered columns rather than a zero. */
+  const baselineCreditMeasured = comparison.perPerson.every((entry) => entry.baselineAssessed);
+  const candidateCreditMeasured = comparison.perPerson.every((entry) => entry.candidateAssessed);
+  const groups = comparison.groups ?? [];
+  if (groups.length) {
+    lines.push("## Grouped comparison");
+    lines.push("");
+    lines.push(
+      "The reports' labelled slices, joined on dimension and key, each side with its own denominator. A group one arm did not record stays `unmeasured` rather than zero.",
+    );
+    lines.push("");
+    lines.push(
+      "| Dimension | Group | Baseline people | Candidate people | Baseline facts | Candidate facts | Baseline recovered | Candidate recovered | Baseline critical / overclaims | Candidate critical / overclaims |",
+    );
+    lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+    for (const group of groups) {
+      const before = group.baseline;
+      const after = group.candidate;
+      const count = (value: number | undefined) =>
+        value === undefined ? "unmeasured" : String(value);
+      const recovered = (value: number | undefined, measured: boolean) =>
+        value === undefined || !measured ? "unmeasured" : String(value);
+      lines.push(
+        `| ${escapeCell(group.dimension)} | ${escapeCell(group.key)} | ${count(before?.people)} | ${count(after?.people)} | ${count(before?.referenceFacts)} | ${count(after?.referenceFacts)} | ${recovered(before?.recovered, baselineCreditMeasured)} | ${recovered(after?.recovered, candidateCreditMeasured)} | ${before ? `${String(before.criticalFindings)} / ${String(before.overclaims)}` : "unmeasured"} | ${after ? `${String(after.criticalFindings)} / ${String(after.overclaims)}` : "unmeasured"} |`,
+      );
+    }
+    lines.push("");
+  }
+  if (comparison.recoveryAudit) {
+    const audit = comparison.recoveryAudit;
+    lines.push("## Recovery audit");
+    lines.push("");
+    lines.push(
+      "Every credited positive recovery is checked against the reference text and the claim excerpt its own judgement names; a credit whose record cannot be checked, or whose rationale records a withheld verdict, is rejected and named rather than discounted quietly. The per-person and total recovery numbers read the audited credits.",
+    );
+    lines.push("");
+    lines.push("| Run | Recorded credits | Audited credits | Rejected |");
+    lines.push("| --- | --- | --- | --- |");
+    for (const side of ["baseline", "candidate"] as const) {
+      const rejected = audit[side].rejected
+        .map((entry) => `${entry.slug} / ${entry.factId || "unattributed"} (${entry.reason})`)
+        .join("; ");
+      lines.push(
+        `| ${side} | ${String(audit[side].recorded)} | ${String(audit[side].credited)} | ${escapeCell(rejected) || "none"} |`,
+      );
+    }
+    lines.push("");
+  }
+  if (comparison.coverageGaps) {
+    lines.push("## Coverage gaps");
+    lines.push("");
+    lines.push(
+      "Each report's own open-coverage totals: planned areas against the gaps they still name. A resumed run's totals cover the operations it re-ran, not the people it carried; a side that predates the fields stays `unmeasured`.",
+    );
+    lines.push("");
+    lines.push("| Run | Planned areas | Areas with open gaps | Area gaps | Explicit gaps |");
+    lines.push("| --- | --- | --- | --- | --- |");
+    for (const side of ["baseline", "candidate"] as const) {
+      const gaps = comparison.coverageGaps[side];
+      lines.push(
+        gaps
+          ? `| ${side} | ${String(gaps.areas)} | ${String(gaps.areasWithOpenGaps)} | ${String(gaps.areaGaps)} | ${String(gaps.explicitGaps)} |`
+          : `| ${side} | unmeasured | unmeasured | unmeasured | unmeasured |`,
+      );
+    }
+    lines.push("");
+  }
+  if (comparison.failures) {
+    const failures = comparison.failures;
+    lines.push("## Failures");
+    lines.push("");
+    if (
+      failures.baseline.assessmentFailures.length ||
+      failures.candidate.assessmentFailures.length
+    ) {
+      lines.push(
+        "People whose recorded result carries a failure; research statuses stay in the research-outcomes table.",
+      );
+      lines.push("");
+      lines.push("| Run | Person | Recorded failure |");
+      lines.push("| --- | --- | --- |");
+      for (const side of ["baseline", "candidate"] as const)
+        for (const failure of failures[side].assessmentFailures)
+          lines.push(`| ${side} | ${failure.slug} | ${escapeCell(failure.reason)} |`);
+      lines.push("");
+    }
+    if (failures.baseline.researchCodes.length || failures.candidate.researchCodes.length) {
+      lines.push("| Run | Research failure code | Attempts |");
+      lines.push("| --- | --- | --- |");
+      for (const side of ["baseline", "candidate"] as const)
+        for (const entry of failures[side].researchCodes)
+          lines.push(`| ${side} | ${entry.code} | ${String(entry.attempts)} |`);
+      lines.push("");
+    }
+  }
   lines.push("## Actual source-family contribution changes");
   lines.push("");
   lines.push(
@@ -983,12 +1280,8 @@ export function renderComparison(comparison: BenchmarkComparison): string {
     "| Family | Baseline retained / cited | Candidate retained / cited | Baseline recovered / exclusive | Candidate recovered / exclusive |",
   );
   lines.push("| --- | --- | --- | --- | --- |");
-  /* A family's recovered counts inherit the assessment withholding: while
-     any person on a side has an incomplete assessment, that side's recovered
-     and exclusive columns are unmeasured rather than zero (#271, #281,
-     #282). Retained/cited source counts stay measured either way. */
-  const baselineFamiliesMeasured = comparison.perPerson.every((entry) => entry.baselineAssessed);
-  const candidateFamiliesMeasured = comparison.perPerson.every((entry) => entry.candidateAssessed);
+  /* The family table inherits the same assessment withholding the grouped
+     table reads: retained/cited source counts stay measured either way. */
   for (const entry of comparison.sourceContributions ?? []) {
     const sources = (side: typeof entry.baseline) =>
       side ? `${String(side.retainedSources)} / ${String(side.citedSources)}` : "unmeasured";
@@ -997,7 +1290,7 @@ export function renderComparison(comparison: BenchmarkComparison): string {
         ? `${String(side.recoveredFacts)} / ${String(side.exclusiveRecoveredFacts)}`
         : "unmeasured";
     lines.push(
-      `| ${entry.family} | ${sources(entry.baseline)} | ${sources(entry.candidate)} | ${baselineFamiliesMeasured ? recovered(entry.baseline) : "unmeasured"} | ${candidateFamiliesMeasured ? recovered(entry.candidate) : "unmeasured"} |`,
+      `| ${entry.family} | ${sources(entry.baseline)} | ${sources(entry.candidate)} | ${baselineCreditMeasured ? recovered(entry.baseline) : "unmeasured"} | ${candidateCreditMeasured ? recovered(entry.candidate) : "unmeasured"} |`,
     );
   }
   lines.push("");
