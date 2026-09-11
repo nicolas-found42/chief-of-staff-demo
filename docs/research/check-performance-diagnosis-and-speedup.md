@@ -339,9 +339,21 @@ the implementation keeps that property intact:
   `chief-of-staff-demo-relay` names (compose defaults for this directory, so
   local `docker compose up --build` behavior is unchanged); the canary and
   `up` steps add `--no-build` to fail fast instead of rebuilding.
-- BuildKit's gha cache falls back to the default-branch scope, so PR runs
-  hit `main`'s cache without extra configuration. No `docker-compose.ci.yml`
-  override is needed.
+- BuildKit's gha cache falls back to the default-branch scope, so PR runs hit
+  `main`'s cache — **verified empirically** on 2026-09-11: a brand-new branch
+  with no cache of its own, dispatched after `main`'s run wrote cache, ran the
+  image job in 2m 29s (run `34557370535`, probe branch since deleted).
+- **Measured image cost model** (baseline was a flat 2m 40s cold build):
+  - Warm (own-branch or main-scope cache hit): **1m 51s – 2m 29s**. The Docker
+    build itself is fully cached (<1s); the floor is the `load: true` export of
+    the multi-GB playwright/whisper runtime into the runner daemon (~67s) plus
+    ~12s buildx setup and ~21s `docker compose down`.
+  - Cold (cache miss): **~5m 25s** — slower than the baseline's 2m 40s, because
+    `mode=max` cache export and the daemon load ride on top of a full build.
+    The only way to hit this is the race where a PR's first run starts before
+    `main`'s post-merge run has finished writing cache (a ~5-minute window
+    after each merge), which is exactly what happened on run `34556807935`.
+    Repeat pushes and all later PRs restore normally.
 
 ### 5.4 Measured Results (GitHub Actions, 2026-09-11)
 
