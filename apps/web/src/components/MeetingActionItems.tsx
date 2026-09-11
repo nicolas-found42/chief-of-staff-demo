@@ -198,17 +198,27 @@ export function MeetingActionItems({
                 /* The acknowledgment lives inside this row's own <li>: a
                    wrapper between the <ul> and the row breaks the list's
                    structure and the row's parent relationship (#361). */
-                item.source.reviewOnly === true ? (
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={acknowledged.includes(item.id)}
-                      onChange={() => acknowledge(item.id)}
-                    />{" "}
-                    I understand this Action Item comes from an incomplete Debrief and sections are
-                    unavailable.
-                  </label>
-                ) : null
+                <>
+                  {/* Why automation passed over this proposal, when a policy
+                      surface is composed (#360): the reason is the record's
+                      own, not a policy setting to interpret. */}
+                  {index?.automation?.[item.id] && !index.automation[item.id]!.eligible ? (
+                    <p className="muted">
+                      Auto-promotion declined: {index.automation[item.id]!.reason}
+                    </p>
+                  ) : null}
+                  {item.source.reviewOnly === true ? (
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={acknowledged.includes(item.id)}
+                        onChange={() => acknowledge(item.id)}
+                      />{" "}
+                      I understand this Action Item comes from an incomplete Debrief and sections
+                      are unavailable.
+                    </label>
+                  ) : null}
+                </>
               }
               isNew={newIds.includes(item.id)}
               item={item}

@@ -209,6 +209,50 @@ test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks"
   await expect(page.locator(`#action-item-${pending!.id}`)).toBeVisible();
 });
 
+test("tasks journey — the release restriction holds until evidence is recorded, then enablement is explicit", async ({
+  page,
+  request,
+}) => {
+  /* Automatic promotion's own record (#360): a saved preference is reported as
+     ineffective while the release restriction stands, the release has to name
+     the retained evidence, and enabling is a separate owner act. */
+  await page.goto("/tasks");
+  await expect(page.getByRole("heading", { level: 1, name: "Tasks" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Automatically create my Tasks" }).click();
+  await expect(page.getByText(/Automatic promotion is restricted in this release/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enable automatic promotion" })).toHaveCount(0);
+
+  await page.getByLabel("Retained release evidence").fill("private-release-evidence/browser-1");
+  await page.getByLabel("sha256 of those bytes").fill("b".repeat(64));
+  await page.getByRole("button", { name: "Record the release evidence" }).click();
+  await expect(page.getByText(/available in this release/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Enable automatic promotion" }).click();
+  await expect(
+    page.getByText("Automatic promotion is enabled for future first extractions."),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Disable automatic promotion" }).click();
+  await expect(page.getByText(/available in this release/)).toBeVisible();
+
+  // The Workspace records the release, and the record is what the API reports.
+  const answer = await request.get("/api/action-item-policy");
+  const body = (await answer.json()) as {
+    policy: string;
+    automaticPromotion: {
+      release: { state: string; evidence?: { reference: string } };
+      enabledAt: string | null;
+    };
+  };
+  expect(body.policy).toBe("auto-create-mine");
+  expect(body.automaticPromotion.release.state).toBe("released");
+  expect(body.automaticPromotion.release.evidence?.reference).toBe(
+    "private-release-evidence/browser-1",
+  );
+  expect(body.automaticPromotion.enabledAt).toBeNull();
+});
+
 test("tasks journey — dismissing an Action Item offers Undo and later restore", async ({
   page,
   request,
