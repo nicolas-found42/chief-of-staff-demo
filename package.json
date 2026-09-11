@@ -18,7 +18,8 @@
     "format": "prettier --write --cache .",
     "format:check": "prettier --check --cache .",
     "check": "run-p check:static test",
-    "check:static": "run-p --print-label typecheck lint format:check knip",
+    "check:static": "run-p --print-label typecheck lint format:check knip workflows",
+    "workflows": "node scripts/verify-workflow-steps.mjs",
     "check:all": "pnpm run check && pnpm run test:e2e",
     "knip": "knip",
     "dev:server": "pnpm --filter @chief-of-staff-demo/shared build && tsx watch apps/server/src/main.ts",
@@ -60,7 +61,8 @@
     "prettier": "^3.9.6",
     "simple-git-hooks": "^2.14.0",
     "tsx": "^4.23.13",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "yaml": "^2.9.0"
   },
   "packageManager": "pnpm@12.3.4"
 }

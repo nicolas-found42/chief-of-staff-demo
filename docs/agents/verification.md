@@ -8,6 +8,7 @@ supported way to run the app.
 
 | Granularity | Gate | What it proves |
 | --- | --- | --- |
+| Workflow files | `pnpm run workflows` | Every `.github/workflows/*.yml` job has executable steps: one `run`/`uses` driver per step, `needs:` targets exist |
 | Prose only | nothing | Nothing: `*.md` is prettier-ignored (ADR-0026) and no gate reads it |
 | One test file | `pnpm --filter @chief-of-staff-demo/tests exec vitest run tests/src/<path>.test.ts` | The behavior at the seam currently being changed |
 | TypeScript tree | `pnpm run typecheck` | Shared/server/relay builds plus web, tests, and scripts no-emit passes |
@@ -152,8 +153,12 @@ error, fix the staged file. `--no-verify` is not the escape hatch for a failing 
 
 ## Container check
 
-Changes to the Dockerfile, runtime dependencies, server build, or web production bundle need this
-additional check after `pnpm run check:all`:
+Changes to the Dockerfile, `docker-compose.yml`, runtime dependencies, server build, or web
+production bundle need this additional check after `pnpm run check:all`. The `docker compose
+build` step is the load-bearing one and has no substitute: `docker compose config` only parses
+YAML, and CI's image job builds through buildx without compose, so a compose file that lost its
+`build:` key passed both of those and broke the local `up --build` loop until 2026-09-11
+(#373). Run build, then boot:
 
 ```sh
 docker compose build

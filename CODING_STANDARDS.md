@@ -11,6 +11,19 @@ one of those spends its attention twice.
 Domain vocabulary is not here either: `docs/agents/domain.md` routes to the `CONTEXT.md` glossary
 and its `_Avoid_` lists, and to the ADRs a change may contradict.
 
+## Declarative files: review the key structure, not the lines
+
+For `.github/workflows/*.yml` and `docker-compose.yml`, a line diff hides the failure class that
+matters: a ranged edit that inserts a sibling key can silently consume the anchor line — a step
+losing its list marker, a service losing `build:`, a job losing `checkout` (all three shipped or
+nearly shipped on 2026-09-11). Review by rebuilding the structure from the diff:
+
+- Workflows: each job's step list, in order, and each step's driver (`run` xor `uses`).
+  `pnpm run workflows` asserts the invariants mechanically; the reviewer checks the steps are
+  still the *intended* steps.
+- Compose: each service still has every key it had unless the diff deliberately removes it, and
+  services the scripts and develop-watch loop rely on keep their `build:`.
+
 ## Every declared value is reachable
 
 A field typed as an enum has to be able to hold each value it declares. Code that can only ever

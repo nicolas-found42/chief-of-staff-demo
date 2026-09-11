@@ -20,6 +20,8 @@ gh pr merge <n> --squash --match-head-commit <head>
 
 Read the diff and confirm all four required checks passed for the current head before merging.
 Bind the merge to that SHA with `--match-head-commit` so a concurrent push requires a fresh check.
+The value must be the **full 40-character OID** — a short SHA fails GraphQL validation with an
+unhelpful `Could not coerce value` error.
 
 Done means **merged and green**. A PR left open is unfinished work; say so rather than reporting
 the task complete.
