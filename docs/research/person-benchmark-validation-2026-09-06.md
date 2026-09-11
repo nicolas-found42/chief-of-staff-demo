@@ -1,5 +1,11 @@
 # Person Research Benchmark validation — 2026-09-06
 
+> Superseded 2026-09-11 for the acceptance pair by
+> [person-benchmark-validation-2026-09-11.md](person-benchmark-validation-2026-09-11.md). The
+> measurements below stand as the record of the runs that made them; the acceptance comparison now
+> published in `artifacts/person-benchmark/comparison.json` was regenerated from the frozen pair
+> (ADR-0079) and no longer reads this record's `not-comparable` pair.
+
 Issue #228 remains incomplete. The implementation, corpus authoring, regression tests and local
 gates have progressed; live quality acceptance has not passed. The implementation now includes
 commit `f64f296` and additional uncommitted changes on `codex/person-research-quality-evaluation`.
