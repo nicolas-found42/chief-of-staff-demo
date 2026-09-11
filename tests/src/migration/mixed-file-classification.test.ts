@@ -47,6 +47,10 @@ interface ZodInternals {
   valueType?: z.ZodTypeAny;
   keyType?: z.ZodTypeAny;
   values?: readonly string[];
+  /** A literal's own value, and a union's branches: both discriminators the
+      config schema uses (#360's promotion record). */
+  value?: unknown;
+  options?: readonly z.ZodTypeAny[];
   checks?: readonly { kind: string; value?: number; inclusive?: boolean }[];
   shape?: () => Record<string, z.ZodTypeAny>;
 }

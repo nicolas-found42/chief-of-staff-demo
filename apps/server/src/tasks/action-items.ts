@@ -74,7 +74,7 @@ export interface ActionItemMaterialization {
 }
 
 /** The reservation one Debrief operation carries, as the Tasks side reads it. */
-export interface DebriefExtractionReservation {
+interface DebriefExtractionReservation {
   operationId: string;
   claim: "first" | "review-only" | "unknown";
   basis: string;

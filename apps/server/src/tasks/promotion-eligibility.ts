@@ -47,10 +47,6 @@ function declined(code: string, reason: string): PromotionEligibility {
  * authorize the operation, and the live ones have to still agree. A changed
  * prerequisite is review, never a silent new decision (#343 §6).
  */
-export function reservedPromotionAuthorization(item: ActionItem): StoredAuthorizationFacts | null {
-  return item.source.promotion?.authorization ?? null;
-}
-
 /**
  * The facts a record stores. The preference is a stored string rather than
  * today's enum: a historical reservation must stay readable even if the
