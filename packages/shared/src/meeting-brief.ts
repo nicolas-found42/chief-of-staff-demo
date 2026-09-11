@@ -50,6 +50,12 @@ export interface MeetingBriefEvent {
   description?: string;
   startAt: string;
   endAt: string;
+  /**
+   * The IANA zone Calendar scheduled the occurrence in, when it supplies one.
+   * The Meeting keeps it because relative timing in a transcript is only a
+   * date in the zone the meeting was actually held in (#356).
+   */
+  timeZone?: string | null;
   location?: string | null;
   conferenceLink?: string | null;
   organizer?: { email: string; displayName?: string };

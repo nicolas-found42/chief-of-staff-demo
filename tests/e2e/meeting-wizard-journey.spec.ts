@@ -245,7 +245,7 @@ test("meeting wizard journey — home lists today's Meetings from the store, Bri
   expect(legacyStatus.status()).toBe(404);
 });
 
-test("meeting page — shows the Transcript matched to its Meeting (issue #153)", async ({
+test("meeting page — a Transcript joins its Meeting when the owner confirms it (issues #153, #356)", async ({
   page,
   request,
 }) => {
@@ -286,6 +286,7 @@ test("meeting page — shows the Transcript matched to its Meeting (issue #153)"
             speakerIdentityMappings: [],
             roster: [],
             meetingId: null,
+            association: null,
           },
         },
       })
@@ -293,11 +294,32 @@ test("meeting page — shows the Transcript matched to its Meeting (issue #153)"
   ).toBe(true);
   expect((await request.post("/api/meeting-brief/reconcile")).ok()).toBe(true);
 
+  /* File-name evidence alone does not place a Transcript (ADR-0082): it holds
+     a Meeting of its own, and the Calendar Meeting is offered as a candidate
+     the owner confirms. */
   const store = (await (await request.get("/api/meetings/list")).json()) as {
-    meetings: { id: string; title: string }[];
+    meetings: { id: string; title: string; occurrenceKey: string | null }[];
   };
-  const linked = store.meetings.find((m) => m.title === summary);
-  if (!linked) throw new Error("the linked Meeting was not recorded");
+  const linked = store.meetings.find((m) => m.title === summary && m.occurrenceKey !== null);
+  if (!linked) throw new Error("the Calendar Meeting was not recorded");
+  let owned: { id: string } | undefined;
+  for (const candidate of store.meetings.filter((one) => one.occurrenceKey === null)) {
+    const held = (await (
+      await request.get(`/api/meetings/${candidate.id}/transcripts`)
+    ).json()) as { transcripts: { id: string }[] };
+    if (held.transcripts.some((one) => one.id === "drive_link_r1")) owned = candidate;
+  }
+  if (!owned) throw new Error("the Transcript did not hold a Meeting of its own");
+  const candidates = (await (
+    await request.get(`/api/meetings/${owned.id}/near-matches`)
+  ).json()) as { nearMatches: { id: string }[] };
+  expect(candidates.nearMatches.some((one) => one.id === linked.id)).toBe(true);
+
+  const merged = await request.post(`/api/meetings/${owned.id}/merge`, {
+    data: { targetOccurrenceKey: linked.occurrenceKey },
+  });
+  expect(merged.ok()).toBe(true);
+
   const transcriptsRes = await request.get(`/api/meetings/${linked.id}/transcripts`);
   expect(transcriptsRes.ok()).toBe(true);
   const body = (await transcriptsRes.json()) as { transcripts: { id: string; title: string }[] };

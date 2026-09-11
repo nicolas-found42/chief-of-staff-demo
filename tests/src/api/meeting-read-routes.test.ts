@@ -86,6 +86,7 @@ test("overview retains recent successful Debriefs after a later failure and coun
   transcripts.push({
     id: "old",
     meetingId: old.id,
+    association: null,
     meetingDate: "2026-09-02",
     source: {
       sourceSystem: "drive",

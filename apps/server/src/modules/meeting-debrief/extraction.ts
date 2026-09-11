@@ -266,8 +266,10 @@ function groundHandoffEvidence(
           evidence,
           timing: {
             ...item.handoff.timing,
-            referenceDate: /^\d{4}-\d{2}-\d{2}$/.test(record.meetingDate ?? "")
-              ? record.meetingDate
+            referenceDate: /^\d{4}-\d{2}-\d{2}$/.test(
+              record.timeAnchor?.date ?? record.meetingDate ?? "",
+            )
+              ? (record.timeAnchor?.date ?? record.meetingDate)
               : null,
           },
         },
@@ -281,10 +283,16 @@ function groundHandoffEvidence(
  * ground a dueDate on. Null when the record carries no parseable date.
  */
 function referenceDays(record: TranscriptRecord): Date[] | null {
-  const match = (record.meetingDate ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const dateStr = record.timeAnchor?.date ?? record.meetingDate;
+  const match = (dateStr ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
-  const base = Date.parse(`${match[0]}T12:00:00Z`);
-  return Array.from({ length: 8 }, (_, offset) => new Date(base + offset * 86_400_000));
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  return Array.from(
+    { length: 8 },
+    (_, offset) => new Date(Date.UTC(y, m - 1, d + offset, 12, 0, 0)),
+  );
 }
 
 /**
@@ -329,9 +337,12 @@ export function clampDueDates(
  * Falls back to "not provided" when the record carries no parseable date.
  */
 function meetingDateLine(record: TranscriptRecord): string {
-  const match = (record.meetingDate ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const dateStr = record.timeAnchor?.date ?? record.meetingDate;
+  const match = (dateStr ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return "not provided";
-  const weekday = new Date(`${match[0]}T12:00:00Z`).toLocaleDateString("en-US", {
+  const weekday = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0),
+  ).toLocaleDateString("en-US", {
     weekday: "long",
     timeZone: "UTC",
   });

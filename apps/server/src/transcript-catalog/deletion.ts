@@ -134,6 +134,12 @@ export class TranscriptDeletionService {
       policy: "do-not-reingest",
     };
     this.catalog.writeTombstone(tombstone);
+    this.catalog.appendDeletionLedgerEntry({
+      kind: "deletion",
+      externalFileId: record.source.externalFileId,
+      transcriptId,
+      recordedAt: deletedAt,
+    });
 
     const removed = zeroCounts();
     const identityCounts = this.identity.forgetTranscript(transcriptId);
@@ -195,6 +201,12 @@ export class TranscriptDeletionService {
     if (tombstone === null) return null;
     this.catalog.deleteTombstone(externalFileId);
     this.catalog.removeLedgerEntries(externalFileId);
+    this.catalog.appendDeletionLedgerEntry({
+      kind: "repermission",
+      externalFileId,
+      transcriptId: null,
+      recordedAt: this.now().toISOString(),
+    });
     this.log(`Processing permission restored for source file ${externalFileId}`);
     return { tombstone };
   }

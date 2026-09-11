@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  type TranscriptAssociation,
   type TranscriptConsent,
   type TranscriptFolderInventory,
   type TranscriptInventoryFile,
@@ -9,6 +10,7 @@ import {
   type TranscriptRecord,
   type TranscriptRosterPerson,
   type TranscriptSourceRevision,
+  type TranscriptTimeAnchor,
   type TranscriptCatalogStatus,
 } from "@chief-of-staff-demo/shared";
 import { isSupportedFileName, convertToText } from "../text/convert.js";
@@ -329,8 +331,13 @@ export class TranscriptCatalog {
       id: string;
       occurrenceKey: string | null;
       calendarEventId: string | null;
+      timeAnchor?: TranscriptTimeAnchor | null;
       roster?: TranscriptRosterPerson[];
     },
+    /* How the placement came about (#356). Required: an association written
+       without its provenance is the legacy state this release exists to stop
+       producing, and a default here would keep producing it. */
+    association: TranscriptAssociation,
   ): Promise<TranscriptRecord> {
     const record = this.store.readTranscript(id);
     if (!record) {
@@ -349,6 +356,9 @@ export class TranscriptCatalog {
          Meeting a Transcript owns supplies none, and the record keeps what it
          had. */
       roster: meeting.roster && meeting.roster.length > 0 ? meeting.roster : record.roster,
+      association,
+      timeAnchor:
+        meeting.timeAnchor !== undefined ? meeting.timeAnchor : (record.timeAnchor ?? null),
     };
     this.store.updateTranscript(updated);
     await this.identity.process(updated);
@@ -579,6 +589,7 @@ export class TranscriptCatalog {
         normalizedText,
         meetingDate: meetingDateFromFileName(file.fileName),
         occurrence: null,
+        association: null,
         meetingId: null,
         speakers: collectSpeakerLabels(normalizedText),
         speakerIdentityMappings: [],

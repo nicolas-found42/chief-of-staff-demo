@@ -87,6 +87,7 @@ function recordMeeting(
     title: event.summary,
     startAt: event.startAt,
     endAt: event.endAt,
+    timeZone: event.timeZone ?? null,
     participants: meetingParticipants(event, ownerEmail),
     cancelled: event.status === "cancelled",
     ineligibleReason: ineligibilityOf(eligibilityReason(event, ownerEmail)),

@@ -78,6 +78,7 @@ function transcript(overrides: Partial<TranscriptRecord> = {}): TranscriptRecord
     speakerIdentityMappings: [],
     roster: [],
     meetingId: null,
+    association: null,
     ...overrides,
   };
 }

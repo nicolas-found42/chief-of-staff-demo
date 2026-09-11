@@ -1,6 +1,13 @@
 /** Meeting Debrief — Module-owned types (issues #139/#140, spec #117, ADR-0037/0038). */
 
 import { z } from "zod/v3";
+import type {
+  TranscriptAssociation,
+  TranscriptOccurrence,
+  TranscriptRosterPerson,
+  TranscriptSpeakerIdentityMapping,
+  TranscriptTimeAnchor,
+} from "./transcript.js";
 
 export const MEETING_DEBRIEF_MODULE_ID = "meeting-debrief" as const;
 export const MEETING_DEBRIEF_MODULE_VERSION = 2 as const;
@@ -30,6 +37,37 @@ export type MeetingDebriefRosterStatus = "prefilled" | "requires_confirmation";
  */
 export type MeetingDebriefReviewReadiness = "ready" | "needs_roster" | "no_extraction";
 
+/**
+ * Immutable snapshot of context at extraction time (#342, #356, MWR-043).
+ * Freezes source, association, meeting occurrence, time anchor, roster,
+ * and identity review state before model work so later changes to Calendar
+ * or decisions cannot rewrite historical context.
+ */
+export interface ExtractionContextSnapshot {
+  version: 1;
+  capturedAt: string;
+  source: {
+    transcriptId: string;
+    sourceSystem: string;
+    externalFileId: string;
+    fileName: string;
+    checksum: string | null;
+    observedRevision: number;
+    extractorVersion: number;
+  };
+  association: TranscriptAssociation | null;
+  meetingId: string | null;
+  occurrence: TranscriptOccurrence | null;
+  timeAnchor: TranscriptTimeAnchor | null;
+  roster: TranscriptRosterPerson[];
+  speakers: string[];
+  speakerIdentityMappings: TranscriptSpeakerIdentityMapping[];
+  identityReview: {
+    mentionCount: number;
+    decisionCount: number;
+    organizationCount: number;
+  };
+}
 /**
  * Unreviewed Runs expire to `skipped` this many days after the review wait
  * started (ADR-0038). A number of policy, fixed in version 1 of the review

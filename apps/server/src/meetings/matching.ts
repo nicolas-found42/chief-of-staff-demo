@@ -1,7 +1,9 @@
 import type {
   Meeting,
+  TranscriptAssociationSignal,
   TranscriptRecord,
   TranscriptRosterPerson,
+  TranscriptTimeAnchor,
 } from "@chief-of-staff-demo/shared";
 import { meetingFileNameMeta } from "../text/meetingFileName.js";
 
@@ -29,6 +31,7 @@ export interface MatchedMeeting {
   id: string;
   occurrenceKey: string | null;
   calendarEventId: string | null;
+  timeAnchor?: TranscriptTimeAnchor | null;
   /**
    * Who Calendar says was in the meeting, carried across with the association.
    * Without it a linked Transcript still had an empty roster, so its Debrief
@@ -81,6 +84,36 @@ function withinTolerance(
 ): boolean {
   const delta = Math.abs(Date.parse(at) - Date.parse(startAt));
   return Number.isFinite(delta) && delta <= toleranceMs;
+}
+
+/**
+ * Every signal that lines this Transcript up with this Meeting (#356). The
+ * list is evidence, not a verdict: `association.ts` decides what may be acted
+ * on, and only a trusted occurrence or a person's confirmation may be.
+ */
+export function signalsFor(
+  transcript: TranscriptRecord,
+  meeting: Meeting,
+  meta: ReturnType<typeof meetingFileNameMeta>,
+  tolerance: { nameTimeToleranceMs: number; toleranceMs: number },
+): TranscriptAssociationSignal[] {
+  const signals: TranscriptAssociationSignal[] = [];
+  if (meta.title !== null && titleSignalsMatch(meta.title, meeting.title))
+    signals.push("file-name-title");
+  if (
+    meta.timestamp !== null &&
+    withinTolerance(
+      meta.timestamp,
+      meeting.startAt,
+      meta.namesTime ? tolerance.nameTimeToleranceMs : tolerance.toleranceMs,
+    )
+  )
+    signals.push("file-name-time");
+  if (speakersMatch(transcript, meeting)) signals.push("roster-speaker");
+  const modifiedAt = transcript.source.modifiedAt;
+  if (modifiedAt !== null && withinTolerance(modifiedAt, meeting.startAt, tolerance.toleranceMs))
+    signals.push("file-modified-time");
+  return signals;
 }
 
 /**

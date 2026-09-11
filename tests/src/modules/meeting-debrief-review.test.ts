@@ -50,6 +50,7 @@ function makeRecord(overrides: Partial<TranscriptRecord> = {}): TranscriptRecord
     speakerIdentityMappings: [],
     roster: [],
     meetingId: null,
+    association: null,
     ...overrides,
   };
 }
@@ -226,7 +227,7 @@ describe("Meeting Debrief completion (no review wait)", () => {
     expect(index.entries[0].reviewState).toBeNull();
 
     // Still no outward records: those wait for an explicit publish.
-    expect(detail.files.sort()).toEqual(["result.json", "review.json"]);
+    expect(detail.files.sort()).toEqual(["context-snapshot.json", "result.json", "review.json"]);
     expect(detail.events.filter((event) => /draft|task|gmail|send/i.test(event.type))).toEqual([]);
   });
 });

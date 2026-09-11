@@ -559,4 +559,31 @@ describe("Transcript deletion cascade (issue #128)", () => {
     }
     expect(calls).toEqual([]);
   });
+
+  it("records deletion and repermission events in a monotonic deletion ledger (#356, MWR-053, ADR-0081)", async () => {
+    const h = makeHarness();
+    await ingest(h);
+
+    expect(h.catalogStore.listDeletionLedger()).toEqual([]);
+
+    h.deletion.delete("drive_fileA_r1", { confirmation: TRANSCRIPT_DELETE_CONFIRMATION });
+    const ledgerAfterDelete = h.catalogStore.listDeletionLedger();
+    expect(ledgerAfterDelete).toHaveLength(1);
+    expect(ledgerAfterDelete[0]).toMatchObject({
+      sequence: 1,
+      kind: "deletion",
+      externalFileId: "fileA",
+      transcriptId: "drive_fileA_r1",
+    });
+
+    h.deletion.restoreProcessingPermission("fileA");
+    const ledgerAfterRestore = h.catalogStore.listDeletionLedger();
+    expect(ledgerAfterRestore).toHaveLength(2);
+    expect(ledgerAfterRestore[1]).toMatchObject({
+      sequence: 2,
+      kind: "repermission",
+      externalFileId: "fileA",
+      transcriptId: null,
+    });
+  });
 });

@@ -43,6 +43,7 @@ function makeRecord(text: string, id = "drive_file1_r1"): TranscriptRecord {
     speakerIdentityMappings: [],
     roster: [],
     meetingId: null,
+    association: null,
   };
 }
 
