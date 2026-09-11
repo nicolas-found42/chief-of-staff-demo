@@ -35,6 +35,8 @@ export interface MeetingDebriefTestRuntimeOptions {
   /** Where extracted proposals become durable Workspace Action Items (issue #177). */
   materializeActionItems?: MeetingDebriefHostDeps["materializeActionItems"];
   readActionItems?: MeetingDebriefHostDeps["readActionItems"];
+  /** The Action Item Policy the reservation is captured against (#358). */
+  policy?: MeetingDebriefHostDeps["policy"];
   log?: (message: string) => void;
 }
 
@@ -204,6 +206,7 @@ export function createMeetingDebriefTestRuntime(
     ...(options.materializeActionItems
       ? { materializeActionItems: options.materializeActionItems }
       : {}),
+    ...(options.policy ? { policy: options.policy } : {}),
     ...(options.log ? { log: options.log } : {}),
   });
 

@@ -430,6 +430,7 @@ export class MeetingBriefHost implements HostedModule {
       },
       attempt: () => 0,
       readFile: (name) => handle.readArtifact(name),
+      artifactNames: () => handle.artifactNames(),
       writeFile: (name, text) => handle.writeArtifact(name, text),
       // An explicit manual send is the owner's "now": a revision quiet
       // period never delays it, so the wait is recorded and skipped.

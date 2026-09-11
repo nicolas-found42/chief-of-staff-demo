@@ -362,6 +362,7 @@ export class Runner<Input> {
         throw new RunBlocked();
       },
       readFile: (name) => run.readArtifact(name),
+      artifactNames: () => run.artifactNames(),
       writeFile: (name, text) => {
         inStage(`write ${name}`);
         run.writeArtifact(name, text);

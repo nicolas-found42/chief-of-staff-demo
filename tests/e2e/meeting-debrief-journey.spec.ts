@@ -218,7 +218,16 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
       files: string[];
     };
     expect(run.events.filter((event) => /draft|task|gmail|send/i.test(event.type))).toEqual([]);
-    expect(run.files.sort()).toEqual(["context-snapshot.json", "result.json", "review.json"]);
+    expect(run.files.sort()).toEqual([
+      "completion.json",
+      "context-snapshot.json",
+      "operation.json",
+      "publication.json",
+      "result.json",
+      "review.json",
+      "revision-r1.manifest.json",
+      "revision-r1.result.json",
+    ]);
     const raw = await (
       await request.get(`/api/runs/${encodeURIComponent(runId)}/artifacts/result.json`)
     ).text();
@@ -475,5 +484,14 @@ test("meeting debrief journey — a Debrief never expires, and publishing stays 
     await request.get(`/api/runs/${encodeURIComponent(unlinked.runId)}`)
   ).json()) as { events: Array<{ type: string }>; files: string[] };
   expect(run.events.filter((event) => /draft|task|gmail|send/i.test(event.type))).toEqual([]);
-  expect(run.files.sort()).toEqual(["context-snapshot.json", "result.json", "review.json"]);
+  expect(run.files.sort()).toEqual([
+    "completion.json",
+    "context-snapshot.json",
+    "operation.json",
+    "publication.json",
+    "result.json",
+    "review.json",
+    "revision-r1.manifest.json",
+    "revision-r1.result.json",
+  ]);
 });

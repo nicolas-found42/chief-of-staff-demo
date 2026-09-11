@@ -70,7 +70,16 @@ function proposal(overrides: Partial<MeetingDebriefActionItem> = {}): MeetingDeb
 
 function materialize(
   proposals: MeetingDebriefActionItem[],
-  source: { debriefRunId?: string; transcriptId?: string } = {},
+  source: {
+    debriefRunId?: string;
+    transcriptId?: string;
+    /** The lineage reservation the Debrief recorded before inference (#358). */
+    firstExtraction?: {
+      operationId: string;
+      claim: "first" | "review-only" | "unknown";
+      basis: string;
+    };
+  } = {},
   deliver?: (taskId: string) => Promise<Task>,
 ): ActionItem[] {
   return materializeUnderPolicy(
@@ -85,6 +94,7 @@ function materialize(
       transcriptId: source.transcriptId ?? "drive_fileA_r1",
       meetingId: "meeting_1",
       actionItems: proposals,
+      ...(source.firstExtraction ? { firstExtraction: source.firstExtraction } : {}),
     },
   );
 }
@@ -101,6 +111,59 @@ describe("the Stage all default", () => {
 describe("Automatically create my Tasks", () => {
   beforeEach(() => {
     policy = "auto-create-mine";
+  });
+
+  it("withholds promotion from an operation reserved as review-only", () => {
+    /* The reservation is the permanent record of what was in force before the
+       model ran (#358). A later enablement does not retroactively authorize an
+       operation reserved without it. */
+    const [item] = materialize([proposal()], {
+      firstExtraction: {
+        operationId: "op_run_1",
+        claim: "review-only",
+        basis: "action-item-policy:stage-all",
+      },
+    });
+
+    expect(item.state).toBe("pending");
+    expect(tasks.list({})).toEqual([]);
+  });
+
+  it("promotes only when the reservation records the lineage's first extraction", () => {
+    const [item] = materialize([proposal()], {
+      firstExtraction: {
+        operationId: "op_run_1",
+        claim: "first",
+        basis: "no-retained-first-reservation",
+      },
+    });
+
+    expect(item.state).toBe("promoted");
+    expect(tasks.list({})).toHaveLength(1);
+  });
+
+  it("refuses a later Run whose lineage already spent its first reservation", () => {
+    const [first] = materialize([proposal()], {
+      debriefRunId: "run_1",
+      firstExtraction: {
+        operationId: "op_run_1",
+        claim: "first",
+        basis: "no-retained-first-reservation",
+      },
+    });
+    expect(first.state).toBe("promoted");
+
+    // A later extraction of the same Transcript stages, whatever it reserves.
+    const [later] = materialize([proposal({ title: "Another commitment" })], {
+      debriefRunId: "run_2",
+      firstExtraction: {
+        operationId: "op_run_2",
+        claim: "review-only",
+        basis: "first-extraction-reserved-by:run_1",
+      },
+    });
+    expect(later.state).toBe("pending");
+    expect(tasks.list({})).toHaveLength(1);
   });
 
   it.each(["commitment", "responsibility"] as const)(

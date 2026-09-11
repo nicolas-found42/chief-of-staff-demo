@@ -1,6 +1,7 @@
 import { debriefPreviewInput } from "../helpers/debrief-preview";
 import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
+import { materializationIndex } from "../../../apps/server/src/tasks/materialization";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -201,7 +202,13 @@ beforeEach(() => {
   identityReview = { mentions: [], decisions: [], organizations: [] };
   const host = new MeetingDebriefHost({
     materializeActionItems: (input) => {
-      actionItems.materialize(input);
+      /* The coordinated materialization (#358) answers with the exact
+         mappings each checked entry became; the publication's manifest
+         records them and completion refuses to claim a count it cannot see. */
+      const mapped = actionItems.materialize(input);
+      return [...materializationIndex(mapped).values()].filter(
+        (mapping) => mapping.debriefRunId === input.debriefRunId,
+      );
     },
     readActionItems: (input) => {
       if (unavailableReview) throw new Error("Tasks reader unavailable");

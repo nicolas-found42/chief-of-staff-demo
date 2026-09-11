@@ -714,6 +714,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
           materializeActionItems: (handover) => materializeActionItemsUnderPolicy(handover),
           readActionItems: (input) => taskProduct.actionItems.forExtraction(input),
+          policy: () => ({
+            capturedAt: new Date().toISOString(),
+            actionItemPolicy: configStore.get().tasks.actionItemPolicy,
+          }),
           log: (message) => console.log(`[meeting-debrief] ${message}`),
         })
       : null;
@@ -744,6 +748,12 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
          are obvious enough to become Tasks without review. */
       materializeActionItems: (handover) => materializeActionItemsUnderPolicy(handover),
       readActionItems: (input) => taskProduct.actionItems.forExtraction(input),
+      /* The reservation records the policy in force before inference (#358),
+         so a later enablement cannot retroactively authorize this operation. */
+      policy: () => ({
+        capturedAt: new Date().toISOString(),
+        actionItemPolicy: configStore.get().tasks.actionItemPolicy,
+      }),
       log: (message) => console.log(`[meeting-debrief] ${message}`),
     }).host;
 

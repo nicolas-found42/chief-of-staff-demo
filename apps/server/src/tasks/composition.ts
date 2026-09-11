@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import type { ConfigStore } from "../config.js";
-import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
+import type {
+  ActionItemMaterializationMapping,
+  GoogleConnectionState,
+} from "@chief-of-staff-demo/shared";
 import type { GoogleConnection } from "../google/connection.js";
 import {
   deleteGoogleTask,
@@ -29,6 +32,7 @@ import {
 } from "./external-link.js";
 import { WorkspaceActionItems, type ActionItemMaterialization } from "./action-items.js";
 import { materializeUnderPolicy } from "./auto-promotion.js";
+import { materializationIndex } from "./materialization.js";
 import { TaskStore } from "./store.js";
 import { WorkspaceTasks } from "./tasks.js";
 
@@ -65,7 +69,7 @@ export interface TasksComposition {
   /** The Google Tasks connector, for the one caller outside linking: receipt migration. */
   googleConnector: RemoteTaskConnector<GoogleTasksDestination>;
   /** Materialize a Debrief's proposals under the Action Item Policy (issue #181). */
-  materialize: (handover: ActionItemMaterialization) => void;
+  materialize: (handover: ActionItemMaterialization) => ActionItemMaterializationMapping[];
   start(): void;
   stop(): void;
 }
@@ -213,7 +217,7 @@ export function composeTasks(deps: TasksCompositionDeps): TasksComposition {
      depends on what the queue held before this extraction. Delivery to a
      configured provider happens after the local Task has committed, and its
      failure lands on the External Task Link rather than on the work. */
-  const materialize = (handover: ActionItemMaterialization): void => {
+  const materialize = (handover: ActionItemMaterialization): ActionItemMaterializationMapping[] => {
     /* Canonical materialization is what touches briefing staleness now: the
        positional decisions that used to do it are gone (issue #199), and the
        Briefings read the canonical records. Best effort, never into the
@@ -223,7 +227,7 @@ export function composeTasks(deps: TasksCompositionDeps): TasksComposition {
     } catch {
       /* a staleness touch must not fail an extraction */
     }
-    materializeUnderPolicy(
+    const materialized = materializeUnderPolicy(
       {
         tasks,
         actionItems,
@@ -232,6 +236,12 @@ export function composeTasks(deps: TasksCompositionDeps): TasksComposition {
         log,
       },
       handover,
+    );
+    /* The Debrief's manifest records what each checked entry became (#358):
+       the exact mappings the coordinated generation holds now, read back from
+       the records rather than from a second index that could drift. */
+    return [...materializationIndex(materialized).values()].filter(
+      (mapping) => mapping.debriefRunId === handover.debriefRunId,
     );
   };
 

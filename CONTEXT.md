@@ -732,6 +732,35 @@ expire while its Action Items await review.
 _Avoid_: Meeting Brief (that one is prospective, prepared from Calendar before a meeting; a Meeting
 Debrief is retrospective, extracted from a transcript afterwards), debrief email, meeting notes
 
+**Debrief Operation**:
+The logical unit of Debrief extraction a Run reserves before it asks a model anything, carrying the
+source lineage and the first-extraction and policy facts that were in force. One Run has one
+operation; a retry, a restart or a later source revision resumes the same reservation instead of
+re-deciding eligibility, and a reservation recorded without automatic acceptance is never promoted
+by a later enablement.
+_Avoid_: extraction attempt, model call, Run (that is the Shell's record, not the operation)
+
+**Debrief Revision**:
+One immutable, checked result of a Debrief Operation: the exact result bytes, the frozen context
+they were read with, and the manifest that binds them with their checksums, versions and exact
+output mappings. A revision is prepared when its manifest is committed; it is not yet readable.
+Regeneration prepares a new revision rather than replacing one.
+_Avoid_: result file, extraction output, version
+
+**Debrief Publication**:
+The one prepared Debrief Revision a Run makes readable, named by a pointer that readers resolve.
+The pointer is written only after the revision's mappings are materialized, its review state is in
+place and its committed bytes verify, so a failed replacement leaves the previous publication and
+the accepted work beside it available. Completion is verified against the publication, never
+inferred from a file existing or a Run saying done.
+_Avoid_: publication email (that is the separate outward operation), result.json, done status
+
+**Debrief Completion Receipt**:
+The record a Debrief Run writes when the Module's own verifier has read its committed revision,
+mappings, review and operation back and found them sound. It is bound to the publication identity
+and operation generation, so a damaged publication cannot present itself as completed.
+_Avoid_: done flag, approval (that is the owner's decision about outward writes)
+
 **Daily Briefing**:
 The structured result prepared each morning for the day ahead: what the workspace owner should know
 about the day's Meetings, which open Tasks matter, and which pending Action Items need review. It is

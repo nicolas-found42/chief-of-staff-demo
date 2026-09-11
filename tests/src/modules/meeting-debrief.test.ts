@@ -491,7 +491,19 @@ describe("Meeting Debrief writes nothing outward (#139)", () => {
           "version",
         ]);
       }
-      expect(detail?.files).toEqual(["context-snapshot.json", "result.json", "review.json"]);
+      /* The published protocol and nothing else: each revision's immutable
+         bytes, the manifest that prepared them, the pointer that publishes
+         one, the completion receipt, plus the context/review records. */
+      expect(detail?.files).toEqual([
+        "completion.json",
+        "context-snapshot.json",
+        "operation.json",
+        "publication.json",
+        "result.json",
+        "review.json",
+        "revision-r1.manifest.json",
+        "revision-r1.result.json",
+      ]);
     }
   });
 });
