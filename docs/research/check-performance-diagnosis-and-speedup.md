@@ -51,7 +51,7 @@ Therefore:
 |---|---|---|---|---|---|
 | **1 (Highest)** | `person-benchmark-cli.test.ts` | **61.35s** (concurrent) / **29.04s** (isolated) | Spawns 21 separate Node subprocesses with `tsx` (`spawnSync(node, ["--import", "tsx", "scripts/person-research-benchmark.mts"])`) | Refactor benchmark CLI to expose a programmatic `runBenchmarkCli(...)` entry point tested in-process | **~26s suite wall-clock saved** (67.01s → 40.65s measured); file execution drops to <2s |
 | **2** | Inefficient CI Static Gate Execution | **43.0s** on CI (`check` job) | `typecheck` (10.5s), `lint` (11.9s), `format:check` (18.4s), `knip` (2.2s) run serially in CI workflow | Run static checks concurrently in CI via `pnpm run check:static` | **~24s saved** in `check` job duration (bounds job to `format:check` at 18.4s); saves compute minutes |
-| **3** | Uncached Docker Build in CI | **120.7s** on CI (`image` job) | `docker compose build` builds without Buildx GitHub Actions cache | Add GHA layer cache backend (`--cache-from type=gha`, `--cache-to type=gha,mode=max`) | **~100s saved** in `image` job duration; saves compute minutes |
+| **3 (Deferred)** | Uncached Docker Build in CI | **120.7s** on CI (`image` job) | `docker compose build` builds without Buildx GitHub Actions cache | Deferred: `docker-container` driver does not load to host daemon for `compose up`; does not affect PR merge latency (bounded by `e2e` at 4m25s) | Candidate for dedicated CI override file if compute costs become a priority |
 | **Candidate** | Vitest Worker Thread Pool (`vmThreads`) | **52.63s** plain / **118.41s** coverage | Evaluates modules per-thread under `pool: "threads"`. `vmThreads` speeds plain runs but incurs V8 coverage serialization overhead | Fix cross-realm assertion in `source-http-dispatcher.test.ts`; keep `pool: "threads"` default for coverage runs | Enables optional `vmThreads` for rapid plain test iteration |
 | **Preserved** | Soft-deadline delay in `source-search-pass-deadline.test.ts` | **20.43s** | Deliberate 10s straggler delay proving deadline races; asserted at line 169 (`expect(elapsed).toBeGreaterThanOrEqual(9000)`) | **Keep unchanged**; deliberate load-bearing verification |
 
@@ -270,19 +270,18 @@ several candidate tools. It is critical not to re-propose tools already vetted a
   ```
 - **Measured Delta:** Runs all four static gates concurrently. Job execution time drops from **43.0s down to ~18.4s** (bounded by `format:check`), saving **~24s of runner compute time per CI run**.
 
-### Recommendation 4: Docker Buildx Layer Caching in CI (Saves Runner Compute Time)
-- **Problem:** `image` job runs cold `docker compose build` taking **120.7s**.
-- **Implementation:** In `.github/workflows/ci.yml`, configure Buildx with GHA cache:
-  ```yaml
-  - uses: docker/setup-buildx-action@v3
-  - uses: docker/build-push-action@v6
-    with:
-      context: .
-      cache-from: type=gha
-      cache-to: type=gha,mode=max
-  ```
-- **Measured Delta:** Rebuilding unchanged layers drops from **120.7s to < 20s**, saving **~100s of runner compute time in the image job**.
-
+### Recommendation 4: Docker Buildx Layer Caching in CI (Deferred Candidate)
+- **Problem:** `image` job runs cold `docker compose build` taking **120.7s** (**2m 40s total job duration**).
+- **Evaluation & Why It Was Deferred:**
+  1. **Docker Daemon Bridge Mismatch:** In `.github/workflows/ci.yml`, the `image` job immediately runs:
+     - `docker compose run --rm --no-deps app node /app/scripts/run-canaries.mjs --check`
+     - `docker compose up -d`
+     These commands require the built images (`chief-of-staff-demo-app` and `chief-of-staff-demo-relay`) to exist inside the host's Docker daemon.
+  2. **Buildx GHA Cache Incompatibility:** `type=gha` caching requires Buildx with the `docker-container` driver. By default, `docker-container` keeps built layers inside the BuildKit container and does *not* automatically load them into the host Docker daemon, causing subsequent `docker compose up` calls to fail.
+  3. **Local Contamination:** Specifying `cache_from: [type=gha]` in `docker-compose.yml` breaks local developer workflows (`docker compose up --build`), because GHA cache endpoint tokens do not exist on developer machines. Supporting this requires maintaining a dedicated `docker-compose.ci.yml` override file.
+  4. **Critical Path Non-Blocking:** As established in §2.1, all 4 CI jobs start concurrently. Total PR turnaround latency is **4m 29s**, strictly bounded by `e2e` (**4m 25s**) and `test` (**3m 00s**). Reducing `image` job duration saves ~100s of runner compute minutes, but provides **zero reduction in PR turnaround latency**.
+  5. **Verification Gate:** `AGENTS.md` requires container changes to be verified before pushing. GHA cache endpoints cannot be hermetically tested locally.
+- **Decision:** Deferred until an isolated `docker-compose.ci.yml` pattern is introduced to reduce runner compute credits without risking CI gate failures or complicating local developer workflows.
 ---
 
 ## Primary References & Data Sources
