@@ -57,8 +57,6 @@ export interface ActionItemMaterialization {
    * Absent means the caller has no reservation (an older writer, or a harness).
    */
   firstExtraction?: DebriefExtractionReservation;
-  /** The configured Action Item Policy when the operation was reserved. */
-  reservedPolicy?: string | null;
 }
 
 /** The reservation one Debrief operation carries, as the Tasks side reads it. */

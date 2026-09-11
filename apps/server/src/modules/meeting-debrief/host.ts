@@ -340,10 +340,13 @@ export class MeetingDebriefHost implements HostedModule {
     for (const summary of this.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs) {
       const run = this.runs.open(summary.id);
       if (!run) continue;
-      const meta = run.read();
-      if (meta.status !== "done" && meta.status !== "failed") continue;
-      if (!this.publicationNeedsRecovery(run)) continue;
       try {
+        /* Reading the record is inside the guard too: a damaged Run is the
+           Workspace integrity surface's business, and it must not turn this
+           best-effort sweep into an unhandled rejection at boot. */
+        const meta = run.read();
+        if (meta.status !== "done" && meta.status !== "failed") continue;
+        if (!this.publicationNeedsRecovery(run)) continue;
         if (meta.status === "failed") {
           /* A failed Run resumes through its Module's own retry plan; the
              reconciler it re-enters finishes an intact preparation without

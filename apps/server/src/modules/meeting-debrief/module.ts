@@ -140,8 +140,6 @@ interface DebriefActionItemHandover {
     claim: "first" | "review-only" | "unknown";
     basis: string;
   };
-  /** The Action Item Policy in force when the operation was reserved. */
-  reservedPolicy?: string | null;
 }
 
 /**
@@ -448,7 +446,6 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
                   claim: reservation.claim,
                   basis: reservation.basis,
                 },
-                reservedPolicy: policy.actionItemPolicy,
               }
             : {}),
         }),

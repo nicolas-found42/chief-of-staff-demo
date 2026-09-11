@@ -153,13 +153,15 @@ describe("Automatically create my Tasks", () => {
     });
     expect(first.state).toBe("promoted");
 
-    // A later extraction of the same Transcript stages, whatever it reserves.
+    // A later extraction of the same Transcript stages, whatever it reserves:
+    // even a `first` claim cannot promote a regeneration, so the claim is not
+    // what this fixture leans on.
     const [later] = materialize([proposal({ title: "Another commitment" })], {
       debriefRunId: "run_2",
       firstExtraction: {
         operationId: "op_run_2",
-        claim: "review-only",
-        basis: "first-extraction-reserved-by:run_1",
+        claim: "first",
+        basis: "no-retained-first-reservation",
       },
     });
     expect(later.state).toBe("pending");

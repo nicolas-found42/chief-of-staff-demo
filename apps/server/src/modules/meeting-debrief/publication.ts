@@ -743,7 +743,7 @@ export function readPublishedDebrief(io: DebriefReader): DebriefPublishedRead | 
       publication: published.publication,
       manifest: published.manifest,
       receipt: valid ? receipt : null,
-      verified: true,
+      verified: valid,
       legacy: false,
     };
   }
