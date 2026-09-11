@@ -158,7 +158,10 @@ render route. Research, planning and judge are all `openrouter inception/mercury
 corpus `14bca86ee0b97d28`, prompt `2026-09-06.4`, `JUDGE_VERSION` `2026-09-06.10`, live network.
 Every person's research completed and all five assessments completed (`bong-joon-ho` 2/7,
 `chimamanda-ngozi-adichie` 3/8, `doug-mcmillon` 3/8, `hilary-cottam` 2/5, `laurent-freixe` 6/9),
-so the run's status is **completed**. Spend **$0.178268** against the $2 cap.
+so the run's status is **completed**. Spend **$0.178268** against the $2 cap; an earlier attempt
+under the same verbatim settings was billed **$0.163052** with no surviving artifacts (its staging
+directory was lost to a filesystem purge before commit), so the ticket's total spend is
+**$0.341320**.
 
 It is **not** pairable with the incumbent: the judge model, the research and planning models and
 the evaluated population all differ, so `comparison.json` / `comparison.md` are untouched and no

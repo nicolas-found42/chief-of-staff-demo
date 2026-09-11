@@ -209,6 +209,12 @@ model-rejection vocabulary (`is not a valid model`, `model_not_found`, `No endpo
 `unsupported model`, `invalid model`, `does not exist`), and all 13 judgement calls succeeded on
 their first attempt.
 
+An earlier attempt under the same verbatim settings (`fa678ee9c59618c7`, 2026-09-11T17:52:04Z–
+18:07:37Z) was billed **$0.163052**, but a purge of the staging filesystem destroyed its worktree
+and staging directory before anything was committed, so no artifacts from it survive and none are
+part of this record. Total spend for issue #259 is therefore **$0.341320** ($0.163052 +
+$0.178268).
+
 ### These five are unpairable with the incumbent
 
 `comparison.json` / `comparison.md` are **not** regenerated from this run and the frozen pair's
