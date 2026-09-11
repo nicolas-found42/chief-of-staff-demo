@@ -51,7 +51,8 @@ export type TaskValidationErrorCode =
   | "action-item-not-promotable"
   | "action-item-revision-not-found"
   | "action-item-reconciliation-invalid"
-  | "action-item-amendment-invalid";
+  | "action-item-amendment-invalid"
+  | "action-item-missing-content-acknowledgment";
 
 export class TaskValidationError extends Error {
   constructor(
@@ -84,6 +85,7 @@ export class TaskValidationError extends Error {
       | "action-item-revision-not-found"
       | "action-item-reconciliation-invalid"
       | "action-item-amendment-invalid"
+      | "action-item-missing-content-acknowledgment"
       | "task-version-conflict",
     message: string,
   ) {

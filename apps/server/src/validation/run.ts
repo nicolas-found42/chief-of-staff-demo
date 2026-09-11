@@ -30,7 +30,7 @@ import type { CompleteJson } from "../llm/providers.js";
 import {
   extractDebriefCandidates,
   type CandidateExtractionOptions,
-  type CheckedExtraction,
+  type DebriefExtractionRun,
 } from "../modules/meeting-debrief/candidate-extraction.js";
 import type { DebriefIdentityReview } from "../modules/meeting-debrief/deps.js";
 import { TerminalOutcomeWriteError, writeTerminalRunOutcome } from "./artifacts.js";
@@ -323,7 +323,7 @@ export interface ExtractionSlotExecutorOptions {
   writeFile?: ((path: string, contents: string) => void) | undefined;
   removeFile?: ((path: string) => void) | undefined;
   /** The extraction call itself; injectable so the accounting can be driven without a model. */
-  extract?: ((options: CandidateExtractionOptions) => Promise<CheckedExtraction>) | undefined;
+  extract?: ((options: CandidateExtractionOptions) => Promise<DebriefExtractionRun>) | undefined;
 }
 
 /**

@@ -63,6 +63,13 @@ export interface ActionItemMaterialization {
    * Absent means the caller has no reservation (an older writer, or a harness).
    */
   firstExtraction?: DebriefExtractionReservation;
+  /**
+   * Whether the published revision was exposed incomplete (#345, ADR-0085).
+   * The fact travels with the record rather than being re-derived at promote
+   * time: the publication a reader can see today is not evidence about the
+   * revision this Action Item was checked against.
+   */
+  reviewOnly?: boolean;
 }
 
 /** The reservation one Debrief operation carries, as the Tasks side reads it. */
@@ -86,6 +93,12 @@ export interface ActionItemCommand {
   expectedVersion?: number;
   /** Who is deciding. This Workspace has one trusted local user. */
   actor?: string;
+  /**
+   * Set on a promotion of a review-only Action Item: the owner answered the
+   * missing-content question, and the decision history records that they did
+   * (#345 §3). Never inferred from the caller's silence.
+   */
+  missingContentAcknowledged?: boolean;
 }
 
 export interface WorkspaceActionItemsDeps {
@@ -298,6 +311,9 @@ export class WorkspaceActionItems {
           decision("promote", at, command.actor ?? OWNER, current, version, {
             taskId,
             taskVersion: versions.taskVersion,
+            ...(command.missingContentAcknowledged === true
+              ? { missingContentAcknowledged: true }
+              : {}),
           }),
         ],
       }),
@@ -330,6 +346,9 @@ export class WorkspaceActionItems {
           decision("promote", at, command.actor ?? OWNER, current, version, {
             taskId,
             taskVersion: versions.taskVersion,
+            ...(command.missingContentAcknowledged === true
+              ? { missingContentAcknowledged: true }
+              : {}),
           }),
         ],
       }),
@@ -819,6 +838,7 @@ export class WorkspaceActionItems {
         debriefRunId: input.input.debriefRunId,
         transcriptId: input.input.transcriptId,
         meetingId: input.input.meetingId,
+        ...(input.input.reviewOnly === true ? { reviewOnly: true } : {}),
       },
       extractionRevision: input.revision,
       evidence: {
@@ -927,7 +947,11 @@ function decision(
   actor: string,
   current: ActionItem,
   version: number,
-  task: { taskId?: string | null; taskVersion?: number | null } = {},
+  task: {
+    taskId?: string | null;
+    taskVersion?: number | null;
+    missingContentAcknowledged?: boolean;
+  } = {},
 ): ActionItemDecisionRecord {
   const versions: ActionItemVersions = {
     actionItemVersion: version,
@@ -935,7 +959,14 @@ function decision(
     taskId: task.taskId ?? null,
     taskVersion: task.taskVersion ?? null,
   };
-  return { at, actor, kind, proposalRevision: current.selectedRevision, versions };
+  return {
+    at,
+    actor,
+    kind,
+    proposalRevision: current.selectedRevision,
+    versions,
+    ...(task.missingContentAcknowledged === true ? { missingContentAcknowledged: true } : {}),
+  };
 }
 
 function sameReconciliation(

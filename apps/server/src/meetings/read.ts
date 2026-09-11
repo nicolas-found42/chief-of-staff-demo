@@ -14,6 +14,7 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import type { WorkspaceMeetings } from "./store.js";
 import type { Runs } from "../runs.js";
+import { readPublishedDebrief } from "../modules/meeting-debrief/publication.js";
 import type { WorkspaceActionItems } from "../tasks/action-items.js";
 
 interface MeetingReadDeps {
@@ -177,6 +178,26 @@ export class MeetingRead {
     };
   }
 
+  /**
+   * Whether this Run exposed an incomplete, review-only revision (#345). The
+   * projection `result.json` is deliberately absent for one, so reading it
+   * would report a failed extraction; the manifest's own availability is the
+   * authority, and a damaged publication answers "no" here — the integrity
+   * failure is the host's to report.
+   */
+  private incompleteDebrief(runId: string): boolean {
+    const run = this.deps.runs.open(runId);
+    if (!run) return false;
+    try {
+      return (
+        readPublishedDebrief({ read: (name) => run.readArtifact(name) })?.availability
+          ?.completeness === "incomplete"
+      );
+    } catch {
+      return false;
+    }
+  }
+
   private artifact(
     sources: ArtifactSource[],
     kind: "brief" | "debrief",
@@ -218,6 +239,19 @@ export class MeetingRead {
       artifact.latestAttempt = attempt;
     }
     if (attempt === "failed") {
+      /* A Debrief whose checked core was exposed incomplete (#345) is not a
+         failed extraction: the Action Items are readable work and the missing
+         sections are the reason the Run is not done. The list says so rather
+         than reporting an extraction failure the owner cannot act on. */
+      const exposedIncomplete = kind === "debrief" ? this.incompleteDebrief(latest.meta.id) : false;
+      if (exposedIncomplete) {
+        artifact.status = "unavailable";
+        artifact.latestAttempt = "failed";
+        artifact.explanation =
+          "This Debrief is incomplete and review-only. Open it to review the checked Action Items.";
+        artifact.retryRunId = this.deps.canRetry?.(latest.meta) ? latest.meta.id : null;
+        return artifact;
+      }
       const deliveryFailure =
         kind === "brief" &&
         Boolean(latest.result?.meetingBrief) &&

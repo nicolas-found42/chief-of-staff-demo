@@ -119,6 +119,15 @@ export const meetingsApi = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ field }),
     }),
+  /**
+   * Ask the Module to expose the checked action core it already has, and to
+   * finish the sections that are still missing (#345).
+   */
+  meetingDebriefEarlyReview: (runId: string) =>
+    request<{ resumed: boolean }>(
+      `/api/meeting-debrief/${encodeURIComponent(runId)}/early-review`,
+      { method: "POST" },
+    ),
   meetingDebriefConfirmRoster: (
     runId: string,
     entries: Array<{ email: string; displayName?: string | null }>,

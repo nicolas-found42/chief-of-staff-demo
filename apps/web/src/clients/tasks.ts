@@ -177,7 +177,10 @@ export const tasksApi = {
     const suffix = params.size > 0 ? `?${params.toString()}` : "";
     return request<ActionItemIndex>(`/api/action-items${suffix}`);
   },
-  promoteActionItem: (actionItemId: string, input: TaskUpdateInput & { completed?: boolean }) =>
+  promoteActionItem: (
+    actionItemId: string,
+    input: TaskUpdateInput & { completed?: boolean; missingContentAcknowledged?: boolean },
+  ) =>
     request<{ task: Task; actionItem: ActionItem }>(
       `/api/action-items/${encodeURIComponent(actionItemId)}/promote`,
       {

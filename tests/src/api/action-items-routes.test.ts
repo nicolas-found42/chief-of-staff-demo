@@ -6,13 +6,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type {
   ActionItem,
   ActionItemIndex,
+  DebriefSectionName,
   IdentityDecision,
   MeetingDebriefActionItem,
   MeetingDebriefExtraction,
   TranscriptMention,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
-import { actionItemProposal } from "@chief-of-staff-demo/shared";
+import { DEBRIEF_SECTIONS, actionItemProposal } from "@chief-of-staff-demo/shared";
 import { registerTasksApi } from "../../../apps/server/src/api/tasks";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
@@ -39,6 +40,7 @@ let actionItems: WorkspaceActionItems;
 let proposed: MeetingDebriefActionItem[];
 /** The Catalog review state the Debrief resolves owners against; set per test. */
 let identityReview: { mentions: TranscriptMention[]; decisions: IdentityDecision[] };
+const sectionFailures = new Set<DebriefSectionName>();
 
 /** The selected proposal of the queued item with that title. */
 function proposalOf(byTitle: Map<string, ActionItem>, title: string) {
@@ -154,6 +156,7 @@ beforeEach(() => {
   ownerProfileId = null;
   proposed = [proposal()];
   identityReview = { mentions: [], decisions: [] };
+  sectionFailures.clear();
   const store = new TaskStore(workspaceDir);
   actionItems = new WorkspaceActionItems({
     store,
@@ -167,6 +170,14 @@ beforeEach(() => {
       reviewFor: () => ({ ...identityReview, organizations: [] }),
     },
     extract: () => Promise.resolve(extraction()),
+    /* The harness declares which sections its extraction cannot produce
+       (#345); the checked Action Items are unaffected. */
+    sections: () =>
+      DEBRIEF_SECTIONS.map((name) => ({
+        name,
+        state: sectionFailures.has(name) ? ("failed" as const) : ("validated" as const),
+        reason: sectionFailures.has(name) ? "the section provider refused" : null,
+      })),
     /* The coordinated materialization (#358) answers with the exact
        mappings the checked entries became, which is what the publication's
        manifest records. */
@@ -429,6 +440,75 @@ describe("materializing Action Items from a Debrief", () => {
  * is created once per Transcript, so the Host cannot re-extract one — but
  * regeneration will, and these are the guarantees it depends on.
  */
+describe("accepting work out of an incomplete Debrief (#345)", () => {
+  beforeEach(() => {
+    /* The harness's extraction is complete; the revision's availability is
+       what makes the Action Items review-only, exactly as the Module reads it
+       from the reconciler. */
+    sectionFailures.clear();
+  });
+
+  async function incompleteDebrief(): Promise<string> {
+    sectionFailures.add("coachingAdvice");
+    return debrief();
+  }
+
+  it("refuses a promotion until the missing content is acknowledged", async () => {
+    await incompleteDebrief();
+    const [item] = await queue();
+    expect(item.source.reviewOnly).toBe(true);
+
+    /* Fail closed: no field, a false field and a truthy non-boolean all refuse
+       rather than being read as consent. */
+    for (const payload of [
+      {},
+      { missingContentAcknowledged: false },
+      { missingContentAcknowledged: "yes" },
+    ]) {
+      const refused = await app.inject({
+        method: "POST",
+        url: `/api/action-items/${item.id}/promote`,
+        payload,
+      });
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json().error).toBe("action-item-missing-content-acknowledgment");
+    }
+    expect((await queue()).find((entry) => entry.id === item.id)?.state).toBe("pending");
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: { missingContentAcknowledged: true },
+    });
+    expect(accepted.statusCode).toBe(201);
+    const body = accepted.json<{ task: { id: string }; actionItem: ActionItem }>();
+    expect(body.actionItem.state).toBe("promoted");
+    expect(body.actionItem.promotedTaskId).toBe(body.task.id);
+    /* The acknowledgment is part of the decision history, not a request-only
+       detail that vanishes once the Task exists. */
+    expect(body.actionItem.decisions.at(-1)).toMatchObject({
+      kind: "promote",
+      missingContentAcknowledged: true,
+    });
+  });
+
+  it("accepts a complete Debrief's Action Item without any acknowledgment", async () => {
+    await debrief();
+    const [item] = await queue();
+    expect(item.source.reviewOnly).toBeUndefined();
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+    expect(accepted.statusCode).toBe(201);
+    const acceptedBody = accepted.json<{ actionItem: ActionItem }>();
+    expect(acceptedBody.actionItem.decisions.at(-1)).not.toHaveProperty(
+      "missingContentAcknowledged",
+    );
+  });
+});
+
 describe("re-extracting one Debrief", () => {
   function materialize(actionItems_: MeetingDebriefActionItem[]): ActionItem[] {
     return actionItems.materialize({

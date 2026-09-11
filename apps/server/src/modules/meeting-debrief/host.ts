@@ -6,6 +6,7 @@ import type {
   MeetingDebriefIdentitySummary,
   MeetingDebriefIndex,
   MeetingDebriefIndexEntry,
+  MeetingDebriefRevisionAvailability,
   MeetingDebriefReviewState,
   MeetingDebriefReviewView,
   TranscriptRecord,
@@ -13,6 +14,7 @@ import type {
 import {
   MEETING_DEBRIEF_FIELDS,
   MEETING_DEBRIEF_INTAKE,
+  debriefSectionResolved,
   MEETING_DEBRIEF_MODULE_ID,
   MEETING_DEBRIEF_MODULE_VERSION,
   type RunMeta,
@@ -63,6 +65,8 @@ export interface MeetingDebriefHostDeps {
   identity: DebriefIdentityReviewReader;
   /** Deterministic extraction seam (tests, hermetic runtimes). */
   extract?: (input: DebriefExtractInput) => Promise<MeetingDebriefExtraction>;
+  /** The section outcomes a hermetic runtime declares instead of producing (#345). */
+  sections?: MeetingDebriefModuleDeps["sections"];
   getCompleteJson?: MeetingDebriefModuleDeps["getCompleteJson"];
   getLlmInfo?: MeetingDebriefModuleDeps["getLlmInfo"];
   log?: (message: string) => void;
@@ -228,6 +232,7 @@ export class MeetingDebriefHost implements HostedModule {
         catalog: deps.catalog,
         identity: deps.identity,
         ...(deps.extract ? { extract: deps.extract } : {}),
+        ...(deps.sections ? { sections: deps.sections } : {}),
         ...(deps.getCompleteJson ? { getCompleteJson: deps.getCompleteJson } : {}),
         ...(deps.getLlmInfo ? { getLlmInfo: deps.getLlmInfo } : {}),
         gate: this.gate,
@@ -377,6 +382,18 @@ export class MeetingDebriefHost implements HostedModule {
   private publicationNeedsRecovery(run: RunHandle): boolean {
     const names = run.artifactNames();
     if (!names.some((name) => /^revision-r\d+\.(manifest|result)\.json$/.test(name))) return false;
+    /* An exposed incomplete revision is not unfinished commit metadata: it is
+       a deliberate review-only publication (#345), and finishing its sections
+       is the owner's own retry rather than a boot-time sweep's decision.
+       Damaged bytes are the opposite case — the reconciler is the only path
+       that can say so on the Run, so they do need this sweep. */
+    let incomplete = false;
+    try {
+      incomplete = publishedDebrief(run)?.availability?.completeness === "incomplete";
+    } catch {
+      /* Damaged bytes: the checks below already know what to do with them. */
+    }
+    if (incomplete) return false;
     const failures = (this.runs.detail(run.id)?.events ?? []).filter(
       (event) => event.type === "stage_failed",
     );
@@ -456,6 +473,10 @@ export class MeetingDebriefHost implements HostedModule {
         action: "owner",
       });
     }
+    /* A Run holding an exposed incomplete revision is failed, not finished
+       (#345): an owner action on it resumes through the Module's own retry
+       plan, which re-runs the sections from the checked core. */
+    if (meta?.status === "failed") return this.runner.retryRun(runId);
     return this.runner.resumeRun(runId);
   }
 
@@ -527,12 +548,30 @@ export class MeetingDebriefHost implements HostedModule {
     const run = this.runs.open(runId);
     if (!run) return null;
     const meta = run.read();
+    const incomplete = publishedDebrief(run)?.availability?.completeness === "incomplete";
+    /* A Run whose checked core was exposed incomplete is still the owner's to
+       act on (#345): it is not done, and the review surface its publication
+       needs is exactly what this returns. */
     const open =
-      meta.status === "done" || (meta.status === "blocked" && meta.wait?.stage === "review");
+      meta.status === "done" ||
+      (meta.status === "blocked" && meta.wait?.stage === "review") ||
+      (meta.status === "failed" && incomplete);
     if (!open) return null;
     const state = parseReviewState(run.readArtifact("review.json"));
     if (!state || state.approval || state.request) return null;
     return { run, state };
+  }
+
+  /** The published revision's section availability, or null without one. */
+  private availabilityOf(run: RunHandle | null): DebriefPublishedRead["availability"] {
+    return publishedDebrief(run)?.availability ?? null;
+  }
+
+  /** Why a section cannot be sent outward: the sentence the routes refuse with. */
+  private unavailableSections(run: RunHandle): MeetingDebriefRevisionAvailability["sections"] {
+    return (this.availabilityOf(run)?.sections ?? []).filter(
+      (section) => !debriefSectionResolved(section.state),
+    );
   }
 
   private writeState(run: RunHandle, state: MeetingDebriefReviewState): void {
@@ -755,6 +794,7 @@ export class MeetingDebriefHost implements HostedModule {
       rosterStatus,
       identity,
       extraction: extraction?.debrief ?? null,
+      revision: this.availabilityOf(run),
       reviewReadiness: extraction
         ? rosterStatus === "prefilled"
           ? "ready"
@@ -1021,6 +1061,19 @@ export class MeetingDebriefHost implements HostedModule {
 
     app.get("/api/meeting-debrief/:runId/email", async (request, reply) => {
       const { runId } = request.params as { runId: string };
+      /* No section may leave the app as an empty success (#345): an incomplete
+       revision is review-only by construction, so every outward-facing route
+       refuses it and names the sections a person is missing. */
+      const held = this.runs.open(runId);
+      const unavailable = held ? this.unavailableSections(held) : [];
+      if (unavailable.length > 0) {
+        reply.code(409).send({
+          error: "debrief-incomplete",
+          message: `This Debrief is incomplete: ${unavailable.map((section) => section.name).join(", ")} unavailable.`,
+          sections: unavailable,
+        });
+        return;
+      }
       const run = this.runs.open(runId);
       const result = publishedDebrief(run)?.result ?? null;
       const detail = result ? { extraction: result.debrief } : null;
@@ -1031,6 +1084,19 @@ export class MeetingDebriefHost implements HostedModule {
     });
     app.post("/api/meeting-debrief/:runId/preview", async (request, reply) => {
       const { runId } = request.params as { runId: string };
+      /* No section may leave the app as an empty success (#345): an incomplete
+       revision is review-only by construction, so every outward-facing route
+       refuses it and names the sections a person is missing. */
+      const held = this.runs.open(runId);
+      const unavailable = held ? this.unavailableSections(held) : [];
+      if (unavailable.length > 0) {
+        reply.code(409).send({
+          error: "debrief-incomplete",
+          message: `This Debrief is incomplete: ${unavailable.map((section) => section.name).join(", ")} unavailable.`,
+          sections: unavailable,
+        });
+        return;
+      }
       const found = this.reviewable(runId);
       const run = this.runs.open(runId);
       const result = publishedDebrief(run)?.result ?? null;
@@ -1064,6 +1130,19 @@ export class MeetingDebriefHost implements HostedModule {
 
     app.post("/api/meeting-debrief/:runId/approve", async (request, reply) => {
       const { runId } = request.params as { runId: string };
+      /* No section may leave the app as an empty success (#345): an incomplete
+       revision is review-only by construction, so every outward-facing route
+       refuses it and names the sections a person is missing. */
+      const held = this.runs.open(runId);
+      const unavailable = held ? this.unavailableSections(held) : [];
+      if (unavailable.length > 0) {
+        reply.code(409).send({
+          error: "debrief-incomplete",
+          message: `This Debrief is incomplete: ${unavailable.map((section) => section.name).join(", ")} unavailable.`,
+          sections: unavailable,
+        });
+        return;
+      }
       const found = this.reviewable(runId);
       if (!found) {
         reply.code(409).send({ error: "run-not-reviewable" });
@@ -1124,6 +1203,52 @@ export class MeetingDebriefHost implements HostedModule {
       } catch (error) {
         if (error instanceof RunNotResumableError) {
           this.revertRequest(found.run, found.state);
+          reply.code(409).send({ error: "run-not-resumable" });
+          return;
+        }
+        throw error;
+      }
+      return { resumed: true };
+    });
+
+    /**
+     * Expose the checked action core the owner already has (#345 §2). The
+     * Module resumes its own work from those exact bytes — no discovery, no
+     * new accounting — and exposes an incomplete, review-only publication when
+     * the remaining sections still cannot be produced. A Run with no checked
+     * core has nothing to expose and is refused.
+     */
+    app.post("/api/meeting-debrief/:runId/early-review", async (request, reply) => {
+      const { runId } = request.params as { runId: string };
+      const run = this.runs.open(runId);
+      if (!run) {
+        reply.code(404).send({ error: "unknown-run" });
+        return;
+      }
+      /* Nothing checked, nothing to expose: a Run that failed before its core
+         was committed has no early review to offer. A Run that already holds
+         a publication is the other case — the request is then the retry that
+         finishes its missing sections. */
+      const hasCore = run.artifactNames().some((name) => /^core-r\d+\.json$/.test(name));
+      if (!hasCore && this.availabilityOf(run) === null) {
+        reply.code(409).send({
+          error: "no-checked-core",
+          message: "This Run has no checked action core to expose yet.",
+        });
+        return;
+      }
+      if (this.availabilityOf(run)?.completeness === "complete") {
+        reply.code(409).send({
+          error: "debrief-complete",
+          message: "This Debrief is already complete.",
+        });
+        return;
+      }
+      run.appendEvent("debrief_early_review_requested", {});
+      try {
+        await this.resumeOwnerTurn(runId);
+      } catch (error) {
+        if (error instanceof RunNotResumableError) {
           reply.code(409).send({ error: "run-not-resumable" });
           return;
         }

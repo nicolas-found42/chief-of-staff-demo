@@ -154,6 +154,16 @@ export function MeetingActionItems({
       setDismissed(null);
   };
   const pending = index?.items.filter((item) => item.state === "pending") ?? [];
+  /* Accepting work out of an incomplete Debrief is the owner's decision, and
+     the server refuses it without an explicit acknowledgment (#345 §3). The
+     checkbox is the acknowledgment; the request carries it verbatim. */
+  const [acknowledged, setAcknowledged] = useState<string[]>([]);
+  const acknowledge = (actionItemId: string) =>
+    setAcknowledged((held) =>
+      held.includes(actionItemId)
+        ? held.filter((id) => id !== actionItemId)
+        : [...held, actionItemId],
+    );
   const reviewed = index?.items.filter((item) => item.state !== "pending") ?? [];
   return (
     <section tabIndex={-1} aria-labelledby="meeting-action-items-heading" id="action-items">
@@ -184,6 +194,22 @@ export function MeetingActionItems({
           {(expanded ? pending : pending.slice(0, 5)).map((item) => (
             <ActionItemRow
               key={item.id}
+              leading={
+                /* The acknowledgment lives inside this row's own <li>: a
+                   wrapper between the <ul> and the row breaks the list's
+                   structure and the row's parent relationship (#361). */
+                item.source.reviewOnly === true ? (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={acknowledged.includes(item.id)}
+                      onChange={() => acknowledge(item.id)}
+                    />{" "}
+                    I understand this Action Item comes from an incomplete Debrief and sections are
+                    unavailable.
+                  </label>
+                ) : null
+              }
               isNew={newIds.includes(item.id)}
               item={item}
               context={index?.context?.[item.id]}
@@ -211,6 +237,9 @@ export function MeetingActionItems({
                       listId: values.listId,
                       responsiblePerson: responsibleFromValue(values.responsible),
                       completed,
+                      ...(item.source.reviewOnly === true
+                        ? { missingContentAcknowledged: acknowledged.includes(item.id) }
+                        : {}),
                     }),
                 )
               }

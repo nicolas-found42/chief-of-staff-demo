@@ -1,10 +1,17 @@
 import type {
+  DebriefSectionAvailability,
+  DebriefSectionName,
   MeetingDebriefExtraction,
   MeetingDebriefRunResult,
   MeetingDebriefReviewState,
   ExtractionContextSnapshot,
   ActionItemMaterializationMapping,
   TranscriptRecord,
+} from "@chief-of-staff-demo/shared";
+import {
+  DEBRIEF_SECTIONS,
+  debriefSectionResolved,
+  validatedDebriefSections,
 } from "@chief-of-staff-demo/shared";
 import {
   MEETING_DEBRIEF_MODULE_ID,
@@ -32,16 +39,30 @@ import {
 } from "./review.js";
 import { resolveActionItemOwners, stripUnverifiedRecipientEmails } from "./extraction.js";
 import { emailOptions, emailPreview, type DebriefActionItemReader } from "./email.js";
-import { extractDebriefCandidates, type CheckedExtraction } from "./candidate-extraction.js";
+import {
+  extractDebriefCore,
+  extractDebriefSections,
+  type CandidateExtractionOptions,
+  type DebriefCheckedCorePayload,
+} from "./candidate-extraction.js";
 import { composeExternalDebriefBody } from "./externalBody.js";
 import {
   DebriefIntegrityError,
   DebriefUnavailableError,
+  debriefChecksum,
+  debriefTextChecksum,
+  nextRevisionTarget,
+  readOperation,
   readPublishedDebrief,
   reconcileDebrief,
+  resumableCheckedCore,
+  writeCheckedCore,
   type DebriefArtifactIO,
   type DebriefFirstExtractionReservation,
   type DebriefPolicySnapshot,
+  type DebriefProducedRevision,
+  type DebriefReconcileOutcome,
+  type DebriefStoredCore,
 } from "./publication.js";
 
 export type {
@@ -74,6 +95,13 @@ export interface MeetingDebriefModuleDeps {
   identity: DebriefIdentityReviewReader;
   /** Deterministic extraction seam (tests, hermetic runtimes). */
   extract?: (input: DebriefExtractInput) => Promise<MeetingDebriefExtraction>;
+  /**
+   * The section outcomes a deterministic harness declares instead of
+   * producing them (#345). Absent — as for every harness that predates the
+   * phase split — the injected extraction is a complete revision whose
+   * sections all validated.
+   */
+  sections?: (input: { transcriptId: string }) => readonly DebriefSectionAvailability[] | undefined;
   /** Model-backed extraction when no override is injected. */
   getCompleteJson?: () => CompleteJson;
   /** Provider/model recorded on extract_attempt events for diagnosis. */
@@ -208,6 +236,70 @@ async function writeApprovalOutputs(
   }
 }
 
+/**
+ * What a production closure hands the reconciler: the revision bytes, plus
+ * the extraction they encode, so a regeneration can merge one field without
+ * re-reading its own serialized output.
+ */
+interface DebriefProducedExtraction extends DebriefProducedRevision {
+  extraction: MeetingDebriefExtraction;
+}
+
+/** The sections one outcome left unavailable, in the contract's own order. */
+function unavailableSections(outcome: DebriefReconcileOutcome): DebriefSectionName[] {
+  return outcome.availability.sections
+    .filter((section) => !debriefSectionResolved(section.state))
+    .map((section) => section.name);
+}
+
+/**
+ * Blank the sections a revision could not validate (#345). The stored result
+ * keeps the extraction's shape — the model-result contract is not this
+ * module's to widen — so a failed section is emptied here *and* named
+ * unavailable in the revision's availability. Nothing may read the empty
+ * value without reading the availability beside it.
+ */
+function applySectionOutcomes(
+  extraction: MeetingDebriefExtraction,
+  sections: readonly DebriefSectionAvailability[],
+): MeetingDebriefExtraction {
+  const resolved = (name: DebriefSectionName): boolean => {
+    const state = sections.find((section) => section.name === name)?.state ?? "validated";
+    return debriefSectionResolved(state);
+  };
+  return {
+    ...extraction,
+    summary: resolved("summary") ? extraction.summary : "",
+    decisions: resolved("decisions") ? extraction.decisions : [],
+    openQuestions: resolved("openQuestions") ? extraction.openQuestions : [],
+    effectivenessEvidence: resolved("effectivenessEvidence")
+      ? extraction.effectivenessEvidence
+      : "",
+    coachingAdvice: resolved("coachingAdvice") ? extraction.coachingAdvice : "",
+    suggestedRecipients: resolved("suggestedRecipients") ? extraction.suggestedRecipients : [],
+  };
+}
+
+/**
+ * The availability a new revision reports: every section keeps the state the
+ * previously published revision established for it, except the one this
+ * regeneration asked for, which takes its own new outcome (#345, MWR-042).
+ */
+function mergeSectionAvailability(
+  previous: readonly DebriefSectionAvailability[] | null,
+  produced: readonly DebriefSectionAvailability[],
+  regenerated: DebriefSectionName | null,
+): DebriefSectionAvailability[] {
+  return DEBRIEF_SECTIONS.map((name) => {
+    const fresh = produced.find((section) => section.name === name);
+    if (regenerated === null || name === regenerated) {
+      return fresh ? { ...fresh } : { name, state: "absent", reason: null };
+    }
+    const held = previous?.find((section) => section.name === name);
+    return held ? { ...held } : fresh ? { ...fresh } : { name, state: "absent", reason: null };
+  });
+}
+
 /** How the Run's association stands, read from the immutable record itself. */
 function rosterStatusOf(record: TranscriptRecord): "prefilled" | "requires_confirmation" {
   return record.occurrence !== null && record.roster.length > 0
@@ -215,59 +307,52 @@ function rosterStatusOf(record: TranscriptRecord): "prefilled" | "requires_confi
     : "requires_confirmation";
 }
 
-async function extractWithModel(
+/**
+ * Everything one model-backed phase needs. The provider, the checkpoint scope
+ * and the capture surface are per-Run facts; the phase split (#345) means the
+ * core phase and a later section-only retry build this the same way.
+ */
+function modelExtractionOptions(
   ctx: RunContext,
   record: TranscriptRecord,
   identity: DebriefIdentityReview,
   deps: MeetingDebriefModuleDeps,
   useCheckpoints: boolean,
-): Promise<CheckedExtraction> {
+): CandidateExtractionOptions {
   if (!deps.getCompleteJson) {
     throw new Error("Meeting Debrief extraction provider is unavailable");
   }
   const attempt = ctx.attempt();
   const llm = deps.getLlmInfo?.() ?? { provider: "unknown", model: "unknown" };
-  ctx.event("extract_attempt", { attempt, provider: llm.provider, model: llm.model });
-  try {
-    const parsed = await extractDebriefCandidates({
-      record,
-      identity,
-      complete: deps.getCompleteJson(),
-      operationId: ctx.runId,
-      runId: ctx.runId,
-      ...(useCheckpoints
-        ? {
-            checkpoint: {
-              scope: JSON.stringify(llm),
-              read: (key: string): unknown => {
-                const saved = ctx.readFile(`debrief-checkpoint-${key}.json`);
-                if (saved === null) return undefined;
-                try {
-                  return JSON.parse(saved) as unknown;
-                } catch {
-                  return undefined;
-                }
-              },
-              write: (key: string, value: unknown) =>
-                ctx.writeFile(`debrief-checkpoint-${key}.json`, JSON.stringify(value)),
+  return {
+    record,
+    identity,
+    complete: deps.getCompleteJson(),
+    operationId: ctx.runId,
+    runId: ctx.runId,
+    ...(useCheckpoints
+      ? {
+          checkpoint: {
+            scope: JSON.stringify(llm),
+            read: (key: string): unknown => {
+              const saved = ctx.readFile(`debrief-checkpoint-${key}.json`);
+              if (saved === null) return undefined;
+              try {
+                return JSON.parse(saved) as unknown;
+              } catch {
+                return undefined;
+              }
             },
-          }
-        : {}),
-      progress: (event) => ctx.event("debrief_extraction_progress", event),
-      retry: { onAttempt: (event) => ctx.event("model_attempt", { ...event }) },
-      capture: (name, value) =>
-        ctx.writeFile(`candidate-${attempt}-${name}.json`, JSON.stringify(value, null, 2)),
-    });
-    ctx.event("extract_ok", { attempt });
-    return parsed;
-  } catch (error) {
-    ctx.event("extract_error", {
-      attempt,
-      error: errorMessage(error),
-      ...modelDiagnosticEventDetail(error),
-    });
-    throw error;
-  }
+            write: (key: string, value: unknown) =>
+              ctx.writeFile(`debrief-checkpoint-${key}.json`, JSON.stringify(value)),
+          },
+        }
+      : {}),
+    progress: (event) => ctx.event("debrief_extraction_progress", event),
+    retry: { onAttempt: (event) => ctx.event("model_attempt", { ...event }) },
+    capture: (name, value) =>
+      ctx.writeFile(`candidate-${attempt}-${name}.json`, JSON.stringify(value, null, 2)),
+  };
 }
 
 /** The currently published Debrief, resolved through its publication pointer. */
@@ -325,37 +410,37 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     };
   };
 
-  const extract = async (
-    ctx: RunContext,
-    record: TranscriptRecord,
-    useCheckpoints = true,
-  ): Promise<CheckedExtraction> => {
-    const identity = deps.identity.reviewFor(record.id);
-    const checked = deps.extract
-      ? { extraction: await deps.extract({ record, identity }), checkedAliases: [] }
-      : await extractWithModel(ctx, record, identity, deps, useCheckpoints);
-    const resolved = resolveActionItemOwners(
-      checked.extraction,
-      deps.identity.reviewFor(record.id),
-    );
-    return {
-      ...checked,
-      extraction: stripUnverifiedRecipientEmails(resolved, record),
-    };
-  };
-
-  /** The checked result as one revision is addressed by: serialized bytes, not a file. */
-  const resultText = (debrief: MeetingDebriefExtraction, transcriptId: string): string =>
+  /**
+   * The checked result as one revision is addressed by: serialized bytes, not
+   * a file. A revision whose sections did not all validate carries that fact
+   * with its bytes (#345): an interrupted manifest write is later adopted
+   * without asking the model again, and the adopted revision must still read
+   * as the incomplete revision it is.
+   */
+  const resultText = (
+    debrief: MeetingDebriefExtraction,
+    transcriptId: string,
+    sections?: readonly DebriefSectionAvailability[],
+  ): string =>
     `${JSON.stringify(
       {
         version: 1,
         transcriptId,
         extractedAt: now().toISOString(),
         debrief,
+        ...(sections?.some((section) => !debriefSectionResolved(section.state))
+          ? { sections: sections.map((section) => ({ ...section })) }
+          : {}),
       } satisfies MeetingDebriefRunResult,
       null,
       2,
     )}\n`;
+
+  /** The Run directory as the publication machinery reads and writes it. */
+  const ioFor = (ctx: RunContext): DebriefArtifactIO => ({
+    read: (name) => ctx.readFile(name),
+    write: (name, text) => ctx.writeFile(name, text),
+  });
 
   /** The reservation this Run records before the model is asked anything. */
   const reserve = (ctx: RunContext, record: TranscriptRecord): DebriefFirstExtractionReservation =>
@@ -392,26 +477,147 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
   };
 
   /**
+   * The deterministic seam's revision: the extraction a harness injected,
+   * with the section outcomes it declared. Absent outcomes mean a complete
+   * revision, which is what every harness that predates #345 means.
+   */
+  const injectedRevision = async (record: TranscriptRecord): Promise<DebriefProducedExtraction> => {
+    if (!deps.extract) {
+      throw new Error("Meeting Debrief extraction provider is unavailable");
+    }
+    const identity = deps.identity.reviewFor(record.id);
+    const extracted = await deps.extract({ record, identity });
+    const sections = deps.sections?.({ transcriptId: record.id }) ?? validatedDebriefSections();
+    const resolved = resolveActionItemOwners(applySectionOutcomes(extracted, sections), identity);
+    const debrief = stripUnverifiedRecipientEmails(resolved, record);
+    return {
+      extraction: debrief,
+      text: resultText(debrief, record.id, sections),
+      aliases: [],
+      sections: sections.map((section) => ({ ...section })),
+    };
+  };
+
+  /**
+   * The model-backed revision, in the two phases #345 requires: the checked
+   * core is committed the moment it exists, and the sections are asked for
+   * only after that. `reuseCore` is what makes a retry a retry — the stored
+   * core is resumed and no discovery, accounting or enrichment call is made.
+   */
+  const produceModelRevision = async (
+    ctx: RunContext,
+    record: TranscriptRecord,
+    options: { useCheckpoints: boolean; reuseCore: boolean },
+  ): Promise<DebriefProducedExtraction> => {
+    const attempt = ctx.attempt();
+    const llm = deps.getLlmInfo?.() ?? { provider: "unknown", model: "unknown" };
+    const stream = ioFor(ctx);
+    const contextText = ctx.readFile("context-snapshot.json");
+    if (contextText === null) {
+      throw new DebriefIntegrityError(
+        "missing-context",
+        "the frozen context must exist before the core is checked",
+      );
+    }
+    const match = {
+      sourceChecksum: debriefTextChecksum(record.normalizedText),
+      contextChecksum: debriefChecksum(contextText),
+    };
+    try {
+      ctx.event("extract_attempt", { attempt, provider: llm.provider, model: llm.model });
+      const identity = deps.identity.reviewFor(record.id);
+      const extractionOptions = modelExtractionOptions(
+        ctx,
+        record,
+        identity,
+        deps,
+        options.useCheckpoints,
+      );
+      let core: DebriefStoredCore<DebriefCheckedCorePayload> | null = options.reuseCore
+        ? resumableCheckedCore<DebriefCheckedCorePayload>(stream, ctx.artifactNames(), match)
+        : null;
+      if (core) {
+        ctx.event("debrief_core_reused", {
+          revisionId: core.record.revisionId,
+          candidates: core.record.payload.candidates.length,
+          outputs: core.record.payload.actions.length,
+        });
+      } else {
+        const payload = await extractDebriefCore(extractionOptions);
+        const operation = readOperation(stream);
+        if (!operation) {
+          throw new DebriefIntegrityError(
+            "missing-operation",
+            "the checked core needs the operation it was reserved under",
+          );
+        }
+        core = writeCheckedCore(stream, {
+          revision: nextRevisionTarget(stream),
+          operation,
+          preparedAt: now().toISOString(),
+          sourceChecksum: match.sourceChecksum,
+          contextChecksum: match.contextChecksum,
+          payload,
+        });
+        ctx.event("debrief_core_prepared", {
+          revisionId: core.record.revisionId,
+          candidates: payload.candidates.length,
+          outputs: payload.actions.length,
+        });
+      }
+      const { extraction, sections } = await extractDebriefSections(
+        core.record.payload,
+        extractionOptions,
+      );
+      const resolved = resolveActionItemOwners(extraction, identity);
+      const debrief = stripUnverifiedRecipientEmails(resolved, record);
+      ctx.event("extract_ok", {
+        attempt,
+        actionItems: debrief.actionItems.length,
+        decisions: debrief.decisions.length,
+        openQuestions: debrief.openQuestions.length,
+      });
+      return {
+        extraction: debrief,
+        text: resultText(debrief, record.id, sections),
+        aliases: core.record.payload.retainedIds,
+        sections,
+        core: { artifact: core.artifact, checksum: core.checksum },
+      };
+    } catch (error) {
+      ctx.event("extract_error", {
+        attempt,
+        error: errorMessage(error),
+        ...modelDiagnosticEventDetail(error),
+      });
+      throw error;
+    }
+  };
+
+  /**
    * The one reconciler, entered by every path that finalizes a Debrief (#358,
    * ADR-0084). `produce` runs the model; when it is absent nothing may start
    * inference, so a Run with no intact prepared revision fails visibly rather
    * than inventing one.
+   *
+   * The outcome is returned whole rather than unwrapped, because an
+   * incomplete revision is a real publication whose Run must not report done
+   * (#345, ADR-0085): the caller decides what a person is told.
    */
   const reconcile = async (
     ctx: RunContext,
     record: TranscriptRecord,
-    produce?: () => Promise<{ text: string; aliases: string[] }>,
+    produce?: () => Promise<DebriefProducedRevision>,
     intent: "publish" | "regenerate" = "publish",
-  ): Promise<MeetingDebriefRunResult> => {
-    const io: DebriefArtifactIO = {
-      read: (name) => ctx.readFile(name),
-      write: (name, text) => ctx.writeFile(name, text),
-    };
+  ): Promise<DebriefReconcileOutcome> => {
+    const stream = ioFor(ctx);
     const reservation = reserve(ctx, record);
     const policy = policySnapshot();
+    /* The candidate accounting of the revision being materialized: produced
+       bytes carry their own, and an adopted revision carries the core's. */
     let aliases: string[] = [];
     const outcome = await reconcileDebrief({
-      io,
+      io: stream,
       names: () => ctx.artifactNames(),
       runId: ctx.runId,
       record,
@@ -426,11 +632,11 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
             `Run ${ctx.runId} has no prepared revision and this path may not start inference`,
           );
         }
-        const produced = await produce();
-        aliases = produced.aliases;
-        return produced.text;
+        const revision = await produce();
+        aliases = [...(revision.aliases ?? [])].filter((alias): alias is string => alias !== null);
+        return revision;
       },
-      materialize: (result) =>
+      materialize: (result, revision) =>
         deps.materializeActionItems?.({
           debriefRunId: ctx.runId,
           transcriptId: record.id,
@@ -439,6 +645,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           transcriptChecksum: record.source.checksum,
           actionItems: result.debrief.actionItems,
           candidateAliases: aliases,
+          ...(revision.reviewOnly ? { reviewOnly: true } : {}),
           ...(deps.firstExtraction
             ? {
                 firstExtraction: {
@@ -458,10 +665,11 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     ctx.event("debrief_reconciled", {
       reconciled: outcome.reconciled,
       modelCalls: outcome.modelCalls,
+      completed: outcome.completed,
       revisionId: outcome.publication.revisionId,
       generation: outcome.publication.generation,
     });
-    return outcome.result;
+    return outcome;
   };
 
   /**
@@ -495,25 +703,58 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
            reconciler prepares and publishes it as its own immutable bytes,
            and a replacement that fails leaves the previous publication —
            revision, mappings and review — exactly where it was. */
-        const merged = await reconcile(
+        const held = readPublishedDebrief(ioFor(ctx));
+        const outcome = await reconcile(
           ctx,
           record,
           async () => {
-            const checked = await extract(ctx, record, false);
+            /* #345, MWR-042: a section regeneration consumes the immutable
+               source and the checked facts and re-asks only the section the
+               owner named. Action Items are the one field whose regeneration
+               is a new checked output, so only it re-runs the core. */
+            const regeneratingActions = request.field === "actionItems";
+            const produced = deps.extract
+              ? await injectedRevision(record)
+              : await produceModelRevision(ctx, record, {
+                  useCheckpoints: false,
+                  /* Every other field is re-asked from the checked core: a
+                     summary regeneration must not rediscover the meeting. */
+                  reuseCore: !regeneratingActions,
+                });
+            const current = currentDebrief(ctx);
+            const regenerated = mergeRegeneratedField(current, request.field, produced.extraction);
+            /* Unrequested sections keep the state the published revision
+               established for them: regenerating the summary is not a claim
+               about coaching (#345, MWR-042). */
+            const sections = mergeSectionAvailability(
+              held?.availability?.sections ?? null,
+              produced.sections ?? validatedDebriefSections(),
+              request.field,
+            );
             return {
-              text: resultText(
-                mergeRegeneratedField(currentDebrief(ctx), request.field, checked.extraction),
-                transcriptId,
-              ),
+              text: resultText(regenerated, transcriptId, sections),
               /* A regenerated Action Item list is this Run's own checked
                  output, so it carries this Run's candidate accounting. Entries
                  the regeneration kept unchanged still materialize under their
                  original keys and keep the records they already have. */
-              aliases: checked.checkedAliases,
+              aliases: produced.aliases,
+              sections,
+              /* A section regeneration carries the published Action Items
+                 forward; regenerating them is a new checked output, and the
+                 reconciler materializes it. */
+              ...(regeneratingActions ? {} : { retainedOutputs: true }),
+              ...(produced.core ? { core: produced.core } : {}),
             };
           },
           "regenerate",
         );
+        if (!outcome.completed) {
+          throw new DebriefIntegrityError(
+            "incomplete-regeneration",
+            `${unavailableSections(outcome).join(", ")} did not validate; the previous revision is preserved`,
+          );
+        }
+        const merged = outcome.result;
         const next: MeetingDebriefReviewState = {
           ...state,
           review:
@@ -751,24 +992,34 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       // review record kept, the pointer published, completion verified
       // (#358). Recovery and retry enter the same reconciler, so an intact
       // prepared revision finishes here without asking the model anything.
-      const recounted = await ctx.stage("extract", async () => {
+      const reconciled = await ctx.stage("extract", async () => {
         const produce =
           input.kind === "reconcile"
             ? undefined
-            : async (): Promise<{ text: string; aliases: string[] }> => {
-                const checked = await extract(ctx, record);
-                ctx.event("debrief_extracted", {
-                  decisions: checked.extraction.decisions.length,
-                  actionItems: checked.extraction.actionItems.length,
-                  openQuestions: checked.extraction.openQuestions.length,
-                });
-                return {
-                  text: resultText(checked.extraction, transcriptId),
-                  aliases: checked.checkedAliases,
-                };
-              };
-        return reconcile(ctx, record, produce);
+            : async (): Promise<DebriefProducedRevision> =>
+                deps.extract
+                  ? injectedRevision(record)
+                  : produceModelRevision(ctx, record, { useCheckpoints: true, reuseCore: true });
+        const outcome = await reconcile(ctx, record, produce);
+        /* The checked core is exposed when its required sections did not all
+           validate (#345, ADR-0085): the publication is real and review-only,
+           and the Run is not done. The failure is what tells a person the
+           difference, so the sections that did not validate are named. */
+        if (!outcome.completed) {
+          throw new DebriefIntegrityError(
+            "incomplete-debrief",
+            outcome.availability.sections
+              .filter((section) => !debriefSectionResolved(section.state))
+              .map(
+                (section) =>
+                  `${section.name} is unavailable (${section.reason ?? "no reason recorded"})`,
+              )
+              .join("; "),
+          );
+        }
+        return outcome;
       });
+      const recounted = reconciled.result;
 
       /* The Debrief is finished the moment it is published. It used to stop
          here against a thirty-day owner wait, which meant a workspace of

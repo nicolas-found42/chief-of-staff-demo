@@ -79,6 +79,66 @@ export const MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS = 30 as const;
 /** Why the Run ended when its review window elapsed. */
 export const MEETING_DEBRIEF_EXPIRED_REASON = "debrief_expired_unreviewed" as const;
 
+/**
+ * Every section a Debrief publication must resolve, in the order the review
+ * surface reads them (#345, ADR-0085). All of them stay required for
+ * completion: coaching failure keeps a Debrief incomplete, and no section
+ * becomes optional to improve a completion rate.
+ */
+export const DEBRIEF_SECTIONS = [
+  "summary",
+  "decisions",
+  "actionItems",
+  "openQuestions",
+  "effectivenessEvidence",
+  "coachingAdvice",
+  "suggestedRecipients",
+] as const;
+export type DebriefSectionName = (typeof DEBRIEF_SECTIONS)[number];
+
+/**
+ * How one section of a revision stands. A *validated-empty* section is a
+ * checked answer ("this meeting recorded no decisions"); a *failed*, *absent*
+ * or *pending* one is unavailable content that no reader may render as an
+ * empty successful value (#345 §1).
+ */
+export type DebriefSectionState =
+  "validated" | "validated-empty" | "absent" | "pending" | "failed" | "blocked" | "invalid";
+
+export interface DebriefSectionAvailability {
+  name: DebriefSectionName;
+  state: DebriefSectionState;
+  /** Why the section is not validated, in words the review surface shows. */
+  reason: string | null;
+}
+
+/** Whether a section state is a checked answer, whatever it answered. */
+export function debriefSectionResolved(
+  state: DebriefSectionState,
+): state is "validated" | "validated-empty" {
+  return state === "validated" || state === "validated-empty";
+}
+
+/**
+ * The per-section availability of the revision a reader resolved. Availability
+ * travels with the machine, so the reader informs the note (#345): a revision
+ * exposed incomplete stays review-only for the rest of its lineage, and its
+ * sections name what is missing rather than showing empty values.
+ */
+export interface MeetingDebriefRevisionAvailability {
+  revision: number;
+  revisionId: string;
+  completeness: "complete" | "incomplete";
+  /** Set the moment a revision was exposed incomplete: permanent downstream. */
+  reviewOnly: boolean;
+  sections: DebriefSectionAvailability[];
+}
+
+/** The section states of a revision whose sections all validated. */
+export function validatedDebriefSections(): DebriefSectionAvailability[] {
+  return DEBRIEF_SECTIONS.map((name) => ({ name, state: "validated", reason: null }));
+}
+
 /** One whole field the review may regenerate (ADR-0037: regenerated, never edited). */
 export const MEETING_DEBRIEF_FIELDS = [
   "summary",
@@ -138,7 +198,12 @@ export interface MeetingDebriefReviewState {
     completedActionItems: number[];
   };
   /** The pending owner action the Run resumes for; null while it simply waits. */
-  request: { kind: "regenerate"; field: MeetingDebriefField } | { kind: "approve" } | null;
+  request:
+    | { kind: "regenerate"; field: MeetingDebriefField }
+    | { kind: "approve" }
+    /** The owner asked to see the checked core before the rest is ready (#345). */
+    | { kind: "early-review" }
+    | null;
   /** Set once by approval; terminal for every review mutation afterwards. */
   approval: { approvedAt: string } | null;
 }
@@ -445,6 +510,15 @@ export interface MeetingDebriefRunResult {
   transcriptId: string;
   extractedAt: string;
   debrief: MeetingDebriefExtraction;
+  /**
+   * What each required section of this stored revision resolved to (#345).
+   * The extraction keeps the model-result shape, so a failed section is
+   * emptied there and named here — and the availability travels with the
+   * bytes, so an interrupted commit that is adopted later still reads as the
+   * incomplete revision it was. Absent on results written before #345 and on
+   * producers that claim a complete revision.
+   */
+  sections?: DebriefSectionAvailability[];
 }
 
 /** Identity review state consumed for one transcript, as the Catalog holds it. */
@@ -503,6 +577,12 @@ export interface MeetingDebriefDetail {
   rosterStatus: MeetingDebriefRosterStatus;
   identity: MeetingDebriefIdentitySummary;
   extraction: MeetingDebriefExtraction | null;
+  /**
+   * The published revision's per-section availability (#345). Null when the
+   * Run holds no verified current-contract publication — a legacy projection
+   * or no publication at all — so a reader never invents section state.
+   */
+  revision?: MeetingDebriefRevisionAvailability | null;
   reviewReadiness: MeetingDebriefReviewReadiness;
   /** The review workflow's view; null before the Run holds a review record. */
   review: MeetingDebriefReviewView | null;

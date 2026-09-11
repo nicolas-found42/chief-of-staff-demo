@@ -11,7 +11,8 @@ import type { Runs } from "../../runs.js";
 import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
 import { TranscriptIdentityStore } from "../../transcript-catalog/identity-store.js";
 import type { TranscriptIdentityService } from "../../transcript-catalog/identity.js";
-import { MEETING_DEBRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
+import { DEBRIEF_SECTIONS, MEETING_DEBRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
+import type { DebriefSectionName } from "@chief-of-staff-demo/shared";
 import { MeetingDebriefHost, type MeetingDebriefHostDeps } from "./host.js";
 import { workspaceProfileDirectory } from "./profiles.js";
 import { PersonProfileStore } from "../../person-profile/store.js";
@@ -67,6 +68,13 @@ export interface MeetingDebriefTestRuntime {
   drafts: DebriefDraft[];
   failNextDraft(): void;
   setExtraction(transcriptId: string, extraction: MeetingDebriefExtraction): void;
+  /**
+   * Declare sections this harness's extraction cannot produce (#345): the
+   * checked Action Items survive, and the named sections are published as
+   * unavailable. Clearing them is how a retry becomes observable.
+   */
+  failSections(names: readonly DebriefSectionName[], reason?: string): void;
+  clearSectionFailures(): void;
   host: MeetingDebriefHost;
   /** Writes the immutable artifact + identity state, then hands the record to
    *  the host at the exact seam the Catalog calls on mining completion. */
@@ -179,6 +187,8 @@ export function createMeetingDebriefTestRuntime(
   let nowMs = Date.now();
   const drafts: DebriefDraft[] = [];
   let failNextDraft = false;
+  const failedSections = new Set<DebriefSectionName>();
+  let sectionFailureReason: string | null = null;
   const fixtureExtractions = new Map<string, MeetingDebriefExtraction>();
   const host = new MeetingDebriefHost({
     outputs: {
@@ -197,6 +207,14 @@ export function createMeetingDebriefTestRuntime(
       getTranscript: (transcriptId) => catalogStore.readTranscript(transcriptId),
     },
     identity: options.identity,
+    sections: () =>
+      DEBRIEF_SECTIONS.map((name) => ({
+        name,
+        state: failedSections.has(name) ? ("failed" as const) : ("validated" as const),
+        reason: failedSections.has(name)
+          ? (sectionFailureReason ?? "the section provider refused this request")
+          : null,
+      })),
     extract: async ({ record, identity }) =>
       fixtureExtractions.get(record.id) ??
       deterministicDebriefExtraction(record, { mentions: identity.mentions }),
@@ -228,6 +246,15 @@ export function createMeetingDebriefTestRuntime(
     drafts,
     failNextDraft() {
       failNextDraft = true;
+    },
+    failSections(names, reason) {
+      failedSections.clear();
+      for (const name of names) failedSections.add(name);
+      sectionFailureReason = reason ?? null;
+    },
+    clearSectionFailures() {
+      failedSections.clear();
+      sectionFailureReason = null;
     },
     setExtraction(transcriptId, extraction) {
       fixtureExtractions.set(transcriptId, extraction);
@@ -281,6 +308,24 @@ export function registerMeetingDebriefTestRoutes(
     runtime.failNextDraft();
     return { ok: true };
   });
+  /**
+   * Declare which sections this runtime's extraction cannot produce (#345),
+   * so a browser journey can see an incomplete, review-only publication and
+   * the recovery that follows.
+   */
+  app.post("/api/test/meeting-debrief/section-failures", async (request, reply) => {
+    const body = (request.body ?? {}) as { sections?: unknown; reason?: unknown };
+    if (!Array.isArray(body.sections) || !body.sections.every((name) => typeof name === "string")) {
+      reply.code(400).send({ error: "invalid-section-list" });
+      return;
+    }
+    runtime.failSections(
+      body.sections as DebriefSectionName[],
+      typeof body.reason === "string" ? body.reason : undefined,
+    );
+    return { ok: true, sections: body.sections };
+  });
+
   app.post("/api/test/meeting-debrief/extraction", async (request) => {
     const body = request.body as { transcriptId: string; extraction: MeetingDebriefExtraction };
     runtime.setExtraction(body.transcriptId, body.extraction);
