@@ -139,11 +139,16 @@ export function buildResponsibilityClaim(input: {
     else laterUpdates.push({ kind: update.kind, occurrence: occurrence(turn) });
   }
   const performer = input.performer;
-  if (statementTurn === null)
-    problem("no source turn establishes this obligation, so nothing supports its responsibility");
   if (performer.name === null)
     problem(`the obligation has no sole explicit performer (basis ${performer.basis})`);
   let relationship = input.judgement.relationship;
+  if (statementTurn === null) {
+    problem("no source turn establishes this obligation, so nothing supports its responsibility");
+    if (relationship !== "unresolved") {
+      relationship = "unresolved";
+      problem("the obligation's own turn did not resolve, so no relationship can be supported");
+    }
+  }
   const speaker = statementTurn?.speaker ?? null;
   const anonymousSpeaker = speaker !== null && ANONYMOUS_SPEAKER.test(speaker);
   if (relationship === "self-commitment") {
