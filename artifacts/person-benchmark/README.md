@@ -76,6 +76,34 @@ returns `not-comparable` and exit 1. It has an explicitly rejected positive: Ana
 chairmanship was called recovered even though the judge's rationale says the required date and
 family detail are missing. Do not treat that positive alone as the required improvement.
 
+## Expanded candidate arm (#258)
+
+`live-discovery-expanded-873614ead458212f` is the candidate half of the frozen acceptance pair:
+30 of 30 people researched, 30 of 30 assessments executed, collection scenario
+`directing-and-screenwriting` completed with `bong-joon-ho` not recovered — the same scenario
+outcome the incumbent baseline records. It ran at gitSha `0f9009b37e82ddb6c259c3a30462b1de7fb1bc9e`
+(the #248 merge), 2026-09-11T05:54:08Z–06:17:51Z, against corpus `14bca86ee0b97d28`, research
+`openrouter inception/mercury-2.5-preview`, judge `openrouter z-ai/glm-5.3-flash 2026-09-06.10`,
+prompt `2026-09-06.4`, allowance 180 calls / 900000 ms per operation, read concurrency 4, four
+people at once, live anonymous network, 7,457,500 tokens / $0.645359 provider-observed.
+
+Its top-level status is honestly **failed**: all research operations concluded `completed`, but the
+judge support/usefulness phase failed for five people (`bong-joon-ho`, `doug-mcmillon` — request
+ceiling while a call was in flight; `chimamanda-ngozi-adichie` — provider returned the answer in
+`tool_calls` with empty content; `hilary-cottam`, `laurent-freixe` — support findings naming
+non-verbatim statements). Recovery credit is withheld for those five until their assessments are
+recovered; the paired comparison and that recovery belong to #259, so no per-person recovery number
+here is a comparison verdict.
+
+`diagnostics-2026-09-11/` (local, not committed — the reports under this directory are the
+committed artifacts, per the artifacts policy in `.gitignore`) holds the two superseded attempts
+that produced this arm: run `453489580a2bc969`, which took the Workspace config's model
+(`openrouter inception/mercury-2.5`) for **both** research and judge and therefore could never pair
+with the baseline, and run `334574ff96efe9a0`, interrupted after 5 of 30 people. The five fully
+assessed people from the interrupted run were carried into the arm with `--retry`; their person and
+operation records are committed here under that run's id, because a carried person's record keeps
+the run that produced it.
+
 ## Frozen acceptance corpus (#243)
 
 Corpus `14bca86ee0b97d28` (content identity from `loadCorpus`, sha256 over the
