@@ -212,7 +212,7 @@ jobs:
       - run: install -d -m 0777 workspace
       - name: Compose canaries from the production image without external calls
         run: |
-          docker compose run --rm --no-deps --no-build \
+          docker compose run --rm --no-deps \
             --volume "$PWD/scripts:/app/scripts:ro" \
             app node /app/scripts/run-canaries.mjs --check
       - run: docker compose up -d --no-build
