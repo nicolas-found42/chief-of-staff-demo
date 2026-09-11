@@ -10,6 +10,7 @@ dist/
 .prettiercache
 playwright-report/
 test-results/
+blob-report/
 coverage/
 ACCESSIBILITY-AUDIT.md
 .archive/
