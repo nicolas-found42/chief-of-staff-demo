@@ -39,27 +39,22 @@ export function writeTerminalRunOutcome(input: TerminalRunOutcomeInput): void {
     input.writeFile ?? ((path: string, contents: string) => writeFileSync(path, contents));
   const remove = input.remove ?? ((path: string) => rmSync(path, { force: true }));
   const contents = `${JSON.stringify(input.body, null, 2)}\n`;
+  const attempt = (path: string, action: () => void): void => {
+    try {
+      action();
+    } catch (error) {
+      throw new TerminalOutcomeWriteError(path, error);
+    }
+  };
+  /* The order is deliberate, so the two arms are not interchangeable: a success
+     writes its output before dropping a stale error record, while a failure
+     drops a stale output before writing its record — a crash between the two
+     calls then leaves a readable file rather than the wrong one. */
   if (input.kind === "success") {
-    try {
-      write(input.outFile, contents);
-    } catch (error) {
-      throw new TerminalOutcomeWriteError(input.outFile, error);
-    }
-    try {
-      remove(input.errFile);
-    } catch (error) {
-      throw new TerminalOutcomeWriteError(input.errFile, error);
-    }
+    attempt(input.outFile, () => write(input.outFile, contents));
+    attempt(input.errFile, () => remove(input.errFile));
     return;
   }
-  try {
-    remove(input.outFile);
-  } catch (error) {
-    throw new TerminalOutcomeWriteError(input.outFile, error);
-  }
-  try {
-    write(input.errFile, contents);
-  } catch (error) {
-    throw new TerminalOutcomeWriteError(input.errFile, error);
-  }
+  attempt(input.outFile, () => remove(input.outFile));
+  attempt(input.errFile, () => write(input.errFile, contents));
 }

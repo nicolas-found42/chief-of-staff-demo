@@ -127,6 +127,8 @@ export function mockModelPriceEvidence(models: readonly string[]): Map<string, M
       model,
       inputDollarsPerMillion: 0,
       outputDollarsPerMillion: 0,
+      /* The mock provider answers from a file and has no real capacity; the
+         value only relaxes the pre-dispatch context check for this dry run. */
       contextWindowTokens: 1_000_000,
     });
   }
@@ -138,8 +140,8 @@ interface SlotFacts {
   status: Exclude<CampaignTerminalStatus, "missing">;
   reason: string | null;
   artifactPath: string | null;
+  /** Dispatch start to terminal write; the runner adds the slot's own wait. */
   processingMs: number;
-  totalMs: number;
   attempts?: number | undefined;
   timeline: readonly ModelTimelineEntry[];
   ledger: OperationBudgetSnapshot | null;
@@ -245,20 +247,16 @@ export async function runValidationCampaign(
 
   await forEachOfLimit(open, options.concurrency ?? 4, async (slot) => {
     if (options.signal?.aborted) return;
+    /* Total user-visible elapsed time begins when this slot's turn starts, so
+       it includes waiting behind the pool's other slots; processing time is
+       what the executor measured from dispatch. */
+    const launchedAt = now().getTime();
     let facts: SlotFacts;
     try {
       facts = await options.executor.execute(slot);
     } catch (error) {
       const { status, reason } = statusForExtractionError(error);
-      facts = {
-        status,
-        reason,
-        artifactPath: null,
-        processingMs: 0,
-        totalMs: 0,
-        timeline: [],
-        ledger: null,
-      };
+      facts = { status, reason, artifactPath: null, processingMs: 0, timeline: [], ledger: null };
     }
     const outcome = deriveSlotOutcome({
       slot,
@@ -267,7 +265,7 @@ export async function runValidationCampaign(
       artifactPath: facts.artifactPath,
       attempts: facts.attempts,
       processingMs: facts.processingMs,
-      totalMs: facts.totalMs,
+      totalMs: now().getTime() - launchedAt,
       timeline: facts.timeline,
       ledger: facts.ledger,
       recordedAt: now().toISOString(),
@@ -338,6 +336,11 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
   const readText = options.readFileText ?? ((path: string) => readFileSync(path, "utf8"));
   const extract = options.extract ?? extractDebriefCandidates;
 
+  /* The test seam's own overrides, built once and spread into every write. */
+  const fileSeams = {
+    ...(options.writeFile !== undefined ? { writeFile: options.writeFile } : {}),
+    ...(options.removeFile !== undefined ? { remove: options.removeFile } : {}),
+  };
   return {
     async execute(slot: CampaignSlot): Promise<SlotFacts> {
       prepareColdSlotRoot(slot.root);
@@ -351,7 +354,6 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
         reason,
         artifactPath: null,
         processingMs: now().getTime() - started,
-        totalMs: now().getTime() - started,
         timeline: options.timeline.getOperationTimeline(slot.operationId),
         ledger: options.ledger.getOperationSnapshot(slot.operationId),
       });
@@ -376,8 +378,7 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
               errFile: `${files.errFile}.candidate-${name}.json`,
               body: value,
               kind: "success",
-              ...(options.writeFile !== undefined ? { writeFile: options.writeFile } : {}),
-              ...(options.removeFile !== undefined ? { remove: options.removeFile } : {}),
+              ...fileSeams,
             });
           },
         });
@@ -393,8 +394,7 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
               raw: checked.extraction,
               strategy: options.strategy,
             },
-            ...(options.writeFile !== undefined ? { writeFile: options.writeFile } : {}),
-            ...(options.removeFile !== undefined ? { remove: options.removeFile } : {}),
+            ...fileSeams,
           });
         } catch (error) {
           const reason =
@@ -423,8 +423,7 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
               error: diagnostic.slice(0, 2000),
               diagnostic: null,
             },
-            ...(options.writeFile !== undefined ? { writeFile: options.writeFile } : {}),
-            ...(options.removeFile !== undefined ? { remove: options.removeFile } : {}),
+            ...fileSeams,
           });
         } catch (writeError) {
           return {

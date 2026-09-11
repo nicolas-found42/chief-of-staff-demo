@@ -24,6 +24,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DEBRIEF_OPERATION_BUDGET_DOLLARS_DEFAULT,
   type CampaignFreezeFacts,
   type CampaignManifest,
   type CampaignModelRoute,
@@ -270,7 +271,7 @@ export async function runValidationCampaignCli(
       corpus: corpus.revision,
       models: modelRoutes,
       campaignBudgetDollars: campaign.allowedDollars,
-      operationBudgetDollars: 2,
+      operationBudgetDollars: DEBRIEF_OPERATION_BUDGET_DOLLARS_DEFAULT,
       coldRoot,
     };
 

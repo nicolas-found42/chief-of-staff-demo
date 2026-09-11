@@ -452,6 +452,9 @@ describe("terminal outcomes", () => {
     }
     expect(statusForExtractionError(shapeFailure).status).toBe("schema-invalid");
     expect(statusForExtractionError(new Error("connection reset")).status).toBe("failed");
+    const aborted = new Error("the caller aborted");
+    aborted.name = "AbortError";
+    expect(statusForExtractionError(aborted).status).toBe("interrupted");
   });
 
   it("round-trips the append-only outcome log encoding", () => {
@@ -912,6 +915,8 @@ describe("campaign runner and extraction executor", () => {
     expect(outcome.status).toBe("success");
     expect(outcome.chargedAttempts).toBe(1);
     expect(outcome.costDollars).toBe(0);
+    // Total elapsed time covers the slot's own turn; processing time does not.
+    expect(outcome.totalMs).toBeGreaterThanOrEqual(outcome.processingMs);
     expect(readFileSync(outcome.artifactPath!, "utf8")).toContain('"valid": true');
     expect(seen[0].checkpoint).toBeUndefined();
     expect(seen[0].operationId).toBe(manifest.slots[0].operationId);
