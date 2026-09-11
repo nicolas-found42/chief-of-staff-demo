@@ -12,9 +12,14 @@ import { parseDocument } from "yaml";
 const workflowDir = process.argv[2] ?? ".github/workflows";
 const problems = [];
 
-for (const entry of readdirSync(workflowDir)
+const entries = readdirSync(workflowDir)
   .filter((name) => /\.ya?ml$/.test(name))
-  .sort()) {
+  .sort();
+if (entries.length === 0) {
+  console.error(`workflow validation failed: no .yml/.yaml files found in ${workflowDir}`);
+  process.exit(1);
+}
+for (const entry of entries) {
   const file = join(workflowDir, entry);
   const document = parseDocument(readFileSync(file, "utf8"));
   for (const error of document.errors) problems.push(`${file}: ${error.message}`);
