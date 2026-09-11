@@ -104,6 +104,43 @@ assessed people from the interrupted run were carried into the arm with `--retry
 operation records are committed here under that run's id, because a carried person's record keeps
 the run that produced it.
 
+The five withheld assessments this arm carried (`bong-joon-ho`, `chimamanda-ngozi-adichie`,
+`doug-mcmillon`, `hilary-cottam`, `laurent-freixe`) were recovered under #259: see the acceptance
+comparison section below.
+
+## Acceptance comparison (#259)
+
+The acceptance pair is published as `comparison.json` / `comparison.md`, regenerated from the
+frozen pair — baseline `live-discovery-incumbent-7aa090c5424ab6c3` versus candidate
+`live-discovery-expanded-8ebc59982210a118`. It **supersedes** the 2026-09-07 record
+(`6e82a760755b66a5` versus `18b5f48848d63553`, not comparable) those two files previously held;
+that pair's own [reports](fixed-documents-expanded-6e82a760755b66a5.json) remain committed and
+unchanged, so nothing earlier is relabelled.
+
+Recovering the candidate half's five withheld assessments took one live `--retry` run,
+`live-discovery-expanded-8ebc59982210a118` (`8ebc59982210a118`), 2026-09-11T16:42:56Z–17:02:21Z at
+gitSha `e4eb962993c40a8942913f6c82d7d859287a33fe`: corpus `14bca86ee0b97d28`, research
+`openrouter inception/mercury-2.5-preview`, planner the same, judge
+`openrouter z-ai/glm-5.3-flash 2026-09-06.10`, prompt `2026-09-06.4`, live anonymous network. It
+carried the 25 already-assessed people and re-ran the five withheld ones (four people at once, 180
+calls / 900000 ms per operation, no overrides), spending **$0.286029** / 2,131,257 in / 1,193,648
+out provider-observed tokens. Four of the five now carry completed assessments
+(`bong-joon-ho` 2/7, `chimamanda-ngozi-adichie` 2/8, `hilary-cottam` 0/5, `laurent-freixe` 2/9);
+`doug-mcmillon`'s support/usefulness phase failed again on a request ceiling while a call was in
+flight, so its recovery credit stays withheld and the run reports **failed**, as recorded.
+
+The comparison reads **not-comparable** and exits 1 honestly: one candidate person lacks a completed
+assessment, and the evaluator refuses a population delta it could not fully assess. What is
+measured, across the 29 of 30 pairs both sides assessed: recovery rises from 3 to 26 of 277
+reference facts with zero new critical integrity findings — but the candidate side records 28
+wrong-person attributions the incumbent does not (all newly introduced identities; three of them on
+`hilary-cottam` from this recovery run), so no improvement verdict is established either. The
+per-person, grouped (85 labelled slices), coverage-gap and failure-breakdown comparisons, and the
+recovery audit that re-checks every credited recovery against its own reference and claim text, are
+in `comparison.json` / `comparison.md`. Remaining misses stay per person in both reports (candidate
+251: 207 app-supported, 44 beyond current coverage) as the follow-up acceptance targets. See
+[the validation record](../../docs/research/person-benchmark-validation-2026-09-11.md).
+
 ## Frozen acceptance corpus (#243)
 
 Corpus `14bca86ee0b97d28` (content identity from `loadCorpus`, sha256 over the
