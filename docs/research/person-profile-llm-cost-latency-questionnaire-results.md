@@ -14,8 +14,6 @@
 
 No baseline measurements exist yet, so the figures below are conditional estimates and worked examples—not measured forecasts. 
 
-[Download the completed questionnaire as editable Markdown](sandbox:/mnt/data/person-profile-llm-cost-latency-completed.md)
-
 ---
 
 ## Establish the baseline first
