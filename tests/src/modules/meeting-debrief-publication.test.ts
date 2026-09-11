@@ -7,6 +7,7 @@ import {
   MEETING_DEBRIEF_MODULE_ID,
   type MeetingDebriefExtraction,
   type MeetingDebriefReviewState,
+  type ActionItemMaterializationMapping,
   type MeetingDebriefRunResult,
   type TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
@@ -129,7 +130,7 @@ function makeHarness(): Harness {
       dropNext = false;
       return [];
     }
-    return handover.actionItems.map((_, index) => ({
+    return handover.actionItems.map((item, index) => ({
       key: `materialization:v1:${handover.debriefRunId}:ce_${index}`,
       debriefRunId: handover.debriefRunId,
       outputEntryId: `ce_${index}`,
@@ -138,6 +139,24 @@ function makeHarness(): Harness {
       actionItemId: `ai_${handover.debriefRunId}_${index}`,
       proposalRevision: 1,
       allocatedAt: new Date(BASE_TIME).toISOString(),
+      /* What the checked entry's dependencies resolved to against the output
+         this materializer was handed. */
+      dependencies: (item.handoff?.dependencies ?? []).map((dependency, position) => ({
+        index: position,
+        wording: dependency.actionTitle,
+        target: {
+          kind: "output" as const,
+          outputEntryId: `ce_${
+            handover.actionItems.findIndex(
+              (candidate) => candidate.title === dependency.actionTitle,
+            ) >= 0
+              ? handover.actionItems.findIndex(
+                  (candidate) => candidate.title === dependency.actionTitle,
+                )
+              : index
+          }`,
+        },
+      })),
     }));
   };
 
@@ -709,6 +728,7 @@ describe("Debrief final-write faults (#358)", () => {
           actionItemId: "ai_run_pubF_1_0",
           proposalRevision: 1,
           allocatedAt: new Date(BASE_TIME).toISOString(),
+          dependencies: [],
         },
       ],
       hasMaterializationSurface: true,
@@ -765,5 +785,138 @@ describe("Debrief final-write faults (#358)", () => {
     expect(outcome.reconciled).toBe("recovered");
     expect(outcome.publication.revisionId).toBe("r1");
     expect(writable.files.get("completion.json")).toBeTruthy();
+  });
+});
+/**
+ * The immutable dependency map travels with the publication (#347, MWR-048).
+ * A revision's manifest records what each checked entry depended on, resolved
+ * to the entries that revision actually checked — and refuses a map naming
+ * anything else rather than publishing a reference nothing can resolve.
+ */
+describe("Debrief dependency map (MWR-048)", () => {
+  const record = makeRecord({ id: "drive_pubD_r1" });
+
+  function io() {
+    const files = new Map<string, string>();
+    return {
+      files,
+      read: (name: string) => files.get(name) ?? null,
+      write: (name: string, text: string) => void files.set(name, text),
+      names: () => [...files.keys()],
+    };
+  }
+
+  async function publish(dependencies: ActionItemMaterializationMapping["dependencies"]) {
+    const surface = io();
+    const outcome = await reconcileDebrief({
+      io: surface,
+      names: () => surface.names(),
+      runId: "run_pubD_1",
+      record,
+      context: { version: 1, capturedAt: new Date(BASE_TIME).toISOString() } as never,
+      firstExtraction: {
+        claim: "first" as const,
+        basis: "test",
+        reservedAt: new Date(BASE_TIME).toISOString(),
+        lineageRunId: null,
+      },
+      policy: { capturedAt: new Date(BASE_TIME).toISOString(), actionItemPolicy: null },
+      intent: "publish" as const,
+      now: () => new Date(BASE_TIME),
+      produce: async () =>
+        `${JSON.stringify(
+          {
+            version: 1,
+            transcriptId: record.id,
+            extractedAt: new Date(BASE_TIME).toISOString(),
+            debrief: extractionWith(),
+          } satisfies MeetingDebriefRunResult,
+          null,
+          2,
+        )}\n`,
+      materialize: () => [
+        {
+          key: "materialization:v1:run_pubD_1:ce_0",
+          debriefRunId: "run_pubD_1",
+          outputEntryId: "ce_0",
+          candidateAlias: null,
+          payloadChecksum: "sha256:checked-0",
+          actionItemId: "ai_run_pubD_1_0",
+          proposalRevision: 1,
+          allocatedAt: new Date(BASE_TIME).toISOString(),
+          dependencies,
+        },
+      ],
+      hasMaterializationSurface: true,
+      ensureReview: () =>
+        void surface.write(
+          "review.json",
+          `${JSON.stringify({
+            version: 1,
+            runId: "run_pubD_1",
+            email: null,
+            roster: { status: "unconfirmed", confirmedAt: null, entries: [] },
+            recipients: { additional: [] },
+            review: { droppedActionItems: [], completedActionItems: [] },
+            request: null,
+            approval: null,
+          } satisfies MeetingDebriefReviewState)}\n`,
+        ),
+      event: () => {},
+    });
+    return { surface, outcome };
+  }
+
+  it("records each entry's resolved targets in the manifest", async () => {
+    const { surface, outcome } = await publish([
+      { index: 0, wording: "Approve the rollout plan", target: { kind: "external" } },
+      { index: 1, wording: "Draft the plan", target: { kind: "output", outputEntryId: "ce_0" } },
+      {
+        index: 2,
+        wording: "Book the room",
+        target: { kind: "unresolved", reason: "ambiguous-title" },
+      },
+    ]);
+
+    expect(outcome.reconciled).toBe("extracted");
+    const manifest = JSON.parse(surface.files.get("revision-r1.manifest.json")!) as {
+      materialization: { outputs: unknown[] };
+    };
+    expect(manifest.materialization.outputs).toEqual([
+      {
+        entryId: "ce_0",
+        materializationKey: "materialization:v1:run_pubD_1:ce_0",
+        payloadChecksum: "sha256:checked-0",
+        candidateAlias: null,
+        actionItemId: "ai_run_pubD_1_0",
+        proposalRevision: 1,
+        dependencies: [
+          { index: 0, wording: "Approve the rollout plan", target: { kind: "external" } },
+          {
+            index: 1,
+            wording: "Draft the plan",
+            target: { kind: "output", outputEntryId: "ce_0" },
+          },
+          {
+            index: 2,
+            wording: "Book the room",
+            target: { kind: "unresolved", reason: "ambiguous-title" },
+          },
+        ],
+      },
+    ]);
+    expect(surface.files.get("completion.json")).toBeTruthy();
+  });
+
+  it("refuses a dependency map naming an entry the revision did not check", async () => {
+    await expect(
+      publish([
+        {
+          index: 0,
+          wording: "Draft the plan",
+          target: { kind: "output", outputEntryId: "ce_404" },
+        },
+      ]),
+    ).rejects.toThrow(/dependency-target:ce_0/);
   });
 });

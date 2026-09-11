@@ -94,10 +94,25 @@ test("execution details distinguish inferred criteria and preserve keyboard focu
       item.handoff = {
         ...operationalHandoff(),
         commitment: "inferred",
-        purpose: "Make the rollout verifiable",
+        purpose: {
+          text: "Make the rollout verifiable",
+          provenance: "suggested",
+          sources: [],
+        },
+        completionCriteria: [
+          { text: "A recorded successful rollout", provenance: "inferred", sources: [] },
+        ],
+        missingInputs: [
+          {
+            information: { text: "Deployment access", provenance: "inferred", sources: [] },
+            obtainBy: {
+              text: "Ask the deployment administrator",
+              provenance: "inferred",
+              sources: [],
+            },
+          },
+        ],
       };
-      actionItemProposal(item).notes =
-        "Completion [inferred] A recorded successful rollout\nMissing input [inferred]: Deployment access. Suggested retrieval: Ask the deployment administrator";
     }
     await route.fulfill({ response, json: data });
   });
@@ -108,10 +123,11 @@ test("execution details distinguish inferred criteria and preserve keyboard focu
   await disclosure.focus();
   await page.keyboard.press("Enter");
   await expect(
-    actions
-      .getByText("Completion [inferred] A recorded successful rollout", { exact: false })
-      .first(),
+    actions.getByText("A recorded successful rollout", { exact: false }).first(),
   ).toBeVisible();
+  await expect(actions.getByText("Suggested retrieval", { exact: true }).first()).toBeVisible();
+  /* A record written before provenance existed keeps its own label. */
+  await expect(actions.getByText("Inferred", { exact: true }).first()).toBeVisible();
   await expect(disclosure).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(disclosure).toBeFocused();
@@ -172,4 +188,46 @@ test("legacy proposal anchors lead directly to the source Meeting", async ({ pag
   await page.goto(`/tasks#action-item-${item.id}`);
   await expect(page.locator(`#action-item-${item.id}`)).toBeVisible();
   await expect(page.locator(`#action-item-${item.id}`)).toContainText("Dismissed");
+});
+
+test("labels a proposed retrieval step as a suggestion rather than agreed work", async ({
+  page,
+  request,
+}) => {
+  const fixture = await (await request.post("/api/test/meetings/overview-fixture")).json();
+  await confirmMeetingOwner(request);
+  await page.route("**/api/action-items?**", async (route) => {
+    const response = await route.fetch();
+    const data = (await response.json()) as ActionItemIndex;
+    for (const item of data.items) {
+      item.handoff = {
+        ...operationalHandoff(),
+        purpose: {
+          text: "Keep the rollout verifiable",
+          provenance: "supported",
+          sources: [],
+        },
+        missingInputs: [
+          {
+            information: { text: "Deployment access", provenance: "suggested", sources: [] },
+            obtainBy: {
+              text: "Ask the deployment administrator",
+              provenance: "suggested",
+              sources: [],
+            },
+          },
+        ],
+      };
+    }
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto(`/meetings/${fixture.recent[4].id}?tab=debrief`);
+  const actions = page.getByRole("region", { name: "Action Items", exact: true });
+  await actions.locator("summary").filter({ hasText: "Execution details" }).first().click();
+
+  const suggested = actions.locator("li", { hasText: "Ask the deployment administrator" }).first();
+  await expect(suggested.getByText("Suggested retrieval", { exact: true })).toBeVisible();
+  await expect(suggested.getByText("Suggested", { exact: true }).first()).toBeVisible();
+  const supported = actions.locator("li", { hasText: "Keep the rollout verifiable" }).first();
+  await expect(supported.getByText("Supported", { exact: true }).first()).toBeVisible();
 });

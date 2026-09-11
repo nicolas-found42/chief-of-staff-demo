@@ -1,3 +1,4 @@
+import { HandoffDetail } from "./HandoffDetail";
 import { ReadingDisclosure } from "./ReadingDisclosure";
 import {
   OWNER_VALUE,
@@ -13,12 +14,14 @@ import type {
   ActionItem,
   ActionItemContext,
   PersonProfile,
+  ResolvedActionItemDependency,
   Task,
   TaskList,
   TaskPriority,
 } from "@chief-of-staff-demo/shared";
 import {
   actionItemProposal,
+  handoffPurpose,
   INBOX_TASK_LIST_ID,
   latestProposalRevision,
   promotable,
@@ -295,6 +298,8 @@ export function ActionItemRow({
   item,
   isNew = false,
   context,
+  dependencies,
+  targetTitle,
   today,
   lists,
   profiles,
@@ -307,6 +312,10 @@ export function ActionItemRow({
   item: ActionItem;
   isNew?: boolean;
   context: ActionItemContext | undefined;
+  /** This proposal's dependencies resolved to the records held now (MWR-048). */
+  dependencies?: ResolvedActionItemDependency[] | undefined;
+  /** A resolved target's current title; a label, never an identity. */
+  targetTitle?: ((actionItemId: string) => string | null) | undefined;
   today: string;
   lists: TaskList[];
   profiles: PersonProfile[];
@@ -408,11 +417,13 @@ export function ActionItemRow({
           <p>
             {item.handoff.commitment === "inferred" ? "Inferred commitment" : "Explicit commitment"}
           </p>
-          <p>{item.handoff.purpose}</p>
+          <p>{handoffPurpose(item.handoff).text}</p>
           <ReadingDisclosure id={`${item.id}-execution`} label="Execution details">
-            <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {actionItemProposal(item).notes}
-            </p>
+            <HandoffDetail
+              handoff={item.handoff}
+              references={dependencies}
+              targetTitle={targetTitle}
+            />
           </ReadingDisclosure>
         </>
       )}

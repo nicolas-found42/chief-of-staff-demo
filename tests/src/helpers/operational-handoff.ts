@@ -2,15 +2,17 @@ import type { MeetingHandoff } from "@chief-of-staff-demo/shared";
 
 export function operationalHandoff(overrides: Partial<MeetingHandoff> = {}): MeetingHandoff {
   return {
-    version: 1,
+    version: 2,
     commitment: "explicit",
-    purpose: "Let the team review the rollout",
+    purpose: { text: "Let the team review the rollout", provenance: "suggested", sources: [] },
     responsibility: {
       names: ["Alice"],
       basis: "explicit",
       reason: "Alice committed to sharing it",
     },
-    completionCriteria: [{ text: "The team can read the plan", basis: "inferred" }],
+    completionCriteria: [
+      { text: "The team can read the plan", provenance: "suggested", sources: [] },
+    ],
     requiredInputs: [],
     missingInputs: [],
     dependencies: [],

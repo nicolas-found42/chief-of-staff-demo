@@ -20,6 +20,7 @@ import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-item
 import { materializationIndex } from "../../../apps/server/src/tasks/materialization";
 import { MeetingDebriefHost } from "../../../apps/server/src/modules/meeting-debrief/host";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
+import { operationalHandoff } from "../helpers/operational-handoff";
 
 /**
  * Action Items materialized from a Meeting Debrief (issue #177): the Debrief
@@ -495,4 +496,353 @@ it("Meeting-filtered review includes source context and truthful missing evidenc
   const body = response.json();
   expect(body.items).toHaveLength(1);
   expect(body.context[body.items[0].id]).toMatchObject({ meeting: null, evidence: null });
+});
+
+/**
+ * Handoff provenance and stable dependency references (MWR-046/047/048, spec
+ * #347). The accepted Task snapshot carries the same labels the review showed,
+ * and a dependency resolves to the record it named — never to a guessed id and
+ * never to a Task nobody accepted.
+ */
+describe("handoff provenance and dependency references", () => {
+  const supported = (quote: string) => ({ quote, speaker: "Alice", timestamp: "01:12" });
+
+  /** One proposal whose execution detail depends on what the caller names. */
+  function dependent(
+    ...dependencies: Array<{ actionTitle: string; references: "extracted" | "external" }>
+  ) {
+    return proposal({
+      title: "Follow up on the billing fix",
+      handoff: {
+        ...operationalHandoff(),
+        purpose: {
+          text: "Let the team review the rollout",
+          provenance: "supported",
+          sources: [supported("We will do this together")],
+        },
+        completionCriteria: [
+          { text: "A recorded successful rollout", provenance: "suggested", sources: [] },
+        ],
+        missingInputs: [
+          {
+            information: { text: "Deployment access", provenance: "suggested", sources: [] },
+            obtainBy: {
+              text: "Ask the deployment administrator",
+              provenance: "suggested",
+              sources: [],
+            },
+          },
+        ],
+        dependencies: dependencies.map((dependency) => ({
+          ...dependency,
+          condition: "Only after approval",
+          provenance: "suggested" as const,
+          sources: [],
+        })),
+      },
+    });
+  }
+
+  async function referencesFor(items: ActionItem[], title: string) {
+    const index = (await app.inject("/api/action-items")).json<ActionItemIndex>();
+    const item = items.find((entry) => actionItemProposal(entry).title === title);
+    return index.dependencies?.[item!.id] ?? [];
+  }
+
+  it("promotes the labelled detail into the accepted Task snapshot", async () => {
+    proposed = [
+      proposal({ title: "Approve the rollout plan" }),
+      dependent({ actionTitle: "Approve the rollout plan", references: "extracted" }),
+    ];
+    await debrief();
+    const items = await queue();
+    const target = items.find(
+      (item) => actionItemProposal(item).title === "Approve the rollout plan",
+    )!;
+    const item = items.find(
+      (item) => actionItemProposal(item).title === "Follow up on the billing fix",
+    )!;
+
+    const references = await referencesFor(items, "Follow up on the billing fix");
+    expect(references).toEqual([
+      {
+        wording: "Approve the rollout plan",
+        condition: "Only after approval",
+        provenance: "suggested",
+        target: {
+          kind: "action-item",
+          actionItemId: target.id,
+          proposalRevision: 1,
+          redirectedFrom: null,
+        },
+      },
+    ]);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+    expect(response.statusCode).toBe(201);
+    const task = response.json<{ task: { notes: string } }>().task;
+    expect(task.notes).toContain("Purpose [supported]: Let the team review the rollout");
+    expect(task.notes).toContain("Completion [suggested] A recorded successful rollout");
+    expect(task.notes).toContain(
+      "Suggested retrieval [suggested]: Ask the deployment administrator",
+    );
+    expect(task.notes).toContain(
+      "Dependency [suggested]: Approve the rollout plan. Only after approval",
+    );
+
+    /* A reference is not scheduling: the proposal it named is still a proposal,
+       and no Task stands in for it. */
+    const tasks = await app.inject({ method: "GET", url: "/api/tasks" });
+    expect(tasks.json<{ tasks: unknown[] }>().tasks).toHaveLength(1);
+    expect((await queue("?state=pending")).map((entry) => actionItemProposal(entry).title)).toEqual(
+      ["Approve the rollout plan"],
+    );
+  });
+
+  it("keeps the reference when the target is renamed, revised or dismissed", async () => {
+    proposed = [
+      proposal({ title: "Approve the rollout plan" }),
+      dependent({ actionTitle: "Approve the rollout plan", references: "extracted" }),
+    ];
+    await debrief();
+    const items = await queue();
+    const target = items.find(
+      (item) => actionItemProposal(item).title === "Approve the rollout plan",
+    )!;
+    const item = items.find(
+      (item) => actionItemProposal(item).title === "Follow up on the billing fix",
+    )!;
+
+    const corrected = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${target.id}/correct-proposal`,
+      payload: {
+        content: {
+          title: "Approve the revised rollout plan",
+          notes: "",
+          dueDate: null,
+          responsiblePerson: null,
+        },
+      },
+    });
+    expect(corrected.statusCode).toBe(200);
+    expect(
+      (await queue()).find((entry) => entry.id === target.id)?.proposalRevisions.at(-1)?.revision,
+    ).toBe(2);
+
+    const renamed = await referencesFor(await queue(), "Follow up on the billing fix");
+    expect(renamed).toHaveLength(1);
+    expect(renamed[0]).toMatchObject({
+      /* The wording is the transcript's, not the target's current label. */
+      wording: "Approve the rollout plan",
+      target: { kind: "action-item", actionItemId: target.id, proposalRevision: 1 },
+    });
+
+    const dismissed = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${target.id}/dismiss`,
+    });
+    expect(dismissed.statusCode).toBe(200);
+    const afterDismissal = await referencesFor(await queue(), "Follow up on the billing fix");
+    expect(afterDismissal[0]?.target).toMatchObject({
+      kind: "action-item",
+      actionItemId: target.id,
+    });
+    void item;
+  });
+
+  it("follows a reconciliation redirect and keeps the identity it originally named", async () => {
+    proposed = [
+      proposal({ title: "Approve the rollout plan" }),
+      proposal({ title: "Previous rollout approval" }),
+      dependent({ actionTitle: "Approve the rollout plan", references: "extracted" }),
+    ];
+    await debrief();
+    const items = await queue();
+    const target = items.find(
+      (item) => actionItemProposal(item).title === "Approve the rollout plan",
+    )!;
+    const historical = items.find(
+      (item) => actionItemProposal(item).title === "Previous rollout approval",
+    )!;
+
+    const attached = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${target.id}/reconcile`,
+      payload: { disposition: "evidence-of-historical", targetActionItemId: historical.id },
+    });
+    expect(attached.statusCode).toBe(200);
+
+    const references = await referencesFor(await queue(), "Follow up on the billing fix");
+    expect(references[0]?.target).toEqual({
+      kind: "action-item",
+      actionItemId: historical.id,
+      proposalRevision: 1,
+      redirectedFrom: target.id,
+    });
+
+    /* A chain that would point back at itself is refused rather than stored. */
+    const cycle = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${historical.id}/reconcile`,
+      payload: { disposition: "evidence-of-historical", targetActionItemId: target.id },
+    });
+    expect(cycle.statusCode).toBe(409);
+    expect(cycle.json<{ error: string }>().error).toBe("action-item-reconciliation-invalid");
+  });
+
+  it("leaves equal titles unresolved and keeps an external target a description", async () => {
+    proposed = [
+      proposal({ title: "Approve the rollout plan" }),
+      proposal({ title: "Approve the rollout plan", owner: "Bob" }),
+      dependent(
+        { actionTitle: "Approve the rollout plan", references: "extracted" },
+        { actionTitle: "Finance approval", references: "external" },
+      ),
+    ];
+    await debrief();
+    const items = await queue();
+    expect(items).toHaveLength(3);
+
+    const equal = await referencesFor(items, "Follow up on the billing fix");
+    expect(equal.map((entry) => entry.target)).toEqual([
+      { kind: "unresolved", reason: "ambiguous-title" },
+      { kind: "external" },
+    ]);
+
+    /* Neither an ambiguous nor an outside target is guessed at, and neither
+       creates work: three proposals are still three proposals and no Task
+       exists. */
+    const tasks = await app.inject({ method: "GET", url: "/api/tasks" });
+    expect(tasks.json<{ tasks: unknown[] }>().tasks).toEqual([]);
+    expect(await queue("?state=pending")).toHaveLength(3);
+  });
+
+  it("never resolves an older record's title against today's proposals", () => {
+    const legacy = {
+      ...proposal({ title: "Follow up on the billing fix" }),
+      handoff: {
+        version: 1 as const,
+        commitment: "explicit" as const,
+        purpose: "Make the rollout verifiable",
+        responsibility: { names: ["Alice"], basis: "explicit" as const, reason: "She said so" },
+        completionCriteria: [{ text: "A recorded rollout", basis: "inferred" as const }],
+        requiredInputs: ["Rollout plan"],
+        missingInputs: [
+          {
+            information: "Deployment access",
+            obtainBy: "Ask the deployment administrator",
+            basis: "inferred" as const,
+          },
+        ],
+        dependencies: [
+          {
+            actionTitle: "Approve the rollout plan",
+            condition: "Only after approval",
+            basis: "explicit" as const,
+          },
+        ],
+        timing: {
+          kind: "deadline" as const,
+          stated: "tomorrow",
+          referenceDate: null,
+          reasoning: "Relative to the meeting",
+        },
+        evidence: [{ quote: "We will do this together", speaker: "Alice", timestamp: "01:12" }],
+        statusReasoning: "Still outstanding",
+      },
+    };
+    proposed = [proposal({ title: "Approve the rollout plan" }), legacy];
+    return debrief().then(async () => {
+      const items = await queue();
+      const references = await referencesFor(items, "Follow up on the billing fix");
+      expect(references).toEqual([
+        {
+          wording: "Approve the rollout plan",
+          condition: "Only after approval",
+          provenance: "explicit",
+          target: { kind: "unresolved", reason: "not-resolved" },
+        },
+      ]);
+      const stored = items.find(
+        (item) => actionItemProposal(item).title === "Follow up on the billing fix",
+      );
+      /* The record keeps the shape it was written in, and its labels. */
+      expect(stored?.handoff?.version).toBe(1);
+      /* An unlabelled field of an older record reads as unknown; the labels it
+         did carry keep their own words. */
+      expect(actionItemProposal(stored!).notes).toContain("Required input [unknown]: Rollout plan");
+      expect(actionItemProposal(stored!).notes).toContain(
+        "Completion [inferred] A recorded rollout",
+      );
+      expect(actionItemProposal(stored!).notes).toContain("Dependency [explicit]:");
+      /* The one label an older record carried described the gap; its retrieval
+         step was always a suggestion and stays one. */
+      expect(actionItemProposal(stored!).notes).toContain(
+        "Suggested retrieval [inferred]: Ask the deployment administrator",
+      );
+      expect(actionItemProposal(stored!).notes).not.toContain("Retrieval [explicit]");
+    });
+  });
+});
+
+/**
+ * The dependency map reaches the publication, not only the record (#347). The
+ * manifest's output mapping is what a later reader can verify the resolution
+ * against, so the real materializer's answer must be the one recorded there.
+ */
+it("records the resolved dependency map in the published revision's manifest", async () => {
+  proposed = [
+    proposal({ title: "Approve the rollout plan" }),
+    proposal({
+      title: "Follow up on the billing fix",
+      handoff: {
+        ...operationalHandoff(),
+        dependencies: [
+          {
+            actionTitle: "Approve the rollout plan",
+            condition: "Only after approval",
+            provenance: "suggested",
+            sources: [],
+            references: "extracted",
+          },
+        ],
+      },
+    }),
+  ];
+  const runId = await debrief();
+  const manifest = JSON.parse(runs.open(runId)!.readArtifact("revision-r1.manifest.json")!) as {
+    materialization: {
+      outputs: Array<{
+        entryId: string;
+        actionItemId: string;
+        dependencies: Array<{ wording: string; target: { kind: string; outputEntryId?: string } }>;
+      }>;
+    };
+  };
+
+  const outputs = manifest.materialization.outputs;
+  expect(outputs).toHaveLength(2);
+  const dependent = outputs.find((output) => output.dependencies.length > 0)!;
+  const target = outputs.find((output) => output.entryId !== dependent.entryId)!;
+  expect(dependent.dependencies).toEqual([
+    {
+      index: 0,
+      wording: "Approve the rollout plan",
+      target: { kind: "output", outputEntryId: target.entryId },
+    },
+  ]);
+  /* The map names only entries this revision checked, and the entry it names is
+     the Action Item the target materialized into. */
+  expect(outputs.map((output) => output.entryId)).toContain(
+    dependent.dependencies[0]?.target.outputEntryId,
+  );
+  expect(target.actionItemId).toBe(
+    (await queue()).find((item) => actionItemProposal(item).title === "Approve the rollout plan")
+      ?.id,
+  );
 });

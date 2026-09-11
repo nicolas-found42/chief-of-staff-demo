@@ -187,6 +187,11 @@ export function MeetingActionItems({
               isNew={newIds.includes(item.id)}
               item={item}
               context={index?.context?.[item.id]}
+              dependencies={index?.dependencies?.[item.id]}
+              targetTitle={(actionItemId: string) => {
+                const target = index?.items.find((entry) => entry.id === actionItemId);
+                return target ? actionItemProposal(target).title : null;
+              }}
               today={tasks.today}
               lists={tasks.lists}
               profiles={profiles}

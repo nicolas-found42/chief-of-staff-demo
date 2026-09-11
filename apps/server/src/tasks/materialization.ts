@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import type {
   ActionItem,
+  ActionItemDependencyMapping,
   ActionItemMaterializationMapping,
   ActionItemOccurrence,
-  MeetingHandoff,
+  HandoffDependencyTarget,
+  MeetingHandoffRecord,
   TaskResponsiblePerson,
 } from "@chief-of-staff-demo/shared";
+import { handoffDependencies } from "@chief-of-staff-demo/shared";
 
 /**
  * Exact materialization (#355, MWR-010): a checked extraction entry becomes a
@@ -45,7 +48,7 @@ export interface CheckedEntryPayload {
    * automatic promotion read, so two entries that agree on every displayed
    * field and disagree here are two entries, not one.
    */
-  handoff: MeetingHandoff | null;
+  handoff: MeetingHandoffRecord | null;
 }
 
 /** One checked output entry with the local accounting the pipeline kept for it. */
@@ -86,6 +89,67 @@ function canonicalJson(value: unknown): string {
 /** The checksum of one entry payload, as recorded in its mapping. */
 export function payloadChecksum(payload: CheckedEntryPayload): string {
   return `sha256:${createHash("sha256").update(canonicalJson(payload)).digest("hex")}`;
+}
+
+/**
+ * One entry's dependency targets, resolved against the checked output the entry
+ * came from (#347, MWR-048).
+ *
+ * The claim is the model's (`references`); the identity is not. The Module
+ * resolves it against the entries it actually checked, so a target is an
+ * entry identity or an honest non-answer: nothing matches, two entries share
+ * the wording, or the dependency names its own entry. An `external`
+ * declaration is never matched by title at all — an outside target is a
+ * description, not a reference to something in this Workspace.
+ *
+ * Positions are the checked array's own, so the answer travels with the
+ * entries rather than with a later ordering of them.
+ */
+export function resolveDependencyTargets(
+  entries: readonly CheckedOutputEntry[],
+): HandoffDependencyTarget[][] {
+  const titles = entries.map((entry) => normalizeTitle(entry.payload.title));
+  return entries.map((entry, index) => {
+    const handoff = entry.payload.handoff;
+    if (handoff === null || handoff.version === 1) return [];
+    return handoff.dependencies.map((dependency): HandoffDependencyTarget => {
+      if (dependency.references === "external") return { kind: "external" };
+      const wording = normalizeTitle(dependency.actionTitle);
+      const named = titles.flatMap((title, candidate) => (title === wording ? [candidate] : []));
+      /* Two entries sharing the wording are two obligations, and which one was
+         meant is not something a title can answer — not even when one of them
+         is the entry asking. */
+      if (named.length > 1) return { kind: "unresolved", reason: "ambiguous-title" };
+      if (named.length === 0) return { kind: "unresolved", reason: "not-extracted" };
+      if (named[0] === index) return { kind: "unresolved", reason: "self-reference" };
+      return { kind: "output", outputEntryId: outputEntryId(entries, named[0]!) };
+    });
+  });
+}
+
+/**
+ * Titles are compared exactly after this normalization and never fuzzily: a
+ * near-match is not evidence that two obligations are the same work, so the
+ * answer is an identity or an honest non-answer.
+ */
+function normalizeTitle(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * The dependency map one record carries, in the shape the manifest records it.
+ * A record written before targets existed keeps its wording and reports that
+ * no stable reference was recorded rather than resolving a name it never had.
+ */
+function dependencyMappings(
+  handoff: MeetingHandoffRecord | undefined,
+): ActionItemDependencyMapping[] {
+  if (handoff === undefined) return [];
+  return handoffDependencies(handoff).map((dependency, index) => ({
+    index,
+    wording: dependency.wording,
+    target: dependency.target,
+  }));
 }
 
 /**
@@ -137,6 +201,7 @@ export function materializationIndex(
         actionItemId: item.id,
         proposalRevision: revision.revision,
         allocatedAt: revision.createdAt,
+        dependencies: dependencyMappings(item.handoff),
       });
     }
   return index;
