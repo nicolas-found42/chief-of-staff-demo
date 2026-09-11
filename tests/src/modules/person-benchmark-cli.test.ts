@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,17 @@ import {
 } from "@chief-of-staff-demo/shared";
 import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus";
 import { runBenchmarkCli } from "../../../scripts/person-research-benchmark.mjs";
+
+it("the CLI entrypoint executes as a child process and prints usage help", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx", "scripts/person-research-benchmark.mts", "--help"],
+    { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+  );
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("Person Research Benchmark");
+  expect(result.stdout).toContain("--mode <live-discovery|fixed-documents>");
+});
 
 it("rejects unknown requested people without writing a successful empty report", async () => {
   const output = mkdtempSync(join(tmpdir(), "benchmark-invalid-selection-"));

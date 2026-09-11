@@ -109,11 +109,19 @@ Import      599 modules were evaluated 10,497 times · 209.15s total, 46% of tra
 | **5** | `tests/src/modules/person-benchmark-comparison.test.ts` | 7.75s | 2.8s | Large JSON fixture parsing and comparisons |
 
 #### Diagnosis of Bottleneck #1: Subprocess Contention in `person-benchmark-cli.test.ts`
-- Each invocation of `node --import tsx scripts/person-research-benchmark.mts` takes **~1.1s** cold.
+- Measuring cold process execution with `--help` (`node --import tsx scripts/person-research-benchmark.mts --help`) takes **0.82s** on average (measured: 0.901s, 0.786s, 0.790s, 0.788s, 0.835s).
+- Across 21 test invocations in a single file, **17.22 seconds** is consumed solely by Node process startup, `tsx` transpile, and importing the 60+ transitive modules of the benchmark script before any pipeline code runs.
 - In isolation, 21 serial invocations take **29.04s**.
-- When running concurrently with 240 other test files across 10 Vitest worker threads, the 21 `tsx` TypeScript compilation processes compete for CPU cycles and disk I/O, ballooning this file's runtime to **61.35s**.
-- Because this test file runs serially within one worker thread, **the entire test suite is pinned waiting for this single file to finish**.
-- **Measured verification:** Excluding `person-benchmark-cli.test.ts` reduced total suite duration from **67.01s to 40.65s** (an immediate **~26s suite wall-clock speedup**).
+- Under concurrency across 10 Vitest worker threads, these repeated `tsx` compilation cycles saturate CPU queues and disk I/O, ballooning this file's duration to **61.35s**.
+- Because Vitest runs tests within a file serially on a single worker thread, the entire suite is pinned waiting for this one worker to finish.
+- **Measured verification:** Excluding or running this file in-process drops suite duration from **67.01s to ~38s** (an immediate **~29s wall-clock speedup**).
+
+#### Architectural Levers: Splitting Files vs. In-Process Execution with Boundary Smoke Test
+Two architectural approaches can alleviate the single-worker serialization bottleneck:
+1. **Lever A (File Sharding)**: Split `person-benchmark-cli.test.ts` into 4–5 smaller files so Vitest's thread pool distributes the 21 `spawnSync` calls across multiple workers.
+   - *Trade-off*: Recovers wall time by parallelizing workers, but still burns ~17 seconds of aggregate CPU time repeatedly re-spawning Node and re-transpiling the same script.
+2. **Lever B (In-Process CLI Execution + Thin OS Boundary Test — Chosen)**: Refactor `scripts/person-research-benchmark.mts` to export `runBenchmarkCli(rawArgs, options)`, migrating scenario tests to run in-process while retaining a thin `spawnSync` test that executes `--help` at the OS boundary.
+   - *Benefit*: Eliminates ~17 seconds of redundant process initialization and compilation, dropping total execution time to **~2.0s** while strictly validating the executable CLI contract at the OS process boundary.
 
 #### Diagnosis of `source-search-pass-deadline.test.ts`: Why It Must Not Be Shortened
 - The file takes **20.43s** because it has two 10-second real-time delays.
@@ -214,21 +222,21 @@ several candidate tools. It is critical not to re-propose tools already vetted a
 
 ## Part 4: Targeted, Actionable Recommendations
 
-### Recommendation 1: Refactor `person-benchmark-cli.test.ts` to Test In-Process (High Impact)
-- **Problem:** Spawns 21 full Node processes with `tsx`, taking **29.04s isolated and 61.35s under concurrency**.
-- **Implementation:** In `scripts/person-research-benchmark.mts`:
-  ```ts
-  export async function runBenchmarkCli(
-    rawArgs: string[],
-    options?: { cwd?: string }
-  ): Promise<{ status: number; stdout: string; stderr: string }> {
-    // In-process CLI execution logic
-  }
-  ```
-  And in `tests/src/modules/person-benchmark-cli.test.ts`, call `runBenchmarkCli(...)` directly instead of calling `spawnSync(process.execPath, ["--import", "tsx", ...])`.
-- **Measured Delta:** Eliminates 21 subprocess launches (~1.1s each plus CPU contention).
-  Drops that test file's time from **29.04s to < 2s**, saving **~26s of suite wall-clock time** (dropping the suite from 67s to ~40s).
-
+### Recommendation 1: In-Process Benchmark CLI with OS-Boundary Smoke Test (High Impact)
+- **Problem:** Spawns 21 full Node processes with `tsx`, taking **29.04s isolated and 61.35s under concurrency** (with 17.22s spent purely on Node/tsx startup overhead).
+- **Implementation:**
+  1. In `scripts/person-research-benchmark.mts`, encapsulate execution logic in an exported:
+     ```ts
+     export async function runBenchmarkCli(
+       rawArgs: string[],
+       options?: BenchmarkCliOptions
+     ): Promise<BenchmarkCliResult>
+     ```
+     With an `isMain` guard executing `runBenchmarkCli(process.argv.slice(2), { forwardOutput: true })` when run as a standalone script.
+  2. In `tests/src/modules/person-benchmark-cli.test.ts`:
+     - Retain a thin `spawnSync` test verifying that `pnpm exec tsx scripts/person-research-benchmark.mts --help` executes cleanly at the OS process boundary.
+     - Migrate the remaining 19 test scenarios to `await runBenchmarkCli(args)` directly (imported via `.mjs`, which TypeScript's `moduleResolution: bundler` resolves to `.mts`).
+- **Measured Delta:** Drops test file duration from **29.04s to 2.06s**, cutting **~29s off full `pnpm run check` wall-clock time** (37.92s vs 69.02s).
 ### Recommendation 2: Fix Cross-Realm Assertion in `source-http-dispatcher.test.ts`
 - **Problem:** `expect(outcome).toBeInstanceOf(Error)` fails under VM contexts because Node's internal `DOMException` does not inherit from the VM realm's `Error.prototype`.
 - **Implementation:**
