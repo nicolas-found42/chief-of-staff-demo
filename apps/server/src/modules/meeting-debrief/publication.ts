@@ -541,12 +541,14 @@ function writeRevisionResult(
     );
   }
   if (held !== resultText) io.write(resultArtifact, resultText);
+  /* Freshly produced, never adopted: the bytes came from this reconciliation's
+     own model call, not from a preparation an earlier one left behind. */
   return {
     manifest: null,
     revision,
     resultArtifact,
     result: parseResult(resultText, resultArtifact),
-    adopted: held === null,
+    adopted: false,
   };
 }
 
@@ -948,7 +950,12 @@ export interface DebriefReconcileOutcome {
   result: MeetingDebriefRunResult;
   publication: DebriefPublicationRecord;
   receipt: DebriefCompletionReceipt;
-  /** What the reconciler had to do: published | recovered | prepared | extracted. */
+  /**
+   * How far the reconciler had to go: `published` verified an existing
+   * publication, `recovered` finished bytes an interrupted commit left behind,
+   * `prepared` finalized a revision that had its manifest but no receipt, and
+   * `extracted` is the only outcome that asked the model.
+   */
   reconciled: "published" | "recovered" | "prepared" | "extracted";
   modelCalls: number;
 }
