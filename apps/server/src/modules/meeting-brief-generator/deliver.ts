@@ -10,7 +10,7 @@ import { meetingBriefOccurrenceIdentity } from "@chief-of-staff-demo/shared";
 import { StageFailure } from "../../engine/module.js";
 import { isEligibleMeeting } from "./eligibility.js";
 import { occurrenceLookupWindow, type CalendarProvider } from "./calendar.js";
-import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
+import { isReconciliationRefusal, type GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { renderMeetingBriefEmail } from "./output.js";
 import { materialFingerprint } from "./revision.js";
 
@@ -117,11 +117,38 @@ function persistDeliveryFailure(
   deliveryId: string,
   attempts: number,
   error: string,
+  errorCode?: string,
 ): MeetingBriefDeliveryState {
   const failed = deliveryState("failed", deliveryId, { attempts });
-  persistDelivery(ctx, failed, { error });
-  ctx.event("brief_delivery_failed", { deliveryId, error, attempts });
+  persistDelivery(ctx, failed, { error, ...(errorCode ? { errorCode } : {}) });
+  ctx.event("brief_delivery_failed", {
+    deliveryId,
+    error,
+    attempts,
+    ...(errorCode ? { errorCode } : {}),
+  });
   return failed;
+}
+
+/**
+ * Reconciliation is the last line before an outward write (issue #362): only a
+ * provider that proves `none` may be followed by a send. `ambiguous` and
+ * `unreadable` fail the Stage retryably instead of resending.
+ */
+function reconciliationRefusal(
+  reconciliation:
+    { kind: "ambiguous"; messageIds: string[] } | { kind: "unreadable"; reason: string },
+): { errorCode: string; reason: string } {
+  if (reconciliation.kind === "ambiguous") {
+    return {
+      errorCode: "reconciliation_ambiguous",
+      reason: `Gmail reconciliation is ambiguous: ${reconciliation.messageIds.length} messages carry this delivery identity (${reconciliation.messageIds.join(", ")}); refusing to resend`,
+    };
+  }
+  return {
+    errorCode: "reconciliation_unreadable",
+    reason: `Gmail reconciliation is unreadable: ${reconciliation.reason}; refusing to resend`,
+  };
 }
 
 /**
@@ -172,7 +199,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     if (isOwnerProfileConfirmed && !isOwnerProfileConfirmed()) {
       const reason =
         "owner_not_confirmed: confirm the workspace owner Profile before Meeting Brief delivery";
-      persistDeliveryFailure(ctx, deliveryId, attempts, reason);
+      persistDeliveryFailure(ctx, deliveryId, attempts, reason, "owner_not_confirmed");
       throw new StageFailure("deliver", reason);
     }
   };
@@ -255,11 +282,17 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   // delivery. Absence within a non-empty read is evidence and skips below.
   if (calendarProvider && calendarRecheckError === null && calendarReadEmpty) {
     const reason = "Calendar recheck returned no events";
-    persistDeliveryFailure(ctx, deliveryId, deliveryAttempts(ctx) + 1, reason);
+    persistDeliveryFailure(ctx, deliveryId, deliveryAttempts(ctx) + 1, reason, "calendar_empty");
     throw new StageFailure("deliver", `Calendar recheck failed: ${reason}`);
   }
   if (calendarProvider && calendarRecheckError !== null) {
-    persistDeliveryFailure(ctx, deliveryId, deliveryAttempts(ctx) + 1, calendarRecheckError);
+    persistDeliveryFailure(
+      ctx,
+      deliveryId,
+      deliveryAttempts(ctx) + 1,
+      calendarRecheckError,
+      "calendar_unavailable",
+    );
     throw new StageFailure("deliver", `Calendar recheck failed: ${calendarRecheckError}`);
   }
 
@@ -346,7 +379,13 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
       }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      persistDeliveryFailure(ctx, deliveryId, deliveryAttempts(ctx) + 1, reason);
+      persistDeliveryFailure(
+        ctx,
+        deliveryId,
+        deliveryAttempts(ctx) + 1,
+        reason,
+        "calendar_recheck_failed",
+      );
       throw new StageFailure("deliver", `Calendar recheck failed: ${reason}`);
     }
   }
@@ -388,7 +427,25 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   if (gmailDeliveryProvider) {
     try {
       const reconciled = await gmailDeliveryProvider.findByDeliveryId(deliveryId);
-      if (reconciled) {
+      if (isReconciliationRefusal(reconciled)) {
+        const refusal = reconciliationRefusal(reconciled);
+        persistDeliveryFailure(
+          ctx,
+          deliveryId,
+          (existingDelivery?.attempts ?? 0) + 1,
+          refusal.reason,
+          refusal.errorCode,
+        );
+        ctx.event("brief_reconciliation_refused", {
+          deliveryId,
+          errorCode: refusal.errorCode,
+          ...(reconciled.kind === "ambiguous"
+            ? { candidates: reconciled.messageIds.length }
+            : { reason: reconciled.reason.slice(0, 200) }),
+        });
+        throw new StageFailure("deliver", refusal.reason);
+      }
+      if (reconciled.kind === "found") {
         const reconciledDelivery = deliveryState("reconciled", deliveryId, {
           sentAt: now().toISOString(),
           messageId: reconciled.messageId,
@@ -409,8 +466,15 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
         };
       }
     } catch (error) {
+      if (error instanceof StageFailure) throw error;
       const reason = error instanceof Error ? error.message : String(error);
-      persistDeliveryFailure(ctx, deliveryId, (existingDelivery?.attempts ?? 0) + 1, reason);
+      persistDeliveryFailure(
+        ctx,
+        deliveryId,
+        (existingDelivery?.attempts ?? 0) + 1,
+        reason,
+        "reconciliation_error",
+      );
       throw new StageFailure("deliver", `Gmail reconciliation failed: ${reason}`);
     }
   }
@@ -435,7 +499,13 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     });
     if (stale.length > 0) {
       const reason = "Person Profile claims changed after this Brief was composed.";
-      persistDeliveryFailure(ctx, deliveryId, (existingDelivery?.attempts ?? 0) + 1, reason);
+      persistDeliveryFailure(
+        ctx,
+        deliveryId,
+        (existingDelivery?.attempts ?? 0) + 1,
+        reason,
+        "person_profile_refresh_required",
+      );
       ctx.event("brief_delivery_blocked", {
         reason: "person_profile_refresh_required",
         profiles: stale.map(({ link, state }) => ({
@@ -491,7 +561,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     const attempts = attemptsBefore + 1;
-    persistDeliveryFailure(ctx, deliveryId, attempts, reason);
+    persistDeliveryFailure(ctx, deliveryId, attempts, reason, "send_failed");
     // Preserve brief, fail only deliver Stage
     throw new StageFailure("deliver", reason);
   }

@@ -1,6 +1,7 @@
 /** Meeting Brief Generator — Module-owned types (issue://80, ADR-0032/0033/0034). */
 
 import type { PersonProfileConsumerState } from "./person-profile.js";
+import type { RunStatus } from "./schemas.js";
 import type { TaskPriority } from "./task.js";
 
 export const MEETING_BRIEF_MODULE_ID = "meeting-brief-generator" as const;
@@ -79,6 +80,36 @@ export interface MeetingBriefEvent {
   updated?: string | null;
 }
 
+/**
+ * Dated provenance for one researched context item (issue #362, ADR-0089).
+ * Every field is best-effort: a source that states no date leaves it null, and
+ * null means unknown freshness, never "fine".
+ */
+export interface MeetingBriefEnrichmentProvenance {
+  /**
+   * When the app actually checked this item. For a source that re-verifies at
+   * read time (a CRM contact lookup) that is the enrichment time; for cached
+   * research (a Person Profile projection) it stays null, because reading an
+   * old claim today does not make it current.
+   */
+  retrievedAt: string | null;
+  /**
+   * Source publication or as-of time where the source states one. The older of
+   * this and `retrievedAt` is what a freshness window is measured against.
+   */
+  publishedAt: string | null;
+  /** Stable identity of the claim this item supports, e.g. `current-employer:<email>`. */
+  claimId: string | null;
+  /** The value this item asserts for that claim, when it is structured. */
+  claimValue: string | null;
+  /** Dates retained for historical evidence, aligned with `evidence`; null = undated. */
+  evidenceDates?: Array<string | null>;
+  /** Facts this item explicitly could not establish. */
+  unknown?: string[];
+  /** Incompatible assertions this item carries. */
+  conflicting?: string[];
+}
+
 /** One normalized enrichment section from a provider source. */
 export interface MeetingBriefEnrichmentSection {
   source: string;
@@ -87,6 +118,90 @@ export interface MeetingBriefEnrichmentSection {
   status: "completed" | "empty" | "failed";
   evidence: string[];
   references: string[];
+  /** Absent on legacy artifacts and fixtures: unknown freshness, never current. */
+  provenance?: MeetingBriefEnrichmentProvenance;
+}
+
+// ---------------------------------------------------------------------------
+// Context freshness (issue #362, ADR-0089) — configurable windows over dated
+// provenance. Freshness is a check on evidence age, never proof of truth.
+// ---------------------------------------------------------------------------
+
+/** Configurable freshness windows in hours. */
+export interface MeetingBriefFreshnessWindows {
+  /** Current role and company facts require evidence checked within this window. */
+  currentRoleCompanyHours: number;
+  /** News and conversation hooks require material published within this window. */
+  newsConversationHookHours: number;
+}
+
+/** Seven days and 48 hours: the defaults the spec names. */
+export const MEETING_BRIEF_DEFAULT_FRESHNESS_WINDOWS: MeetingBriefFreshnessWindows = {
+  currentRoleCompanyHours: 7 * 24,
+  newsConversationHookHours: 48,
+};
+
+export const MEETING_BRIEF_CONTEXT_FRESHNESS_VERSION = 1;
+
+/**
+ * What an item is about. The class decides which window applies; historical
+ * relationship evidence keeps its event date and is never presented as current.
+ */
+export type MeetingBriefFreshnessClass =
+  "current-role-company" | "news-conversation-hook" | "historical-relationship" | "other";
+
+export type MeetingBriefFreshnessState =
+  /** Known date inside its window. */
+  | "current"
+  /** Known date older than its window. */
+  | "expired"
+  /** Historical relationship evidence with its event date retained. */
+  | "historical"
+  /** No usable date: unknown freshness, never current. */
+  | "unknown"
+  /** Sources assert incompatible values; defeats a current assertion. */
+  | "conflicting";
+
+export interface MeetingBriefFreshnessItem {
+  claimId: string;
+  source: string;
+  guest: string | null;
+  company: string | null;
+  class: MeetingBriefFreshnessClass;
+  state: MeetingBriefFreshnessState;
+  /** The window applied in hours; null where no window governs the class. */
+  windowHours: number | null;
+  /** The date the window was measured against (published/as-of/event date). */
+  asOf: string | null;
+  retrievedAt: string | null;
+  /** Deterministic, human-readable qualification when state is not `current`. */
+  qualification: string | null;
+}
+
+/** `contextFreshness` on the immutable Brief: every researched item's dated state. */
+export interface MeetingBriefContextFreshness {
+  version: typeof MEETING_BRIEF_CONTEXT_FRESHNESS_VERSION;
+  computedAt: string;
+  windows: MeetingBriefFreshnessWindows;
+  items: MeetingBriefFreshnessItem[];
+  /** Explicit unknowns, phrased for a person. */
+  unknown: string[];
+  /** Explicit contradictions, phrased for a person. */
+  conflicting: string[];
+}
+
+/** Freshness windows as configured, where unset values fall back to the defaults. */
+export function resolveMeetingBriefFreshnessWindows(
+  overrides?: Partial<MeetingBriefFreshnessWindows> | null,
+): MeetingBriefFreshnessWindows {
+  return {
+    currentRoleCompanyHours:
+      overrides?.currentRoleCompanyHours ??
+      MEETING_BRIEF_DEFAULT_FRESHNESS_WINDOWS.currentRoleCompanyHours,
+    newsConversationHookHours:
+      overrides?.newsConversationHookHours ??
+      MEETING_BRIEF_DEFAULT_FRESHNESS_WINDOWS.newsConversationHookHours,
+  };
 }
 
 /** Structured Meeting Brief retained in the Run (Module-owned Result Shape). Includes deterministic logistics. */
@@ -132,6 +247,11 @@ export interface MeetingBrief {
   sourceReferences: string[];
   missingEvidence: string[];
   uncertainty: string[];
+  /**
+   * Dated freshness of every researched context item (issue #362). Absent on
+   * Briefs composed before this existed: those items stay unknown freshness.
+   */
+  contextFreshness?: MeetingBriefContextFreshness;
 }
 
 /** Delivery state retained on the Run (ADR-0034). */
@@ -213,6 +333,54 @@ export interface MeetingBriefPersonProfileReadModel {
     link: MeetingBriefPersonProfileLink;
     state: PersonProfileConsumerState | null;
   }>;
+}
+
+// ---------------------------------------------------------------------------
+// Measurement (issue #362, ADR-0089) — generation and delivery counted
+// separately, source-free. Counts and classified error kinds only: no
+// evidence text, no provider payloads, no source URLs.
+// ---------------------------------------------------------------------------
+
+/** One classified failure kind, counted. `code` is a stable machine label. */
+export interface MeetingBriefErrorCount {
+  stage: string;
+  code: string;
+  count: number;
+}
+
+export interface MeetingBriefGenerationMeasurement {
+  /** Runs observed in the retained Runs list. */
+  runs: number;
+  /** Runs by Shell status. */
+  byStatus: Record<RunStatus, number>;
+  /** Runs that reached a Brief (result artifact present). */
+  completed: number;
+  failed: number;
+  skipped: number;
+  /** Queue depth: pending plus running Runs. */
+  queued: number;
+}
+
+export interface MeetingBriefDeliveryMeasurement {
+  /** Runs whose result carries a delivery state. */
+  briefs: number;
+  byStatus: Record<MeetingBriefDeliveryState["status"], number>;
+  /** Delivery attempts recorded across all Briefs. */
+  attempts: number;
+  /** Lost-ack convergences: a message found by reconciliation instead of resent. */
+  reconciled: number;
+  /** Ambiguous reconciliations that were refused rather than resent. */
+  ambiguous: number;
+  /** Unreadable reconciliations that were refused rather than resent. */
+  unreadable: number;
+}
+
+/** GET /api/meeting-brief/measurements — derived on read (ADR-0005). */
+export interface MeetingBriefMeasurements {
+  generatedAt: string;
+  generation: MeetingBriefGenerationMeasurement;
+  delivery: MeetingBriefDeliveryMeasurement;
+  errors: MeetingBriefErrorCount[];
 }
 
 /** GET /api/meeting-brief/index — Cross-Run index derived on read (ADR-0005). */
@@ -476,6 +644,8 @@ export interface HubSpotEnrichmentArtifact {
   };
   stableRef: string;
   isEmployerMatch?: boolean;
+  /** When the app checked this record. Absent on legacy artifacts → unknown freshness. */
+  retrievedAt?: string;
 }
 
 export const HUBSPOT_MAX_RESULTS = 10 as const;
@@ -519,6 +689,13 @@ export interface GoogleEnrichmentArtifact {
     attempts?: number;
   };
   stableRef: string;
+  /** When the app retrieved this artifact. Absent on legacy artifacts → unknown freshness. */
+  retrievedAt?: string;
+  /**
+   * Per-evidence dates where the source states them (aligned with `evidence`;
+   * null = undated). Historical relationship evidence keeps its event date.
+   */
+  evidenceDates?: Array<string | null>;
 }
 
 export function googleEnrichmentKey(
@@ -564,6 +741,13 @@ export interface PublicIntelligenceArtifact {
     untrusted?: boolean;
   };
   stableRef: string;
+  /** When the app retrieved this artifact. Absent on legacy artifacts → unknown freshness. */
+  retrievedAt?: string;
+  /**
+   * Per-evidence publication dates where the source states them (aligned with
+   * `evidence`; null = undated).
+   */
+  evidenceDates?: Array<string | null>;
 }
 
 export function publicIntelligenceKey(

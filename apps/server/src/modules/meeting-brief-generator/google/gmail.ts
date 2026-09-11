@@ -170,6 +170,7 @@ export async function enrichGmailExact(
   eventVersion: string,
   guestEmail: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+  retrievedAt?: string,
 ): Promise<{
   artifact: GoogleEnrichmentArtifact;
   section: MeetingBriefEnrichmentSection;
@@ -184,6 +185,7 @@ export async function enrichGmailExact(
     ctx,
     filename,
     eventVersion,
+    ...(retrievedAt ? { retrievedAt } : {}),
     async lookup(attempts) {
       const threads = await provider.listExactThreads(normalized, maxResults);
       if (threads.length === 0) {
@@ -296,6 +298,7 @@ export async function enrichGmailCompanyDomain(
   guestEmail: string,
   companyDomain: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+  retrievedAt?: string,
 ): Promise<{
   artifact: GoogleEnrichmentArtifact;
   section: MeetingBriefEnrichmentSection;
@@ -319,6 +322,7 @@ export async function enrichGmailCompanyDomain(
     ctx,
     filename,
     eventVersion,
+    ...(retrievedAt ? { retrievedAt } : {}),
     async lookup(attempts) {
       const threads = await provider.listCompanyThreads(normalizedDomain, maxResults);
       if (threads.length === 0) {

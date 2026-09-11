@@ -60,6 +60,29 @@ export function MeetingBriefContent({
           </ReadingDisclosure>
         </div>
       )}
+      <h3>Context freshness</h3>
+      {!brief.contextFreshness || brief.contextFreshness.items.length === 0 ? (
+        <p className="muted">No dated provenance recorded for this brief; freshness is unknown.</p>
+      ) : (
+        <div>
+          <p className="muted">
+            Windows: current role and company evidence{" "}
+            {brief.contextFreshness.windows.currentRoleCompanyHours}h, news and conversation hooks{" "}
+            {brief.contextFreshness.windows.newsConversationHookHours}h.
+          </p>
+          {brief.contextFreshness.items.some((item) => item.qualification !== null) ? (
+            <ul>
+              {brief.contextFreshness.items
+                .filter((item) => item.qualification !== null)
+                .map((item) => (
+                  <li key={`${item.claimId}-${item.source}`}>{item.qualification}</li>
+                ))}
+            </ul>
+          ) : (
+            <p className="muted">Every researched item is dated within its freshness window.</p>
+          )}
+        </div>
+      )}
       <h3>Guests</h3>
       {brief.guests.length === 0 ? (
         <p className="muted">No guest context recorded.</p>

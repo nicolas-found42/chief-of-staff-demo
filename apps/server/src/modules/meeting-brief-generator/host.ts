@@ -14,6 +14,7 @@ import {
   MEETING_BRIEF_PROVIDER_OUTCOMES_VERSION,
   type MeetingBriefRunResult,
   type MeetingBriefIndex,
+  type MeetingBriefMeasurements,
   type MeetingBriefIndexEntry,
   type MeetingBriefUpcoming,
   meetingBriefOccurrenceIdentity,
@@ -50,6 +51,7 @@ import {
 } from "./intake.js";
 import { collectMeetingHistory } from "./history.js";
 import { materialFingerprint } from "./revision.js";
+import { buildMeetingBriefMeasurements } from "./measurement.js";
 import { MeetingBriefingCoordinator } from "./briefingCoordinator.js";
 
 import { type StoredSnapshot } from "./snapshot.js";
@@ -70,6 +72,8 @@ export interface MeetingBriefHostDeps {
   enrich?: MeetingBriefGeneratorOptions["enrich"];
   completeBrief?: MeetingBriefGeneratorOptions["completeBrief"];
   getCompleteJson?: MeetingBriefGeneratorOptions["getCompleteJson"];
+  /** Configurable freshness windows for researched context (issue #362). */
+  freshnessWindows?: MeetingBriefGeneratorOptions["freshnessWindows"];
   gmailDeliveryProvider?: GmailDeliveryProvider | null;
   calendarProvider?: CalendarProvider;
   /**
@@ -300,6 +304,7 @@ export class MeetingBriefHost implements HostedModule {
           enrichmentProviders,
           getInternalDomains: () => this.getInternalDomains(),
           getDisabledProviders: () => this.getDisabledProviders(),
+          ...(deps.freshnessWindows ? { freshnessWindows: deps.freshnessWindows } : {}),
         }),
       ...(deps.gmailDeliveryProvider ? { gmailDeliveryProvider: deps.gmailDeliveryProvider } : {}),
       getOwnerEmail: () => this.getOwnerEmail(),
@@ -614,6 +619,11 @@ export class MeetingBriefHost implements HostedModule {
       .map(toUpcoming)
       .filter((value): value is MeetingBriefUpcoming => value !== null)
       .sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
+  }
+
+  /** Generation/delivery measurement derived on read (issue #362). */
+  measurements(): MeetingBriefMeasurements {
+    return buildMeetingBriefMeasurements(this.deps.runs, this.now());
   }
 
   /** Cross-Run index derived on read (ADR-0005) — never a second copy. */
@@ -1334,6 +1344,10 @@ export class MeetingBriefHost implements HostedModule {
       }
       return this.profileReadModel(result);
     });
+
+    // GET /api/meeting-brief/measurements — generation and delivery counted
+    // separately, source-free (issue #362). Derived on read (ADR-0005).
+    app.get("/api/meeting-brief/measurements", async () => this.measurements());
 
     // GET /api/meeting-brief/index — Cross-Run index derived on read (ADR-0005)
     app.get("/api/meeting-brief/index", async () => {

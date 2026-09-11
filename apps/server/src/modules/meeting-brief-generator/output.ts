@@ -147,6 +147,21 @@ export function renderMeetingBriefEmail(
     lines.push("");
   }
 
+  /* The dated state of every researched item (issue #362): an item outside its
+     freshness window, undated, or contradicted is named here rather than
+     quietly asserted as current. */
+  const datedQualifications = (brief.contextFreshness?.items ?? [])
+    .filter((item) => item.qualification !== null)
+    .map((item) => item.qualification as string);
+  if (datedQualifications.length > 0) {
+    lines.push("Context freshness:");
+    for (const q of datedQualifications.slice(0, 10)) lines.push(`- ${q}`);
+    if (datedQualifications.length > 10) {
+      lines.push(`- (${datedQualifications.length - 10} more items dated outside their window)`);
+    }
+    lines.push("");
+  }
+
   lines.push(`—`);
   lines.push(`Event: ${brief.eventId} · ${brief.occurrenceId} · ${brief.eventVersion}`);
   lines.push(`Generated: ${brief.generatedAt}`);
@@ -278,6 +293,17 @@ export function renderMeetingBriefEmail(
   if (uncert.length > 0) {
     htmlLines.push(`<div style="color:#666"><strong>Uncertainty:</strong><ul>`);
     for (const u of uncert) htmlLines.push(`<li>${escapeHtml(u)}</li>`);
+    htmlLines.push(`</ul></div>`);
+  }
+
+  if (datedQualifications.length > 0) {
+    htmlLines.push(`<div style="color:#666"><strong>Context freshness:</strong><ul>`);
+    for (const q of datedQualifications.slice(0, 10)) htmlLines.push(`<li>${escapeHtml(q)}</li>`);
+    if (datedQualifications.length > 10) {
+      htmlLines.push(
+        `<li>(${datedQualifications.length - 10} more items dated outside their window)</li>`,
+      );
+    }
     htmlLines.push(`</ul></div>`);
   }
 

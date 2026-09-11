@@ -93,7 +93,7 @@ function makeHost(): {
     now: () => new Date(DUE_AT),
     log: () => {},
     gmailDeliveryProvider: {
-      findByDeliveryId: () => Promise.resolve(null),
+      findByDeliveryId: () => Promise.resolve({ kind: "none" } as const),
       send: () => {
         sends += 1;
         return Promise.resolve({ messageId: `m-${sends}`, recipient: "owner@example.com" });

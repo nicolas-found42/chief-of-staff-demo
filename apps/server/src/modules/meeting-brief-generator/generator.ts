@@ -1,6 +1,7 @@
 import type {
   MeetingBrief,
   MeetingBriefEnrichmentSection,
+  MeetingBriefFreshnessWindows,
   MeetingBriefPersonProfileLink,
   MeetingBriefProviderOutcome,
   MeetingBriefRunResult,
@@ -55,6 +56,12 @@ export interface MeetingBriefGeneratorOptions {
     occurrence: FrozenMeetingOccurrence,
     enrichment: EnrichmentResult,
   ) => Promise<MeetingBrief>;
+  /**
+   * Configurable freshness windows for researched context (issue #362).
+   * Unset values use the spec defaults: 7 days for current role/company
+   * evidence, 48 hours for news and conversation hooks.
+   */
+  freshnessWindows?: Partial<MeetingBriefFreshnessWindows> | null;
 }
 
 function readEnrichment(raw: string | null): EnrichmentResult {
@@ -91,6 +98,7 @@ export function createMeetingBriefGenerator(
               providers: options.enrichmentProviders,
               internalDomains: options.getInternalDomains?.() ?? [],
               occurrenceKey: occurrence.occurrenceKey,
+              now,
               ...(options.getDisabledProviders
                 ? { disabledProviders: options.getDisabledProviders() }
                 : {}),
@@ -170,6 +178,7 @@ export function createMeetingBriefGenerator(
             snapshot: occurrence,
             sections: enrichment.sections as MeetingBriefEnrichmentSection[],
             internalDomains: options.getInternalDomains?.() ?? [],
+            freshnessWindows: options.freshnessWindows ?? null,
           });
         } else {
           throw new Error("Meeting Brief composition provider is unavailable");

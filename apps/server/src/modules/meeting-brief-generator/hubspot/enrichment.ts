@@ -13,6 +13,7 @@ import {
   readErrorStatus,
   sanitizeArtifactVersion,
 } from "../enrichment/helpers.js";
+import { claimIdFor } from "../freshness.js";
 
 function stableRefFor(
   eventVersion: string,
@@ -37,8 +38,24 @@ function recordArtifact(
   artifact: HubSpotEnrichmentArtifact,
   ctx: Pick<RunContext, "writeFile"> | undefined,
   company?: string,
+  retrievedAt?: string,
+  contactEmployer?: string,
 ): void {
-  artifacts.push(artifact);
+  // The retrieval time belongs to the artifact, so a later same-version Run
+  // that reuses this file inherits when the CRM was actually read.
+  const persisted: HubSpotEnrichmentArtifact =
+    retrievedAt && !artifact.retrievedAt ? { ...artifact, retrievedAt } : artifact;
+  artifacts.push(persisted);
+  const employerClaim = artifact.isEmployerMatch === true && company !== undefined;
+  // A CRM contact states the person's employer when the record carries one;
+  // that is the value a Profile-derived employer can contradict.
+  const contactClaim = artifact.source === "hubspot-contact" && contactEmployer !== undefined;
+  const claimKind =
+    employerClaim || contactClaim
+      ? "current-employer"
+      : artifact.source === "hubspot-contact"
+        ? "current-role"
+        : "other";
   sections.push({
     source: artifact.source,
     guest: artifact.guestEmail,
@@ -46,8 +63,14 @@ function recordArtifact(
     status: artifact.status,
     evidence: artifact.evidence,
     references: artifact.references,
+    provenance: {
+      retrievedAt: persisted.retrievedAt ?? null,
+      publishedAt: null,
+      claimId: claimIdFor(claimKind, artifact.guestEmail),
+      claimValue: employerClaim ? company : (contactEmployer ?? null),
+    },
   });
-  ctx?.writeFile(fileNameForArtifact(artifact), JSON.stringify(artifact, null, 2) + "\n");
+  ctx?.writeFile(fileNameForArtifact(persisted), JSON.stringify(persisted, null, 2) + "\n");
 }
 
 /**
@@ -67,6 +90,7 @@ export async function enrichGuestWithHubSpot(
   guestEmail: string,
   ctx?: Pick<RunContext, "writeFile" | "event">,
   options?: { finalAttempt?: boolean },
+  retrievedAt?: string,
 ): Promise<{
   artifacts: HubSpotEnrichmentArtifact[];
   sections: MeetingBriefEnrichmentSection[];
@@ -75,6 +99,12 @@ export async function enrichGuestWithHubSpot(
   const normalizedEmail = guestEmail.trim().toLowerCase();
   const artifacts: HubSpotEnrichmentArtifact[] = [];
   const sections: MeetingBriefEnrichmentSection[] = [];
+  const record = (
+    artifact: HubSpotEnrichmentArtifact,
+    company?: string,
+    contactEmployer?: string,
+  ): void =>
+    recordArtifact(artifacts, sections, artifact, ctx, company, retrievedAt, contactEmployer);
   let employerMatch: HubSpotCompany | null = null;
 
   let contact: HubSpotContact | null | undefined;
@@ -97,7 +127,7 @@ export async function enrichGuestWithHubSpot(
         },
         stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
       };
-      recordArtifact(artifacts, sections, artifact, ctx);
+      record(artifact);
       if (ctx) {
         ctx.event("hubspot_contact_empty", { guest: normalizedEmail, eventVersion });
       }
@@ -120,7 +150,7 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
     };
-    recordArtifact(artifacts, sections, artifact, ctx);
+    record(artifact, undefined, contact.properties["company"]);
     if (ctx) {
       ctx.event("hubspot_contact_found", { guest: normalizedEmail, contactId: contact.id });
     }
@@ -146,7 +176,7 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
     };
-    recordArtifact(artifacts, sections, artifact, ctx);
+    record(artifact);
     if (ctx) {
       ctx.event("hubspot_contact_failed", { guest: normalizedEmail, error: detail });
     }
@@ -179,7 +209,7 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company"),
     };
-    recordArtifact(artifacts, sections, artifact, ctx);
+    record(artifact);
     if (ctx) {
       ctx.event("hubspot_company_failed", { guest: normalizedEmail, error: detail });
     }
@@ -203,7 +233,7 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company"),
     };
-    recordArtifact(artifacts, sections, emptyArtifact, ctx);
+    record(emptyArtifact);
   } else {
     for (const companyId of companyIds) {
       try {
@@ -226,7 +256,7 @@ export async function enrichGuestWithHubSpot(
             },
             stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
           };
-          recordArtifact(artifacts, sections, empty, ctx, companyId);
+          record(empty, companyId);
           continue;
         }
         if (!employerMatch) employerMatch = company;
@@ -252,7 +282,7 @@ export async function enrichGuestWithHubSpot(
           stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
           isEmployerMatch: true,
         };
-        recordArtifact(artifacts, sections, artifact, ctx, company.name);
+        record(artifact, company.name);
       } catch (error) {
         rethrowUnlessRecordable(error, options);
         const detail = error instanceof Error ? error.message : String(error);
@@ -276,7 +306,7 @@ export async function enrichGuestWithHubSpot(
           },
           stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
         };
-        recordArtifact(artifacts, sections, failed, ctx, companyId);
+        record(failed, companyId);
       }
     }
   }
@@ -319,7 +349,7 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal"),
     };
-    recordArtifact(artifacts, sections, failed, ctx);
+    record(failed);
     return { artifacts, sections, employerMatch };
   }
 
@@ -340,7 +370,7 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal"),
     };
-    recordArtifact(artifacts, sections, empty, ctx);
+    record(empty);
   } else {
     for (const dealId of dealIds) {
       try {
@@ -363,7 +393,7 @@ export async function enrichGuestWithHubSpot(
             },
             stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
           };
-          recordArtifact(artifacts, sections, empty, ctx);
+          record(empty);
           continue;
         }
         const evidence = [`HubSpot deal ${deal.name ?? deal.id} (${deal.id})`];
@@ -384,7 +414,7 @@ export async function enrichGuestWithHubSpot(
           },
           stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
         };
-        recordArtifact(artifacts, sections, artifact, ctx);
+        record(artifact);
       } catch (error) {
         rethrowUnlessRecordable(error, options);
         const detail = error instanceof Error ? error.message : String(error);
@@ -408,7 +438,7 @@ export async function enrichGuestWithHubSpot(
           },
           stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
         };
-        recordArtifact(artifacts, sections, failed, ctx);
+        record(failed);
       }
     }
   }

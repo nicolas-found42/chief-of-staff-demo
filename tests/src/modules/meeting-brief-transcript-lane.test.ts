@@ -122,7 +122,7 @@ describe("Meeting Brief confirmed-transcript lane (#138)", () => {
       log: () => {},
       gmailDeliveryProvider: {
         findByDeliveryId() {
-          return Promise.resolve(null);
+          return Promise.resolve({ kind: "none" } as const);
         },
         send() {
           return Promise.resolve({ messageId: "m-1", recipient: "owner@example.com" });

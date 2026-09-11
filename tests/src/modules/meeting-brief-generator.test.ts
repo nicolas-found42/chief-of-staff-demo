@@ -207,7 +207,7 @@ describe("fixture event → one Run at due time via real Runner/Runs/Workspace (
       getOwnerEmail: () => "owner@example.com",
       isOwnerProfileConfirmed: () => confirmed,
       gmailDeliveryProvider: {
-        findByDeliveryId: async () => null,
+        findByDeliveryId: async () => ({ kind: "none" }) as const,
         send: async () => {
           sends += 1;
           return { messageId: "gated-message", recipient: "owner@example.com" };
@@ -247,7 +247,7 @@ describe("fixture event → one Run at due time via real Runner/Runs/Workspace (
         async findByDeliveryId() {
           reconciliationStarted.resolve();
           await releaseReconciliation.promise;
-          return null;
+          return { kind: "none" } as const;
         },
         async send() {
           sends += 1;

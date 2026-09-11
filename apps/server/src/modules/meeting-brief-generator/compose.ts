@@ -2,12 +2,16 @@
 import { z } from "zod/v3";
 import type {
   MeetingBrief,
+  MeetingBriefContextFreshness,
   MeetingBriefEnrichmentSection,
+  MeetingBriefFreshnessItem,
+  MeetingBriefFreshnessWindows,
   MeetingBriefEvent,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
 import { parseResultShape } from "../../llm/failure.js";
 import { isExternalGuest } from "./eligibility.js";
+import { applyFreshnessPolicy, classifyContextFreshness } from "./freshness.js";
 
 // ---------------------------------------------------------------------------
 // Wire schema: what the model is asked to produce (subset, logistics rendered deterministically)
@@ -78,6 +82,7 @@ Rules you must follow:
 - Company sections: only for an accepted Employer Match. Do not invent a company when no employer match is accepted. If no match, leave companies empty and note the gap.
 - Do not add presentation coaching, objection scripts, pacing, audio, stakeholder strategy, or other Briefing Preparation Assistant adjacent workflows.
 - Source references: list every distinct source identifier you relied on. Missing evidence: name gaps by guest/company/source. Uncertainty: list explicit unknowns.
+- Freshness and provenance: each evidence block states how old it is. Never present an expired, undated (unknown) or conflicting item as a current fact. Current role and employer claims outside their freshness window are historical context, not the person's current state; say so or leave them out. When a date is known, use it. When sources disagree, treat the value as unsettled and record the disagreement in uncertainty instead of choosing one.
 `;
 
 interface ComposePromptInput {
@@ -91,6 +96,31 @@ interface ComposePromptInput {
   }>;
   allowedReferences: Set<string>;
   now: Date;
+  freshness: MeetingBriefContextFreshness;
+}
+
+/** The freshness line printed above one evidence block, when it has one. */
+function freshnessNoteFor(
+  section: MeetingBriefEnrichmentSection,
+  freshness: MeetingBriefContextFreshness,
+): string {
+  const item = freshness.items.find(
+    (candidate) =>
+      candidate.source === section.source &&
+      (candidate.guest ?? "") === (section.guest ?? "") &&
+      (candidate.company ?? "") === (section.company ?? ""),
+  );
+  if (!item) return "freshness: unknown (no dated provenance)";
+  return freshnessLine(item);
+}
+
+/** One stable, source-free line describing an item's date and state. */
+function freshnessLine(item: MeetingBriefFreshnessItem): string {
+  const state = item.state;
+  const dated = item.asOf ? `dated ${item.asOf}` : "undated";
+  const window = item.windowHours === null ? "" : `, window ${item.windowHours}h`;
+  const retrieved = item.retrievedAt ? `, retrieved ${item.retrievedAt}` : "";
+  return `freshness: ${state} (${dated}${window}${retrieved})`;
 }
 
 interface ComposeMessages {
@@ -107,6 +137,7 @@ function buildComposeMessages(input: ComposePromptInput): ComposeMessages {
     acceptedEmployerMatches,
     allowedReferences,
     now,
+    freshness,
   } = input;
 
   const trustedLines: string[] = [];
@@ -176,7 +207,7 @@ function buildComposeMessages(input: ComposePromptInput): ComposeMessages {
     );
     for (const sec of list) {
       untrustedLines.push(
-        `- source: ${sec.source} | status: ${sec.status} | company: ${sec.company ?? "none"}`,
+        `- source: ${sec.source} | status: ${sec.status} | company: ${sec.company ?? "none"} | ${freshnessNoteFor(sec, freshness)}`,
       );
       if (sec.evidence.length > 0) {
         for (const ev of sec.evidence.slice(0, 10)) {
@@ -362,6 +393,8 @@ export interface ComposeBriefDeps {
   snapshot: MeetingBriefEvent & { occurrenceKey: string };
   sections: MeetingBriefEnrichmentSection[];
   internalDomains: string[];
+  /** Configurable freshness windows (issue #362); unset values use the defaults. */
+  freshnessWindows?: Partial<MeetingBriefFreshnessWindows> | null;
 }
 
 export async function composeBrief(deps: ComposeBriefDeps): Promise<MeetingBrief> {
@@ -396,6 +429,11 @@ export async function composeBrief(deps: ComposeBriefDeps): Promise<MeetingBrief
     }
   }
 
+  const freshness = classifyContextFreshness(sections, {
+    now: now(),
+    windows: deps.freshnessWindows ?? null,
+  });
+
   const messages = buildComposeMessages({
     snapshot,
     sections,
@@ -407,6 +445,7 @@ export async function composeBrief(deps: ComposeBriefDeps): Promise<MeetingBrief
     })),
     allowedReferences,
     now: now(),
+    freshness,
   });
 
   const complete = getCompleteJson();
@@ -441,5 +480,8 @@ export async function composeBrief(deps: ComposeBriefDeps): Promise<MeetingBrief
     uncertainty: modelOutput.uncertainty,
   };
 
-  return brief;
+  // Freshness is policy, not composition: the dated record is attached to the
+  // immutable Brief and stale or contradicted current claims are defeated
+  // before anyone reads them (ADR-0089).
+  return applyFreshnessPolicy(brief, freshness);
 }

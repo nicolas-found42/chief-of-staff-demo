@@ -12,6 +12,10 @@ import type { WeeklyMeeting, WeeklyWorkspaceView } from "@chief-of-staff-demo/sh
 import type { WorkspaceMeetings } from "./store.js";
 import type { WorkspaceTasks } from "../tasks/tasks.js";
 import type { WorkspaceActionItems } from "../tasks/action-items.js";
+import {
+  isReconciliationRefusal,
+  type GmailReconciliation,
+} from "../modules/meeting-brief-generator/google/gmailDelivery.js";
 
 /** Owner-only Gmail delivery, as the Meeting Brief module's adapter provides it. */
 interface WeeklyEmailDelivery {
@@ -21,7 +25,8 @@ interface WeeklyEmailDelivery {
     html: string;
     deliveryId: string;
   }): Promise<{ messageId: string; recipient: string }>;
-  findByDeliveryId(deliveryId: string): Promise<{ messageId: string; recipient: string } | null>;
+  /** Classified reconciliation (issue #362): only `none` permits a send. */
+  findByDeliveryId(deliveryId: string): Promise<GmailReconciliation>;
 }
 
 interface WeeklyWorkspaceDeps {
@@ -290,7 +295,14 @@ export class WeeklyWorkspace {
     if (!force && receipt?.weekStart === view.weekStart) return;
     const deliveryId = `weekly-briefing-${view.weekStart}`;
     try {
-      const already = await email.deliver.findByDeliveryId(deliveryId);
+      const reconciliation = await email.deliver.findByDeliveryId(deliveryId);
+      if (isReconciliationRefusal(reconciliation)) {
+        // An answer that cannot rule out an accepted message is never a send
+        // (issue #362); a later attempt reconciles again.
+        this.deps.log?.(`weekly briefing email reconciliation refused (${reconciliation.kind})`);
+        return;
+      }
+      const already = reconciliation.kind === "found" ? reconciliation : null;
       if (!already && view.summary.state === "failed") view = await this.read(true);
       if (!already && ["failed", "consent-required"].includes(view.summary.state)) return;
       if (generation !== this.generation || !email.enabled() || !email.ownerConfirmed()) return;

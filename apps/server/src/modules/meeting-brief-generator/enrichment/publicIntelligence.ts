@@ -14,6 +14,7 @@ import {
   sanitizeEvidence,
   sanitizeArtifactVersion,
 } from "./helpers.js";
+import { claimIdFor, newestDate, type MeetingBriefClaimKind } from "../freshness.js";
 // ---------------------------------------------------------------------------
 // Public search result — normalized evidence, source ownership preserved
 // ---------------------------------------------------------------------------
@@ -124,6 +125,39 @@ function normalizeSnippet(snippet: string): string {
   return snippet.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
 }
 
+/** A search artifact is only ever dated by when it was retrieved or published. */
+function persistPublicArtifact(
+  ctx: Pick<RunContext, "writeFile">,
+  filename: string,
+  artifact: PublicIntelligenceArtifact,
+  retrievedAt?: string,
+): PublicIntelligenceArtifact {
+  const persisted: PublicIntelligenceArtifact =
+    retrievedAt && !artifact.retrievedAt ? { ...artifact, retrievedAt } : artifact;
+  ctx.writeFile(filename, JSON.stringify(persisted, null, 2) + "\n");
+  return persisted;
+}
+
+/** Attach the dated provenance a freshness window is measured against (ADR-0089). */
+function withPublicProvenance<
+  T extends { artifact: PublicIntelligenceArtifact; section: MeetingBriefEnrichmentSection },
+>(result: T, claimKind: MeetingBriefClaimKind): T {
+  const { artifact, section } = result;
+  return {
+    ...result,
+    section: {
+      ...section,
+      provenance: {
+        retrievedAt: artifact.retrievedAt ?? null,
+        publishedAt: newestDate(artifact.evidenceDates ?? []),
+        claimId: claimIdFor(claimKind, section.guest ?? section.company ?? ""),
+        claimValue: claimKind === "current-employer" ? (section.company ?? null) : null,
+        evidenceDates: artifact.evidenceDates ?? [],
+      },
+    },
+  };
+}
+
 function previousMonthWindow(eventStartAt: string): { from: string; to: string } {
   const start = new Date(eventStartAt);
   const from = new Date(start);
@@ -192,6 +226,7 @@ async function enrichWithPublicSearch(
   query: string,
   window: { from: string; to: string },
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+  retrievedAt?: string,
 ): Promise<{ artifact: PublicIntelligenceArtifact; section: MeetingBriefEnrichmentSection }> {
   const normalizedGuest = guestEmail.toLowerCase();
   const key = publicIntelligenceKey(eventVersion, normalizedGuest, source, companyName);
@@ -216,7 +251,7 @@ async function enrichWithPublicSearch(
           evidence: existing.evidence,
           references: existing.references,
         };
-        return { artifact: existing, section };
+        return withPublicProvenance({ artifact: existing, section }, "news");
       }
     } catch {
       // ignore parse failure, re-enrich
@@ -264,7 +299,7 @@ async function enrichWithPublicSearch(
           },
           stableRef,
         };
-        ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
+        const persisted = persistPublicArtifact(ctx, filename, artifact, retrievedAt);
         ctx.event(`${source}_empty`, { guest: normalizedGuest, company: companyName, attempts });
         const section: MeetingBriefEnrichmentSection = {
           source,
@@ -274,13 +309,14 @@ async function enrichWithPublicSearch(
           evidence: [],
           references: [],
         };
-        return { artifact, section };
+        return withPublicProvenance({ artifact: persisted, section }, "news");
       }
 
       const evidence = limited.map((r) =>
         sanitizeEvidence(r.snippet || r.title || `Public ${source} for ${companyName}`),
       );
       const references = limited.map((r) => r.url);
+      const evidenceDates = limited.map((r) => r.publishedAt ?? null);
       const orgs = limited.map((r) => r.org ?? extractOrg(r.url));
 
       const artifact: PublicIntelligenceArtifact = {
@@ -292,6 +328,7 @@ async function enrichWithPublicSearch(
         source,
         status: "completed",
         evidence,
+        evidenceDates,
         references,
         diagnostics: {
           bounded: true,
@@ -305,7 +342,7 @@ async function enrichWithPublicSearch(
         },
         stableRef,
       };
-      ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
+      const persisted = persistPublicArtifact(ctx, filename, artifact, retrievedAt);
       ctx.event(`${source}_completed`, {
         guest: normalizedGuest,
         company: companyName,
@@ -320,7 +357,7 @@ async function enrichWithPublicSearch(
         evidence,
         references,
       };
-      return { artifact, section };
+      return withPublicProvenance({ artifact: persisted, section }, "news");
     } catch (error) {
       lastError = error;
       if (isProviderWideError(error)) {
@@ -360,7 +397,7 @@ async function enrichWithPublicSearch(
         },
         stableRef,
       };
-      ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
+      const persisted = persistPublicArtifact(ctx, filename, artifact, retrievedAt);
       ctx.event(`${source}_failed`, {
         guest: normalizedGuest,
         company: companyName,
@@ -375,7 +412,7 @@ async function enrichWithPublicSearch(
         evidence: [],
         references: [],
       };
-      return { artifact, section };
+      return withPublicProvenance({ artifact: persisted, section }, "news");
     }
   }
   throw lastError;
@@ -389,6 +426,7 @@ export async function enrichCompanyNews(
   companyDomain: string | null,
   eventStartAt: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+  retrievedAt?: string,
 ): Promise<{ artifact: PublicIntelligenceArtifact; section: MeetingBriefEnrichmentSection }> {
   const window = previousMonthWindow(eventStartAt);
   const query = `${companyName} news`;
@@ -402,6 +440,7 @@ export async function enrichCompanyNews(
     query,
     window,
     ctx,
+    retrievedAt,
   );
 }
 
@@ -413,6 +452,7 @@ export async function enrichIndustryNews(
   companyDomain: string | null,
   eventStartAt: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+  retrievedAt?: string,
 ): Promise<{ artifact: PublicIntelligenceArtifact; section: MeetingBriefEnrichmentSection }> {
   const window = previousMonthWindow(eventStartAt);
   const query = `${companyName} industry news`;
@@ -426,6 +466,7 @@ export async function enrichIndustryNews(
     query,
     window,
     ctx,
+    retrievedAt,
   );
 }
 
@@ -439,6 +480,7 @@ export async function enrichEmployerVerification(
   companyDomain: string | null,
   eventStartAt: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+  retrievedAt?: string,
 ): Promise<{
   artifact: PublicIntelligenceArtifact;
   section: MeetingBriefEnrichmentSection;
@@ -476,7 +518,7 @@ export async function enrichEmployerVerification(
           evidence: existing.evidence,
           references: existing.references,
         };
-        return { artifact: existing, section, verified };
+        return withPublicProvenance({ artifact: existing, section, verified }, "current-employer");
       }
     } catch {
       // ignore
@@ -513,6 +555,7 @@ export async function enrichEmployerVerification(
         const truncated = deduped.length > maxResults;
         const evidence = limited.map((r) => sanitizeEvidence(r.snippet));
         const references = limited.map((r) => r.url);
+        const evidenceDates = limited.map((r) => r.publishedAt ?? null);
         const orgs = limited.map((r) => r.org ?? extractOrg(r.url));
         const artifact: PublicIntelligenceArtifact = {
           key,
@@ -523,6 +566,7 @@ export async function enrichEmployerVerification(
           source: "employer-verification",
           status: "completed",
           evidence,
+          evidenceDates,
           references,
           diagnostics: {
             bounded: true,
@@ -536,7 +580,7 @@ export async function enrichEmployerVerification(
           },
           stableRef,
         };
-        ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
+        const persisted = persistPublicArtifact(ctx, filename, artifact, retrievedAt);
         ctx.event("employer_verification_completed", {
           guest: normalizedGuest,
           company: companyName,
@@ -550,7 +594,10 @@ export async function enrichEmployerVerification(
           evidence,
           references,
         };
-        return { artifact, section, verified: true };
+        return withPublicProvenance(
+          { artifact: persisted, section, verified: true },
+          "current-employer",
+        );
       } else {
         // Unresolved employers receive no attributed company evidence — empty is not error but not verified
         const artifact: PublicIntelligenceArtifact = {
@@ -575,7 +622,7 @@ export async function enrichEmployerVerification(
           },
           stableRef,
         };
-        ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
+        const persisted = persistPublicArtifact(ctx, filename, artifact, retrievedAt);
         ctx.event("employer_verification_empty", {
           guest: normalizedGuest,
           company: companyName,
@@ -589,7 +636,10 @@ export async function enrichEmployerVerification(
           evidence: [],
           references: [],
         };
-        return { artifact, section, verified: false };
+        return withPublicProvenance(
+          { artifact: persisted, section, verified: false },
+          "current-employer",
+        );
       }
     } catch (error) {
       lastError = error;
@@ -628,7 +678,7 @@ export async function enrichEmployerVerification(
         },
         stableRef,
       };
-      ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
+      const persisted = persistPublicArtifact(ctx, filename, artifact, retrievedAt);
       ctx.event("employer_verification_failed", {
         guest: normalizedGuest,
         company: companyName,
@@ -643,7 +693,10 @@ export async function enrichEmployerVerification(
         evidence: [],
         references: [],
       };
-      return { artifact, section, verified: false };
+      return withPublicProvenance(
+        { artifact: persisted, section, verified: false },
+        "current-employer",
+      );
     }
   }
   throw lastError;

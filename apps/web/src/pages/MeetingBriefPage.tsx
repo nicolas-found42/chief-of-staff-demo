@@ -349,6 +349,35 @@ export function MeetingBriefPage({ client = meetingsApi }: { client?: MeetingsCl
                           ) : null}
                         </div>
                       )}
+                      {/* Dated state of every researched item (issue #362):
+                          an item outside its window, undated, or contradicted
+                          is named here rather than implied current. */}
+                      <div>
+                        <h4>Context freshness</h4>
+                        {brief.contextFreshness && brief.contextFreshness.items.length > 0 ? (
+                          brief.contextFreshness.items.some(
+                            (item) => item.qualification !== null,
+                          ) ? (
+                            <ul>
+                              {brief.contextFreshness.items
+                                .filter((item) => item.qualification !== null)
+                                .map((item) => (
+                                  <li key={`${item.claimId}-${item.source}`}>
+                                    {item.qualification}
+                                  </li>
+                                ))}
+                            </ul>
+                          ) : (
+                            <p className="muted">
+                              Every researched item is dated within its freshness window.
+                            </p>
+                          )
+                        ) : (
+                          <p className="muted">
+                            No dated provenance recorded for this brief; freshness is unknown.
+                          </p>
+                        )}
+                      </div>
                       {/* Show at least one source link name for a11y */}
                     </>
                   ) : (

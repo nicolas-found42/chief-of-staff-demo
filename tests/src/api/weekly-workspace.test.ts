@@ -27,7 +27,9 @@ class FakeDelivery {
   }
   async findByDeliveryId(deliveryId: string) {
     const index = this.sent.findIndex((message) => message.deliveryId === deliveryId);
-    return index === -1 ? null : { messageId: `msg_${index + 1}`, recipient: "owner@example.com" };
+    return index === -1
+      ? ({ kind: "none" } as const)
+      : ({ kind: "found", messageId: `msg_${index + 1}`, recipient: "owner@example.com" } as const);
   }
 }
 

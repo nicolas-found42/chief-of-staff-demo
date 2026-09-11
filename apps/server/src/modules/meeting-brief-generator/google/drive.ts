@@ -123,6 +123,7 @@ export async function enrichDriveDocs(
   guestEmail: string,
   companyDomain: string | null,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+  retrievedAt?: string,
 ): Promise<{
   artifact: GoogleEnrichmentArtifact;
   section: MeetingBriefEnrichmentSection;
@@ -154,6 +155,7 @@ export async function enrichDriveDocs(
     ctx,
     filename,
     eventVersion,
+    ...(retrievedAt ? { retrievedAt } : {}),
     async lookup(attempts) {
       const docs = await provider.searchDocs(query, maxResults);
       if (docs.length === 0) {

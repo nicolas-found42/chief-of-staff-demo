@@ -9,7 +9,11 @@ import type {
 import type { ConfigStore } from "../../config.js";
 import type { Runs } from "../../runs.js";
 import { FakeCalendarProvider, type CalendarEvent } from "./calendar.js";
-import { FakeGmailDeliveryProvider, type GmailDeliveryProvider } from "./google/gmailDelivery.js";
+import {
+  FakeGmailDeliveryProvider,
+  type GmailDeliveryProvider,
+  type GmailReconciliation,
+} from "./google/gmailDelivery.js";
 import { MeetingBriefHost } from "./host.js";
 import { HubSpotConnection } from "./hubspot/connection.js";
 import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
@@ -34,8 +38,8 @@ export function fixtureGmailDeliveryProvider(
   recipient = "owner@example.com",
 ): GmailDeliveryProvider {
   return {
-    async findByDeliveryId() {
-      return null;
+    async findByDeliveryId(): Promise<GmailReconciliation> {
+      return { kind: "none" };
     },
     async send() {
       return { messageId, recipient };

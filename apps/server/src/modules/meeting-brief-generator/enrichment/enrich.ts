@@ -14,6 +14,7 @@ import type {
   MeetingBriefPersonProfileLink,
 } from "@chief-of-staff-demo/shared";
 import { PERSON_PROFILE_SOURCE_ID } from "@chief-of-staff-demo/shared";
+import { claimIdFor, newestDate, type MeetingBriefClaimKind } from "../freshness.js";
 import { meetingBriefOccurrenceIdentity } from "@chief-of-staff-demo/shared";
 import { extractDomain, isConsumerDomain } from "../eligibility.js";
 import {
@@ -87,6 +88,11 @@ export interface UnifiedEnrichDeps {
   occurrenceKey?: string;
   /** Providers excluded from the required set by an explicit policy action (#137). */
   disabledProviders?: readonly string[];
+  /**
+   * The Module clock, used to date every item this stage retrieves (issue
+   * #362). Absent, the wall clock is used; host-driven Runs always pass theirs.
+   */
+  now?: () => Date;
 }
 
 function personProfileSection(
@@ -104,12 +110,32 @@ function personProfileSection(
     ...projection.feeds.map((feed) => feed.url),
     ...projection.evidence.map((item) => item.url),
   ]);
+  const evidenceDates = projection.evidence.map(
+    (item) => item.publishedAt ?? item.observedAt ?? null,
+  );
+  // A pinned projection is cached research: reading it today does not re-check
+  // the claim, so the claim date is the evidence's own newest date and there is
+  // deliberately no retrieval-time check (ADR-0089).
+  const publishedAt = newestDate(evidenceDates);
+  const guest = projection.primaryEmail?.toLowerCase() ?? "";
+  const claimKind: MeetingBriefClaimKind = projection.currentEmployer
+    ? "current-employer"
+    : projection.role
+      ? "current-role"
+      : "other";
   return {
     source: PERSON_PROFILE_SOURCE_ID,
-    guest: projection.primaryEmail?.toLowerCase() ?? "",
+    guest,
     status: directEvidence.length > 0 || sourcedEvidence.length > 0 ? "completed" : "empty",
     evidence: deduplicateEvidence([...directEvidence, ...sourcedEvidence]),
     references,
+    provenance: {
+      retrievedAt: null,
+      publishedAt,
+      claimId: claimIdFor(claimKind, guest),
+      claimValue: projection.currentEmployer ?? projection.role ?? null,
+      evidenceDates,
+    },
   };
 }
 
@@ -230,6 +256,7 @@ async function enrichHubSpotWithRetry(
   eventVersion: string,
   guestEmail: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+  retrievedAt?: string,
 ): Promise<{
   artifacts: HubSpotEnrichmentArtifact[];
   sections: MeetingBriefEnrichmentSection[];
@@ -323,7 +350,14 @@ async function enrichHubSpotWithRetry(
 
   const outcome = await withBoundedRetry({
     attempt: (_attemptNumber, finalAttempt) =>
-      enrichGuestWithHubSpot(cachedApi, eventVersion, guestEmail, ctx, { finalAttempt }),
+      enrichGuestWithHubSpot(
+        cachedApi,
+        eventVersion,
+        guestEmail,
+        ctx,
+        { finalAttempt },
+        retrievedAt,
+      ),
     onRetry: (_error, attempt) =>
       ctx.event("hubspot_retry", { guest: guestEmail.toLowerCase(), attempt }),
     onProviderWide: () => {
@@ -422,6 +456,7 @@ export async function enrichUnified(
   outcomes: MeetingBriefProviderOutcome[];
 }> {
   const providers = deps.providers;
+  const retrievedAt = (deps.now ?? (() => new Date()))().toISOString();
   const hubSpotApi = providers.getHubSpotApi?.() ?? null;
   const internalDomains = deps.internalDomains ?? [];
   const allSections: MeetingBriefEnrichmentSection[] = [];
@@ -544,6 +579,7 @@ export async function enrichUnified(
           eventVersion,
           attendeeEmail,
           ctx,
+          retrievedAt,
         );
         allSections.push(section);
         pushOutcome("gmail-relationship", attendeeEmail, artifact.status, artifact, filename);
@@ -561,6 +597,7 @@ export async function enrichUnified(
           attendeeEmail,
           lowerDomain,
           ctx,
+          retrievedAt,
         );
         allSections.push(section);
         pushOutcome("gmail-company-domain", attendeeEmail, artifact.status, artifact, filename);
@@ -578,6 +615,7 @@ export async function enrichUnified(
           attendeeEmail,
           eventStartAt,
           ctx,
+          retrievedAt,
         );
         allSections.push(section);
         pushOutcome("calendar-history", attendeeEmail, artifact.status, artifact, filename);
@@ -596,6 +634,7 @@ export async function enrichUnified(
           attendeeEmail,
           companyForDrive,
           ctx,
+          retrievedAt,
         );
         allSections.push(section);
         pushOutcome("drive-workspace", attendeeEmail, artifact.status, artifact, filename);
@@ -637,6 +676,7 @@ export async function enrichUnified(
     }
     // 6. HubSpot
     let hubspotCompany: HubSpotCompany | null = null;
+    let hubspotArtifacts: HubSpotEnrichmentArtifact[] = [];
     if (selects("crm")) {
       if (disabled["crm"]) {
         pushOutcome("crm", attendeeEmail, "disabled", null, null);
@@ -646,8 +686,10 @@ export async function enrichUnified(
           eventVersion,
           attendeeEmail,
           ctx,
+          retrievedAt,
         );
         hubspotCompany = employerMatch;
+        hubspotArtifacts = artifacts;
         allSections.push(...sections);
         const failed = artifacts.find((artifact) => artifact.status === "failed") ?? null;
         pushOutcome(
@@ -710,6 +752,7 @@ export async function enrichUnified(
           candDomain,
           eventStartAt,
           ctx,
+          retrievedAt,
         );
         allSections.push(section);
         pushOutcome(
@@ -730,6 +773,13 @@ export async function enrichUnified(
             status: "completed",
             evidence: employerMatchEvidence,
             references: employerMatchReferences,
+            provenance: {
+              retrievedAt: artifact.retrievedAt ?? retrievedAt,
+              publishedAt: null,
+              claimId: claimIdFor("current-employer", attendeeEmail),
+              claimValue: candName,
+              evidenceDates: artifact.evidenceDates ?? [],
+            },
           });
         }
       } else {
@@ -747,6 +797,17 @@ export async function enrichUnified(
         (s) => s.source === "employer-match" && s.guest === attendeeEmail.toLowerCase(),
       );
       if (!existingMatchSection) {
+        // The accepted match inherits its check date from the source that
+        // accepted it: a CRM read on this stage, or the Profile evidence date.
+        const profileSectionForMatch =
+          employerMatch.source === "profile"
+            ? allSections.find(
+                (s) =>
+                  s.source === PERSON_PROFILE_SOURCE_ID && s.guest === attendeeEmail.toLowerCase(),
+              )
+            : undefined;
+        const hubspotMatchArtifact =
+          hubspotArtifacts.find((a) => a.isEmployerMatch === true) ?? null;
         allSections.push({
           source: "employer-match",
           guest: attendeeEmail.toLowerCase(),
@@ -754,6 +815,16 @@ export async function enrichUnified(
           status: "completed",
           evidence: employerMatchEvidence,
           references: employerMatchReferences,
+          provenance: {
+            retrievedAt:
+              employerMatch.source === "profile"
+                ? null
+                : (hubspotMatchArtifact?.retrievedAt ?? retrievedAt),
+            publishedAt: profileSectionForMatch?.provenance?.publishedAt ?? null,
+            claimId: claimIdFor("current-employer", attendeeEmail),
+            claimValue: employerMatch.name,
+            evidenceDates: profileSectionForMatch?.provenance?.evidenceDates ?? [],
+          },
         });
       }
     }
@@ -774,6 +845,7 @@ export async function enrichUnified(
           companyDomain,
           eventStartAt,
           ctx,
+          retrievedAt,
         );
         allSections.push(companyNews);
 
@@ -785,6 +857,7 @@ export async function enrichUnified(
           companyDomain,
           eventStartAt,
           ctx,
+          retrievedAt,
         );
         allSections.push(industryNews);
         const failed = [companyNewsArtifact, industryNewsArtifact].find(
@@ -832,6 +905,12 @@ export async function enrichUnified(
           status: selection.evidence.length > 0 ? "completed" : "empty",
           evidence: selection.evidence.map((item) => sanitizeEvidence(item.excerpt)),
           references: [],
+          provenance: {
+            retrievedAt,
+            publishedAt: null,
+            claimId: claimIdFor("relationship-history", ""),
+            claimValue: null,
+          },
         });
         ctx.writeFile(
           "transcript-suggestions.json",
