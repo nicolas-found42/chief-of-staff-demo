@@ -103,6 +103,14 @@ function populate(schema: z.ZodTypeAny, path: string): unknown {
     }
     case "ZodEnum":
       return def.values![0];
+    /* A literal-discriminated record (#360's promotion authorization) and the
+       release union it selects: the walk has to populate the version stamp and
+       the restricted branch, because those are exactly the keys a reset must
+       classify. */
+    case "ZodLiteral":
+      return def.value;
+    case "ZodUnion":
+      return populate(def.options![0], path);
     case "ZodString":
       /* Lowercase and trimmed: `internalDomains` normalizes on parse, and the
          generator has to survive its own schema. */
