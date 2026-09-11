@@ -5,12 +5,13 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 
 # CodeRabbit skips automatic reviews on a public repository with fewer than ten
-# stars and reviews only on an explicit `@coderabbitai review` (the notice it
-# posts on every PR says so). This asks for one on every push, so a review body
-# exists for the head commit being merged. Same-repo branches only: a fork's
-# `pull_request` token is read-only and the comment would fail.
-permissions:
-  pull-requests: write
+# stars and reviews only on an explicit `@coderabbitai review`; it also ignores
+# that command when a bot posts it (measured on #386: nothing from a
+# github-actions comment, a reply in six seconds from a user's). So the comment
+# has to come from a user token: CODERABBIT_TRIGGER_TOKEN, a fine-grained PAT
+# with pull-requests: write on this repository. Without the secret the job
+# reports why and does nothing.
+permissions: {}
 
 jobs:
   request-review:
@@ -23,6 +24,11 @@ jobs:
     steps:
       - name: Ask CodeRabbit to review the current head
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CODERABBIT_TRIGGER_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr comment "$PR_URL" --body "@coderabbitai review"
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::CODERABBIT_TRIGGER_TOKEN is not set; CodeRabbit ignores a bot-posted trigger, so ask it by hand: comment '@coderabbitai review' on the PR."
+            exit 0
+          fi
+          gh pr comment "$PR_URL" --body "@coderabbitai review"

@@ -20,10 +20,14 @@ gh pr merge <n> --squash --match-head-commit <head>
 
 Read the diff, the CodeRabbit review body for the current head, and confirm all four required
 checks passed for that head before merging. CodeRabbit skips automatic reviews on a public
-repository with fewer than ten stars, so `.github/workflows/coderabbit-review.yml` posts
-`@coderabbitai review` on every push to a same-repo PR; it is incremental and will not re-review a
-commit it has already seen, and a request too soon after the last one is rate-limited rather than
-queued. Answer each finding in its thread — fixed, or skipped with the reason — before merging.
+repository with fewer than ten stars, and it ignores the `@coderabbitai review` command when a
+bot posts it, so `.github/workflows/coderabbit-review.yml` posts the command on every push to a
+same-repo PR **as a user**, through the `CODERABBIT_TRIGGER_TOKEN` repository secret (a
+fine-grained PAT with pull-requests: write on this repository). Without the secret the job warns and
+does nothing, and the trigger has to be commented by hand. CodeRabbit is incremental — it will not
+re-review a commit it has already seen — and a request too soon after the last one is rate-limited
+rather than queued. Answer each finding in its thread — fixed, or skipped with the reason — before
+merging.
 Bind the merge to that SHA with `--match-head-commit` so a concurrent push requires a fresh check.
 The value must be the **full 40-character OID** — a short SHA fails GraphQL validation with an
 unhelpful `Could not coerce value` error.
