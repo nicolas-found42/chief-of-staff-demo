@@ -1,6 +1,7 @@
 import {
   BenchmarkComparisonSchema,
   BenchmarkGroupSummarySchema,
+  MAX_VERDICT_DETAIL,
   type BenchmarkComparison,
   type BenchmarkGroupSummary,
   type BenchmarkPerson,
@@ -472,6 +473,43 @@ function auditRecoveries(report: BenchmarkReport): RecoveryAudit {
   return { recorded, credited, rejected, creditedFactIds };
 }
 
+/** What the not-comparable verdict detail may spend on the condition list. */
+const CONDITION_DETAIL_BUDGET = MAX_VERDICT_DETAIL - "Not comparable: ".length - 1;
+
+/**
+ * The not-comparable detail repeats the conditions that made the pair
+ * incomparable. A subset arm against a full population records one
+ * reference-version difference per person, so the list can outgrow the
+ * comparison schema's `verdictDetail` bound; the detail keeps whole entries
+ * and states how many it left out, while the full list stays in
+ * `conditionChanges` and in the rendered *Conditions that differed* section,
+ * so the refusal renders instead of failing schema validation (#259).
+ */
+function conditionDetail(changes: string[]): string {
+  if (changes.length === 0) return "one of the runs did not complete";
+  const kept: string[] = [];
+  let used = 0;
+  for (const change of changes) {
+    const omitted = changes.length - kept.length - 1;
+    const marker =
+      omitted > 0
+        ? `; ${String(omitted)} more recorded condition difference${omitted === 1 ? "" : "s"}`
+        : "";
+    /* The marker's own length counts against the budget, so the string is
+       bounded before it is built rather than sliced after. */
+    const separator = kept.length > 0 ? 2 : 0;
+    if (used + separator + change.length + marker.length > CONDITION_DETAIL_BUDGET) break;
+    kept.push(change);
+    used += separator + change.length;
+  }
+  const omitted = changes.length - kept.length;
+  return `${kept.join("; ")}${
+    omitted > 0
+      ? `; ${String(omitted)} more recorded condition difference${omitted === 1 ? "" : "s"}`
+      : ""
+  }`;
+}
+
 export function compareReports(
   baseline: BenchmarkReport,
   candidate: BenchmarkReport,
@@ -740,7 +778,7 @@ export function compareReports(
     operational,
     verdict,
     verdictDetail: !comparable
-      ? `Not comparable: ${conditionChanges.join("; ") || "one of the runs did not complete"}.`
+      ? `Not comparable: ${conditionDetail(conditionChanges)}.`
       : `Reference coverage: ${gained >= 0 ? "+" : ""}${String(gained)} reference facts recovered out of ${String(totals.referenceFacts)}, read across the ${String(measured.length)} of ${String(perPerson.length)} pairs whose recovery credit is not withheld${excludedPairs.length ? `; for ${excludedPairs.map((entry) => entry.slug).join(", ")}, whose support/usefulness assessment did not complete on one side, ADR-0067 withholds recovery credit` : ""}; ${String(newCritical)} newly introduced critical integrity findings; ${String(newIdentityFailures)} newly introduced wrong-person attributions. Research outcomes are separate: ${String(operational.regressedPeople.length)} people regressed from completed research to bounded or interrupted. Failed run statuses remain unchanged.`,
   });
 }
