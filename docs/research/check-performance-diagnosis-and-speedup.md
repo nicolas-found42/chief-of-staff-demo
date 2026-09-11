@@ -339,24 +339,40 @@ the implementation keeps that property intact:
   `chief-of-staff-demo-relay` names (compose defaults for this directory, so
   local `docker compose up --build` behavior is unchanged); the canary and
   `up` steps add `--no-build` to fail fast instead of rebuilding.
-- KitBuildKit's gha cache falls back to the default-branch scope, so PR runs
-  hit `main`'s cache without extra configuration. No
-  `docker-compose.ci.yml` override is needed.
-- Projected: warm-cache build ~40–60s → **image job ≈ 1m 00–1m 30s** (from 2m 40s).
+- BuildKit's gha cache falls back to the default-branch scope, so PR runs
+  hit `main`'s cache without extra configuration. No `docker-compose.ci.yml`
+  override is needed.
 
-### 5.4 Projected Critical Path After This Change
+### 5.4 Measured Results (GitHub Actions, 2026-09-11)
 
-```text
-check  ~1m (unchanged)
-test   ≈ 1m 40s (sharded x3)
-image  ≈ 1m 00–1m 30s (Buildx cache)
-e2e    ≈ 1m 50s (sharded x4)
-Total PR turnaround: bounded by e2e at ≈ 1m 50s (from 4m 29s), target < 2m met
-```
+Run [`34555736929`](https://github.com/nicolas-found42/chief-of-staff-demo/actions/runs/34555736929)
+(4 e2e shards, first fully green run):
 
-First `main` run after merge populates the gha image caches; PRs after that
-realize the full image speedup. Confirm measured job durations on the first
-CI run of this workflow and record them here.
+| Job | Before | After | Delta |
+|---|---|---|---|
+| `check` | 1m 04s | 0m 57s | parallel static checks |
+| `test` (shards + rollup) | 3m 00s | **1m 44s** | −1m 16s |
+| `image` | 2m 40s | **1m 51s** | gha layer cache |
+| `e2e` (shards + rollup) | 4m 25s | **2m 23s** | −2m 02s |
+| **PR turnaround** | **4m 29s** | **2m 27s** | **−2m 02s (−45%)** |
+
+Follow-up experiments, both measured and rejected:
+
+1. **6 e2e shards** (run `34555992377`): the slowest shard stayed at ~2m 00s —
+   a floor set by per-shard setup (~20s), `pnpm run build` (~15s), and the
+   ~2-worker-per-shard ceiling on 2-core runners — while costing 50% more
+   runner minutes. Reverted to 4 shards.
+2. **Image job floor.** With a warm gha cache the actual Docker build is fully
+   cached (layers finish in <1s), but `load: true` must export the ~multi-GB
+   playwright/whisper runtime image into the runner daemon (~67s), plus ~12s
+   buildx setup and ~21s `docker compose down`. Measured image job: 1m 51s–
+   2m 35s depending on export variance. Getting the total turnaround under
+   2 minutes therefore requires shrinking the exported runtime image (the
+   dominant remaining cost), not more CI plumbing.
+
+Remaining critical path: `e2e` ≈ 2m 23s, with `image` ≈ 2m 35s at its noisy
+tail. Both are within seconds of their measured floors for this runner and
+image size.
 
 ## Primary References & Data Sources
 
