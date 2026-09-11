@@ -385,6 +385,64 @@ describe("automatically create my Tasks", () => {
     expect(tasks.list({})).toEqual([]);
   });
 
+  it("keeps an extraction reserved while automation was off review-only when it is enabled in flight", () => {
+    /* The operation was reserved before inference; enabling afterwards applies
+       to future extractions, not to this one (#343 §5). */
+    authorization = {
+      ...AUTHORIZED,
+      enabledAt: "2026-09-03T12:00:00.000Z",
+      basis: "enabled-at:2026-09-03T12:00:00.000Z",
+    };
+    const [item] = materialize([proposal()], {
+      reservedAuthorization: { ...AUTHORIZED, enabledAt: null, basis: "not-enabled-since-release" },
+    });
+
+    expect(item.state).toBe("pending");
+    expect(tasks.list({})).toEqual([]);
+  });
+
+  it("keeps a proposal whose owner resolution changed after the extraction pending", () => {
+    /* The claim still names Alice, but the proposal no longer resolves to the
+       confirmed owner: a changed identity decision is review, never a silent
+       automatic acceptance. */
+    const [item] = materialize([proposal({ owner: "Bob", ownerProfileId: "profile_bob" })]);
+
+    expect(item.state).toBe("pending");
+    expect(tasks.list({})).toEqual([]);
+  });
+
+  it("keeps a proposal corrected after it was reviewed pending", () => {
+    const [item] = materialize([proposal()], { claim: "review-only" });
+    const corrected = actionItems.correctProposal(item.id, {
+      title: "Follow up on the billing fix (revised)",
+      notes: "",
+      dueDate: null,
+      responsiblePerson: { kind: "owner" },
+    });
+
+    const [again] = materialize([proposal()]);
+
+    expect(corrected.reviewedThrough).toBeLessThan(corrected.proposalRevisions.length);
+    expect(again.state).toBe("pending");
+    expect(tasks.list({})).toEqual([]);
+  });
+
+  it("keeps every proposal of a zero-action first extraction's later extraction review-only", () => {
+    /* A zero-action first extraction records its reservation and materializes
+       nothing; the next extraction of that lineage is review-only because the
+       reservation — not the empty queue — is what remembers (#358/#360). */
+    expect(materialize([], { debriefRunId: "run_zero" })).toEqual([]);
+
+    const [later] = materialize([proposal()], { debriefRunId: "run_zero" });
+
+    expect(later.state).toBe("promoted");
+    const [regenerated] = materialize([proposal({ title: "Another commitment" })], {
+      debriefRunId: "run_regenerated",
+    });
+    expect(regenerated.state).toBe("pending");
+    expect(tasks.list({})).toHaveLength(1);
+  });
+
   it("keeps an incomplete publication's proposals review-only", () => {
     const [item] = materialize([proposal()], { reviewOnly: true });
 
