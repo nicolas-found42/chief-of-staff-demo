@@ -14,7 +14,7 @@ import type {
   MeetingBriefPersonProfileLink,
 } from "@chief-of-staff-demo/shared";
 import { PERSON_PROFILE_SOURCE_ID } from "@chief-of-staff-demo/shared";
-import { claimIdFor, type MeetingBriefClaimKind } from "../freshness.js";
+import { claimIdFor, newestDate, type MeetingBriefClaimKind } from "../freshness.js";
 import { meetingBriefOccurrenceIdentity } from "@chief-of-staff-demo/shared";
 import { extractDomain, isConsumerDomain } from "../eligibility.js";
 import {
@@ -116,12 +116,7 @@ function personProfileSection(
   // A pinned projection is cached research: reading it today does not re-check
   // the claim, so the claim date is the evidence's own newest date and there is
   // deliberately no retrieval-time check (ADR-0089).
-  let publishedAt: string | null = null;
-  for (const date of evidenceDates) {
-    const parsed = date ? Date.parse(date) : Number.NaN;
-    if (Number.isNaN(parsed)) continue;
-    if (publishedAt === null || parsed > Date.parse(publishedAt)) publishedAt = date;
-  }
+  const publishedAt = newestDate(evidenceDates);
   const guest = projection.primaryEmail?.toLowerCase() ?? "";
   const claimKind: MeetingBriefClaimKind = projection.currentEmployer
     ? "current-employer"

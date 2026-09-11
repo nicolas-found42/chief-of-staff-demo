@@ -8,7 +8,7 @@ import type {
 import { DateTime } from "luxon";
 import type { Runs } from "../../runs.js";
 import type { WorkspaceMeetings } from "../../meetings/store.js";
-import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
+import { isReconciliationRefusal, type GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { buildDailyBriefing, dayBoundsFor } from "./dailyBriefing.js";
 import { buildWeeklyBriefing, weekBoundsFor } from "./weeklyBriefing.js";
 import { renderDailyBriefingEmail } from "./output.js";
@@ -230,7 +230,7 @@ export class MeetingBriefingCoordinator {
       if (this.options.isOwnerProfileConfirmed && !this.options.isOwnerProfileConfirmed()) return;
       const deliveryId = `mb-daily-${date}`;
       const reconciliation = await provider.findByDeliveryId(deliveryId);
-      if (reconciliation.kind === "ambiguous" || reconciliation.kind === "unreadable") {
+      if (isReconciliationRefusal(reconciliation)) {
         // Never send on an answer that cannot rule out an accepted message
         // (issue #362); the next day's attempt reconciles again.
         this.options.log?.(`daily briefing email reconciliation refused (${reconciliation.kind})`);

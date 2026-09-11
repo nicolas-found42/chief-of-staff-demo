@@ -14,7 +14,7 @@ import {
   sanitizeEvidence,
   sanitizeArtifactVersion,
 } from "./helpers.js";
-import { claimIdFor, type MeetingBriefClaimKind } from "../freshness.js";
+import { claimIdFor, newestDate, type MeetingBriefClaimKind } from "../freshness.js";
 // ---------------------------------------------------------------------------
 // Public search result — normalized evidence, source ownership preserved
 // ---------------------------------------------------------------------------
@@ -125,24 +125,6 @@ function normalizeSnippet(snippet: string): string {
   return snippet.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
 }
 
-/**
- * The newest publication date the artifact retained, or null when the search
- * returned nothing dated. Parsed through Date so a malformed date is undated.
- */
-function newestPublication(artifact: PublicIntelligenceArtifact): string | null {
-  let newest: number | null = null;
-  let value: string | null = null;
-  for (const date of artifact.evidenceDates ?? []) {
-    const parsed = date ? Date.parse(date) : Number.NaN;
-    if (Number.isNaN(parsed)) continue;
-    if (newest === null || parsed > newest) {
-      newest = parsed;
-      value = date;
-    }
-  }
-  return value;
-}
-
 /** A search artifact is only ever dated by when it was retrieved or published. */
 function persistPublicArtifact(
   ctx: Pick<RunContext, "writeFile">,
@@ -167,7 +149,7 @@ function withPublicProvenance<
       ...section,
       provenance: {
         retrievedAt: artifact.retrievedAt ?? null,
-        publishedAt: newestPublication(artifact),
+        publishedAt: newestDate(artifact.evidenceDates ?? []),
         claimId: claimIdFor(claimKind, section.guest ?? section.company ?? ""),
         claimValue: claimKind === "current-employer" ? (section.company ?? null) : null,
         evidenceDates: artifact.evidenceDates ?? [],

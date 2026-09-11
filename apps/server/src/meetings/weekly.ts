@@ -12,7 +12,10 @@ import type { WeeklyMeeting, WeeklyWorkspaceView } from "@chief-of-staff-demo/sh
 import type { WorkspaceMeetings } from "./store.js";
 import type { WorkspaceTasks } from "../tasks/tasks.js";
 import type { WorkspaceActionItems } from "../tasks/action-items.js";
-import type { GmailReconciliation } from "../modules/meeting-brief-generator/google/gmailDelivery.js";
+import {
+  isReconciliationRefusal,
+  type GmailReconciliation,
+} from "../modules/meeting-brief-generator/google/gmailDelivery.js";
 
 /** Owner-only Gmail delivery, as the Meeting Brief module's adapter provides it. */
 interface WeeklyEmailDelivery {
@@ -293,7 +296,7 @@ export class WeeklyWorkspace {
     const deliveryId = `weekly-briefing-${view.weekStart}`;
     try {
       const reconciliation = await email.deliver.findByDeliveryId(deliveryId);
-      if (reconciliation.kind === "ambiguous" || reconciliation.kind === "unreadable") {
+      if (isReconciliationRefusal(reconciliation)) {
         // An answer that cannot rule out an accepted message is never a send
         // (issue #362); a later attempt reconciles again.
         this.deps.log?.(`weekly briefing email reconciliation refused (${reconciliation.kind})`);

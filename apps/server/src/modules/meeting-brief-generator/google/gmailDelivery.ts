@@ -32,6 +32,17 @@ export type GmailReconciliation =
   /** A candidate message could not be inspected, so its identity is unknown. */
   | { kind: "unreadable"; reason: string };
 
+/**
+ * True when reconciliation cannot rule out an accepted message. Every caller
+ * must refuse the outward write; naming it once means a new unsettled outcome
+ * cannot be forgotten at one of the call sites.
+ */
+export function isReconciliationRefusal(
+  reconciliation: GmailReconciliation,
+): reconciliation is Extract<GmailReconciliation, { kind: "ambiguous" | "unreadable" }> {
+  return reconciliation.kind === "ambiguous" || reconciliation.kind === "unreadable";
+}
+
 export interface GmailDeliveryProvider {
   /**
    * Send the rendered Meeting Brief to the workspace owner.

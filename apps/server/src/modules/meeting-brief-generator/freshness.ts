@@ -121,16 +121,20 @@ function parseDate(value: string | null | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-/** The newest dated evidence entry, when the source states dates per item. */
-function latestEvidenceDate(provenance: MeetingBriefEnrichmentProvenance): string | null {
+/**
+ * The newest real date in a list of best-effort dates (undefined, null and
+ * malformed entries are skipped). One implementation for every producer: a
+ * second newest-date loop is how two surfaces start disagreeing.
+ */
+export function newestDate(dates: Array<string | null | undefined>): string | null {
   let newest: number | null = null;
   let newestValue: string | null = null;
-  for (const value of provenance.evidenceDates ?? []) {
+  for (const value of dates) {
     const parsed = parseDate(value);
     if (parsed === null) continue;
     if (newest === null || parsed > newest) {
       newest = parsed;
-      newestValue = value;
+      newestValue = value ?? null;
     }
   }
   return newestValue;
@@ -146,11 +150,14 @@ function asOfFor(
   freshnessClass: MeetingBriefFreshnessClass,
 ): string | null {
   if (provenance.publishedAt) return provenance.publishedAt;
-  if (freshnessClass === "historical-relationship") {
-    // Relationship evidence keeps its event date; when the source states none,
-    // the item stays undated. Reading it today does not date it.
-    return latestEvidenceDate(provenance);
+  if (freshnessClass === "news-conversation-hook" || freshnessClass === "historical-relationship") {
+    // News is only as fresh as what was published, and relationship evidence
+    // keeps its event date: searching or reading today dates neither. A source
+    // that states no date leaves the item undated.
+    return newestDate(provenance.evidenceDates ?? []);
   }
+  // Only a source that re-verifies at read time (a CRM lookup) is dated by its
+  // retrieval; cached research is not.
   return provenance.retrievedAt;
 }
 
@@ -187,6 +194,7 @@ function qualificationFor(item: {
   windowHours: number | null;
   subject: string;
   conflictValues?: string[];
+  lastKnownValue?: string | null;
 }): string | null {
   const claim = CLAIM_LABELS[item.claimKind];
   if (item.state === "current") return null;
@@ -201,7 +209,8 @@ function qualificationFor(item: {
     return `${item.subject}: the ${claim} evidence is dated ${item.asOf}${age}; verify it before treating it as current.`;
   }
   if (item.state === "unknown") {
-    return `${item.subject}: the ${claim} evidence has no known date, so its freshness is unknown; verify it before treating it as current.`;
+    const lastKnown = item.lastKnownValue ? ` (last known value: "${item.lastKnownValue}")` : "";
+    return `${item.subject}: the ${claim} evidence has no known date${lastKnown}, so it is not asserted as current; verify it before relying on it.`;
   }
   return `${item.subject}: the ${claim} evidence is historical (dated ${item.asOf}); it is not a current fact.`;
 }
@@ -275,6 +284,7 @@ export function classifyContextFreshness(
       windowHours,
       subject: guest ?? company ?? "this meeting",
       conflictValues: distinctValues,
+      lastKnownValue: claimValue ?? null,
     });
     items.push(item);
   }
@@ -350,10 +360,12 @@ export function applyFreshnessPolicy(
   const guests = brief.guests.map((guest) => {
     const state = guestRoleState(freshness, guest.email);
     if (state === null) return guest;
-    const defeatRole = state === "expired" || state === "conflicting";
+    // Only evidence inside its window is presented as the current role.
+    // Expired, contradicted and undated claims are all defeated; the
+    // qualification each carries says what was known and why it is withheld.
     return {
       ...guest,
-      role: defeatRole ? null : guest.role,
+      role: state === "current" ? guest.role : null,
       uncertainty: appendBounded(guest.uncertainty, qualificationsForGuest(guest.email)),
     };
   });

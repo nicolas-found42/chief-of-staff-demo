@@ -39,6 +39,7 @@ function recordArtifact(
   ctx: Pick<RunContext, "writeFile"> | undefined,
   company?: string,
   retrievedAt?: string,
+  contactEmployer?: string,
 ): void {
   // The retrieval time belongs to the artifact, so a later same-version Run
   // that reuses this file inherits when the CRM was actually read.
@@ -46,11 +47,15 @@ function recordArtifact(
     retrievedAt && !artifact.retrievedAt ? { ...artifact, retrievedAt } : artifact;
   artifacts.push(persisted);
   const employerClaim = artifact.isEmployerMatch === true && company !== undefined;
-  const claimKind = employerClaim
-    ? "current-employer"
-    : artifact.source === "hubspot-contact"
-      ? "current-role"
-      : "other";
+  // A CRM contact states the person's employer when the record carries one;
+  // that is the value a Profile-derived employer can contradict.
+  const contactClaim = artifact.source === "hubspot-contact" && contactEmployer !== undefined;
+  const claimKind =
+    employerClaim || contactClaim
+      ? "current-employer"
+      : artifact.source === "hubspot-contact"
+        ? "current-role"
+        : "other";
   sections.push({
     source: artifact.source,
     guest: artifact.guestEmail,
@@ -62,7 +67,7 @@ function recordArtifact(
       retrievedAt: persisted.retrievedAt ?? null,
       publishedAt: null,
       claimId: claimIdFor(claimKind, artifact.guestEmail),
-      claimValue: employerClaim ? company : null,
+      claimValue: employerClaim ? company : (contactEmployer ?? null),
     },
   });
   ctx?.writeFile(fileNameForArtifact(persisted), JSON.stringify(persisted, null, 2) + "\n");
@@ -94,8 +99,12 @@ export async function enrichGuestWithHubSpot(
   const normalizedEmail = guestEmail.trim().toLowerCase();
   const artifacts: HubSpotEnrichmentArtifact[] = [];
   const sections: MeetingBriefEnrichmentSection[] = [];
-  const record = (artifact: HubSpotEnrichmentArtifact, company?: string): void =>
-    recordArtifact(artifacts, sections, artifact, ctx, company, retrievedAt);
+  const record = (
+    artifact: HubSpotEnrichmentArtifact,
+    company?: string,
+    contactEmployer?: string,
+  ): void =>
+    recordArtifact(artifacts, sections, artifact, ctx, company, retrievedAt, contactEmployer);
   let employerMatch: HubSpotCompany | null = null;
 
   let contact: HubSpotContact | null | undefined;
@@ -141,7 +150,7 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
     };
-    record(artifact);
+    record(artifact, undefined, contact.properties["company"]);
     if (ctx) {
       ctx.event("hubspot_contact_found", { guest: normalizedEmail, contactId: contact.id });
     }

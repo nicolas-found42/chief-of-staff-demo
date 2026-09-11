@@ -233,6 +233,31 @@ describe("freshness classification (issue #362)", () => {
     expect(classified.items[0]?.qualification).toContain("no current value is asserted");
   });
 
+  it("honours facts a source declares unknown or conflicting", () => {
+    const declaredConflict = classifyContextFreshness(
+      [
+        {
+          source: "person-profile",
+          guest: "alice@external.co",
+          status: "completed",
+          evidence: ["Acme — CTO"],
+          references: ["https://acme.example/alice"],
+          provenance: {
+            retrievedAt: daysAgo(1),
+            publishedAt: daysAgo(1),
+            claimId: claimIdFor("current-employer", "alice@external.co"),
+            claimValue: "Acme",
+            conflicting: ["HubSpot lists Globex"],
+            unknown: ["start date"],
+          },
+        },
+      ],
+      { now: NOW },
+    );
+    expect(declaredConflict.items[0]?.state).toBe("conflicting");
+    expect(declaredConflict.items[0]?.qualification).toContain("no current value is asserted");
+  });
+
   it("windows are configurable, not constants", () => {
     const sections = [profileSection(daysAgo(2), "Acme")];
     const strict = classifyContextFreshness(sections, {
@@ -258,11 +283,41 @@ describe("freshness policy on the composed Brief (issue #362)", () => {
     expect(brief.contextFreshness?.items[0]?.qualification).toContain("older than the 168h");
   });
 
-  it("keeps an undated role but states explicitly that its freshness is unknown", async () => {
+  it("withholds an undated role and states what was known and why", async () => {
     const brief = await composeWith([profileSection(null, "Acme")]);
-    expect(brief.guests[0]?.role).toBe("CTO");
-    expect(brief.guests[0]?.uncertainty.join(" ")).toContain("freshness is unknown");
+    // Undated evidence is not presented as the person's current role.
+    expect(brief.guests[0]?.role).toBeNull();
+    const disclosure = brief.guests[0]?.uncertainty.join(" ") ?? "";
+    expect(disclosure).toContain("no known date");
+    expect(disclosure).toContain("not asserted as current");
+    expect(disclosure).toContain("Acme");
     expect(brief.contextFreshness?.items[0]?.state).toBe("unknown");
+  });
+
+  it("keeps undated news unknown rather than dating it by when it was searched", () => {
+    const classified = classifyContextFreshness(
+      [
+        {
+          source: "company-news",
+          guest: "alice@external.co",
+          company: "Acme",
+          status: "completed",
+          evidence: ["Acme announced a new product"],
+          references: ["https://news.example/acme"],
+          provenance: {
+            // Searched a minute ago; the result states no publication date.
+            retrievedAt: hoursAgo(0.02),
+            publishedAt: null,
+            claimId: claimIdFor("news", "acme"),
+            claimValue: null,
+            evidenceDates: [null],
+          },
+        },
+      ],
+      { now: NOW },
+    );
+    expect(classified.items[0]).toMatchObject({ state: "unknown", asOf: null });
+    expect(classified.items[0]?.qualification).toContain("no known date");
   });
 
   it("does not assert either employer when two fresh sources disagree", async () => {
@@ -326,8 +381,9 @@ describe("freshness policy on the composed Brief (issue #362)", () => {
       uncertainty: [],
     };
     const applied = applyFreshnessPolicy(brief, classified);
-    // Unknown freshness keeps the claim but never presents it as verified.
-    expect(applied.guests[0]?.role).toBe("CTO");
+    // Legacy sections have no date at all, so the claim is withheld and the
+    // Brief says which value it declined to assert.
+    expect(applied.guests[0]?.role).toBeNull();
     expect(applied.guests[0]?.uncertainty.join(" ")).toContain("no known date");
     expect(applied.contextFreshness?.items[0]?.state).toBe("unknown");
   });

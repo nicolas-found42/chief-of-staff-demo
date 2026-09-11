@@ -10,7 +10,7 @@ import { meetingBriefOccurrenceIdentity } from "@chief-of-staff-demo/shared";
 import { StageFailure } from "../../engine/module.js";
 import { isEligibleMeeting } from "./eligibility.js";
 import { occurrenceLookupWindow, type CalendarProvider } from "./calendar.js";
-import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
+import { isReconciliationRefusal, type GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { renderMeetingBriefEmail } from "./output.js";
 import { materialFingerprint } from "./revision.js";
 
@@ -427,7 +427,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   if (gmailDeliveryProvider) {
     try {
       const reconciled = await gmailDeliveryProvider.findByDeliveryId(deliveryId);
-      if (reconciled.kind === "ambiguous" || reconciled.kind === "unreadable") {
+      if (isReconciliationRefusal(reconciled)) {
         const refusal = reconciliationRefusal(reconciled);
         persistDeliveryFailure(
           ctx,
