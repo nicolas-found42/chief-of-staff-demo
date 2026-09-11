@@ -1,0 +1,28 @@
+name: CodeRabbit review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# CodeRabbit skips automatic reviews on a public repository with fewer than ten
+# stars and reviews only on an explicit `@coderabbitai review` (the notice it
+# posts on every PR says so). This asks for one on every push, so a review body
+# exists for the head commit being merged. Same-repo branches only: a fork's
+# `pull_request` token is read-only and the comment would fail.
+permissions:
+  pull-requests: write
+
+jobs:
+  request-review:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask CodeRabbit to review the current head
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr comment "$PR_URL" --body "@coderabbitai review"
