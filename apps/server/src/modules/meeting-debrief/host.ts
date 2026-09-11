@@ -31,6 +31,10 @@ import {
 } from "./review.js";
 import { EMAIL_PATTERN } from "../../person-profile/profiles.js";
 import type { DebriefProfileDirectory } from "./profiles.js";
+import type { ModelBudgetLedger } from "../../llm/budget.js";
+import type { ModelAdmissionService } from "../../llm/admission.js";
+import type { ModelTimelineStore } from "../../llm/timeline.js";
+import { ExpectedVersionConflictError } from "../../engine/commit.js";
 import {
   meetingDebriefModule,
   type DebriefInput,
@@ -77,6 +81,9 @@ export interface MeetingDebriefHostDeps {
    * briefings that derive from action items go stale. Never throws into the
    * review path — the shell wires it to MeetingBriefHost.notifyActionItemsChanged.
    */
+  budgetLedger?: ModelBudgetLedger | undefined;
+  admission?: ModelAdmissionService | undefined;
+  timelineStore?: ModelTimelineStore | undefined;
 }
 
 function parseRunResult(raw: string | null): MeetingDebriefRunResult | null {
@@ -160,6 +167,9 @@ export class MeetingDebriefHost implements HostedModule {
   private readonly gate: DebriefApprovalGateDeps;
   private readonly profiles: DebriefProfileDirectory | null;
   private readonly meetingTitle: ((meetingId: string) => string | null) | null;
+  private readonly budgetLedger?: ModelBudgetLedger | undefined;
+  private readonly admission?: ModelAdmissionService | undefined;
+  private readonly timelineStore?: ModelTimelineStore | undefined;
   /** transcriptId → runId, rebuilt once per process from Runs and the log. */
   private knownRuns: Map<string, string> | null = null;
   /** `process` serializes through one chain, so two passes never race a scan. */
@@ -172,6 +182,9 @@ export class MeetingDebriefHost implements HostedModule {
     this.identity = deps.identity;
     this.profiles = deps.profiles ?? null;
     this.meetingTitle = deps.meetingTitle ?? null;
+    this.budgetLedger = deps.budgetLedger;
+    this.admission = deps.admission;
+    this.timelineStore = deps.timelineStore;
     /* A host without owner identity or a Profile directory keeps the gate
        closed: approval then reports its blockers instead of passing. */
     this.gate = {
@@ -573,6 +586,11 @@ export class MeetingDebriefHost implements HostedModule {
       review: state
         ? await this.buildReviewView(run, runId, meta, state, extraction?.debrief ?? null)
         : null,
+      budget: this.budgetLedger?.getOperationSnapshot(runId) ?? null,
+      interrupted:
+        summary.status === "failed" ||
+        this.budgetLedger?.getOperationSnapshot(runId)?.status === "cancelled" ||
+        this.budgetLedger?.getOperationSnapshot(runId)?.status === "exhausted",
     };
   }
 
@@ -586,6 +604,62 @@ export class MeetingDebriefHost implements HostedModule {
         return;
       }
       return detail;
+    });
+
+    app.get("/api/meeting-debrief/:runId/timeline", async (request) => {
+      const { runId } = request.params as { runId: string };
+      return { timeline: this.timelineStore?.getRunTimeline(runId) ?? [] };
+    });
+
+    app.post("/api/meeting-debrief/:runId/cancel", async (request) => {
+      const { runId } = request.params as { runId: string };
+      this.admission?.cancelOperation(runId);
+      this.budgetLedger?.cancelOperation(runId);
+      const run = this.runs.open(runId);
+      if (run) {
+        run.appendEvent("debrief_cancelled", { runId });
+      }
+      return { ok: true, cancelled: true };
+    });
+
+    app.post("/api/meeting-debrief/:runId/extend-budget", async (request, reply) => {
+      const { runId } = request.params as { runId: string };
+      const body = (request.body ?? {}) as {
+        addedDollars?: unknown;
+        expectedVersion?: unknown;
+        reason?: unknown;
+      };
+      if (
+        typeof body.addedDollars !== "number" ||
+        body.addedDollars <= 0 ||
+        typeof body.expectedVersion !== "number"
+      ) {
+        reply.code(400).send({ error: "invalid-extension-request" });
+        return;
+      }
+      if (!this.budgetLedger) {
+        reply.code(503).send({ error: "budget-ledger-unavailable" });
+        return;
+      }
+      try {
+        const snapshot = this.budgetLedger.extendOperation(runId, {
+          addedDollars: body.addedDollars,
+          expectedVersion: body.expectedVersion,
+          reason: typeof body.reason === "string" ? body.reason : undefined,
+        });
+        const run = this.runs.open(runId);
+        run?.appendEvent("debrief_budget_extended", {
+          addedDollars: body.addedDollars,
+          newAllowedDollars: snapshot.allowedDollars,
+        });
+        return { ok: true, budget: snapshot };
+      } catch (err) {
+        if (err instanceof ExpectedVersionConflictError) {
+          reply.code(409).send({ error: "version-conflict", message: err.message });
+          return;
+        }
+        throw err;
+      }
     });
 
     app.post("/api/meeting-debrief/:runId/regenerate", async (request, reply) => {

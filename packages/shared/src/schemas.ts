@@ -4,6 +4,7 @@ import type { TranscriptCatalogStatus } from "./transcript.js";
 import { z } from "zod/v3";
 import { YoutubeChannelSchema } from "./youtube.js";
 import { ACTION_ITEM_POLICIES } from "./task.js";
+import type { OperationBudgetSnapshot, ModelTimelineEntry } from "./model-admission.js";
 
 // Meeting Brief Generator — Internal Domain normalization helper (issue://83)
 export function normalizeInternalDomains(domains: string[]): string[] {
@@ -589,6 +590,10 @@ export interface RunDetail extends RunSummary {
   /** The Run's own files, so the Shell can link them for a Module that
    *  contributes no result view. It never reads inside one. */
   files: string[];
+  budget?: OperationBudgetSnapshot | null | undefined;
+  timeline?: ModelTimelineEntry[] | undefined;
+  queueWaitMs?: number | undefined;
+  interrupted?: boolean | undefined;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { ZodType, ZodTypeDef } from "zod/v3";
 import { zodToJsonSchema } from "zod-to-json-schema";
@@ -14,7 +15,12 @@ import {
   MODEL_STREAM_SILENT_TIMEOUT_MS,
   RESULT_SHAPE_BINDINGS,
   type TranscriptRoutePolicy,
+  type ModelAdmissionPriority,
+  type SourceLifecycleGrant,
 } from "@chief-of-staff-demo/shared";
+import type { AdmissionLease, ModelAdmissionService } from "./admission.js";
+import type { ModelBudgetLedger, ReservationResult } from "./budget.js";
+import type { ModelTimelineStore } from "./timeline.js";
 import {
   isUpstreamCapacityRefusal,
   modelBoundaryDiagnostic,
@@ -114,7 +120,24 @@ export interface CompletionRequest {
   /**
    * Route policy governing data retention and approved endpoints (#341, #356, MWR-051).
    */
-  routePolicy?: TranscriptRoutePolicy;
+  routePolicy?: TranscriptRoutePolicy | undefined;
+  signal?: AbortSignal | undefined;
+  sourceGrant?: SourceLifecycleGrant | null | undefined;
+  operationId?: string | undefined;
+  runId?: string | null | undefined;
+  stage?: string | undefined;
+  priority?: ModelAdmissionPriority | undefined;
+  outputReserveTokens?: number | undefined;
+  startedAt?: number | undefined;
+  queueAgeLimitMs?: number | undefined;
+  processingDeadlineMs?: number | undefined;
+  expectedGeneration?: number | undefined;
+}
+
+export interface ModelExecutionContext {
+  admission?: ModelAdmissionService | undefined;
+  budgetLedger?: ModelBudgetLedger | undefined;
+  timelineStore?: ModelTimelineStore | undefined;
 }
 
 export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
@@ -168,6 +191,7 @@ interface RequestDeadline {
      token/cost/fingerprint facts the wire reported. */
   usage?: ModelUsageObservation | undefined;
   observed(response: { status: number; bodyBytes: number; upstreamServer?: string }): void;
+  onBackoff?: ((delayMs: number, signal: AbortSignal) => Promise<void>) | undefined;
 }
 /** Token, cost and serving-backend facts off one succeeded wire response. */
 export interface ModelUsageObservation {
@@ -1646,7 +1670,7 @@ async function openAiCompatibleComplete(
             delayMs,
             stoppedReason: null,
           });
-          await retryBackoff(deadline.signal, delayMs);
+          await retryBackoff(deadline.signal, delayMs, deadline);
           stoppedReason = deadline.signal.aborted
             ? "The original request deadline expired."
             : request.retry.canRetry?.() === false
@@ -1806,8 +1830,16 @@ function retryAfterDelay(headers: Headers): number | undefined {
 }
 
 /** Backoff shares the request's deadline and cannot keep an aborted call alive. */
-async function retryBackoff(signal: AbortSignal, delayMs: number): Promise<void> {
+async function retryBackoff(
+  signal: AbortSignal,
+  delayMs: number,
+  deadline?: RequestDeadline,
+): Promise<void> {
   if (signal.aborted) return;
+  if (deadline?.onBackoff) {
+    await deadline.onBackoff(delayMs, signal);
+    return;
+  }
   await new Promise<void>((resolve) => {
     const finish = () => {
       clearTimeout(timer);
@@ -2114,6 +2146,8 @@ async function withinRequestCeiling<T>(
   cfg: LlmConfig,
   request: CompletionRequest,
   work: (deadline: RequestDeadline) => Promise<T>,
+  onBackoff?: (delayMs: number, signal: AbortSignal) => Promise<void>,
+  onSettled?: (usage?: ModelUsageObservation, error?: unknown) => void,
 ): Promise<T> {
   const controller = new AbortController();
   const ceilingMs = request.absoluteCeilingMs ?? REQUEST_TIMEOUT_MS;
@@ -2216,6 +2250,7 @@ async function withinRequestCeiling<T>(
           observed(response) {
             observed = response;
           },
+          onBackoff,
         }),
       ).then(
         (value) => {
@@ -2225,6 +2260,7 @@ async function withinRequestCeiling<T>(
             delayMs: 0,
             stoppedReason: null,
           });
+          onSettled?.(deadline.usage, undefined);
           return value;
         },
         (error: unknown) => {
@@ -2234,6 +2270,7 @@ async function withinRequestCeiling<T>(
             delayMs: 0,
             stoppedReason: "The attempt failed without further recovery.",
           });
+          onSettled?.(undefined, error);
           throw error;
         },
       ),
@@ -2245,15 +2282,99 @@ async function withinRequestCeiling<T>(
 }
 
 /** Build the provider call for the current config. Cheap to rebuild per attempt. */
-export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): CompleteJson {
+export function makeCompleteJson(
+  cfg: LlmConfig,
+  mockResultPath: string,
+  context?: ModelExecutionContext,
+): CompleteJson {
   return async (request) => {
-    /* Per request, not per provider call: the shape belongs to the calling
-       Module, not to this seam. */
     const full = wireJsonSchema(request.schema);
-    if (cfg.provider === "mock") return mockComplete(mockResultPath);
-    /* Compaction is a property of the wire, so it is applied and undone here
-       rather than by any Module: the caller hands over its own schema and gets
-       its own names back. */
+    const operationId = request.operationId;
+
+    // 1. Generation fence assertion before starting
+    if (context?.budgetLedger && operationId && request.expectedGeneration !== undefined) {
+      context.budgetLedger.assertGeneration(operationId, request.expectedGeneration);
+    }
+
+    // 2. Budget reservation
+    let reservation: ReservationResult | null = null;
+    if (context?.budgetLedger && operationId) {
+      reservation = context.budgetLedger.reserve({
+        operationId,
+        model: cfg.model,
+        system: request.system,
+        user: request.user,
+        schema: request.schema,
+        outputReserveTokens: request.outputReserveTokens,
+        grant: request.sourceGrant,
+      });
+    }
+
+    // 3. Admission slot acquisition
+    const enqueuedAt = Date.now();
+    let lease: AdmissionLease | null = null;
+    if (context?.admission) {
+      lease = await context.admission.acquire({
+        operationId,
+        priority: request.priority,
+        signal: request.signal,
+        startedAt: request.startedAt,
+        queueAgeLimitMs: request.queueAgeLimitMs,
+        processingDeadlineMs: request.processingDeadlineMs,
+      });
+    }
+
+    if (cfg.provider === "mock") {
+      try {
+        const result = await mockComplete(mockResultPath);
+        lease?.release("completed");
+        if (reservation && context?.budgetLedger) {
+          context.budgetLedger.settle(reservation.reservationId, null);
+        }
+        if (context?.timelineStore && operationId) {
+          context.timelineStore.record({
+            attemptId: randomUUID(),
+            operationId,
+            runId: request.runId ?? null,
+            stage: request.stage ?? "mock",
+            enqueuedAt: new Date(enqueuedAt).toISOString(),
+            admittedAt: new Date(lease?.admittedAt ?? enqueuedAt).toISOString(),
+            settledAt: new Date().toISOString(),
+            queueWaitMs: lease?.queueWaitMs ?? 0,
+            durationMs: Date.now() - (lease?.admittedAt ?? enqueuedAt),
+            provider: cfg.provider,
+            model: cfg.model,
+            binding: "response_format",
+            priority: request.priority ?? "normal",
+            outcome: "completed",
+            tokens: {
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0,
+              estimated: false,
+            },
+            cost: {
+              dollars: 0,
+              estimated: false,
+              unverified: false,
+            },
+            failureClassification: null,
+            validationOutcome: "valid",
+          });
+        }
+        if (context?.budgetLedger && operationId && request.expectedGeneration !== undefined) {
+          context.budgetLedger.assertGeneration(operationId, request.expectedGeneration);
+        }
+        return result;
+      } catch (err) {
+        lease?.release(request.signal?.aborted ? "cancelled" : "failed");
+        if (reservation && context?.budgetLedger) {
+          context.budgetLedger.settle(reservation.reservationId, null);
+        }
+        throw err;
+      }
+    }
+
     const compacted = request.compactWireNames ? compactWireSchema(full) : null;
     const schema = compacted?.schema ?? full;
     if (compacted)
@@ -2261,31 +2382,128 @@ export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): Comple
         ...request,
         system: request.system + wireNameLegend(compacted.names),
       };
-    const answered = withinRequestCeiling(cfg, request, async (deadline) => {
-      switch (cfg.provider) {
-        case "openai":
-          return openaiComplete(cfg, request, schema, deadline);
-        case "anthropic":
-          return anthropicComplete(cfg, request, schema, deadline);
-        case "openrouter":
-          /* Google AI Studio answers INVALID_ARGUMENT to the full JSON Schema
-             and 200 to a stripped one. The stripping already existed for the
-             direct `gemini` provider; a Gemini-family model reached through
-             OpenRouter never got it (#232). */
-          return openrouterComplete(
-            cfg,
-            request,
-            geminiFamily(cfg.model) ? geminiWireSchema(request.schema) : schema,
-            deadline,
-          );
-        case "gemini":
-          return geminiComplete(cfg, request, geminiWireSchema(request.schema), deadline);
-        case "ollama":
-          return ollamaComplete(cfg, request, schema, deadline);
-        case "mock":
-          return mockComplete(mockResultPath);
+
+    let observedUsage: ModelUsageObservation | undefined;
+
+    const workPromise = withinRequestCeiling(
+      cfg,
+      request,
+      async (deadline) => {
+        switch (cfg.provider) {
+          case "openai":
+            return openaiComplete(cfg, request, schema, deadline);
+          case "anthropic":
+            return anthropicComplete(cfg, request, schema, deadline);
+          case "openrouter":
+            return openrouterComplete(
+              cfg,
+              request,
+              geminiFamily(cfg.model) ? geminiWireSchema(request.schema) : schema,
+              deadline,
+            );
+          case "gemini":
+            return geminiComplete(cfg, request, geminiWireSchema(request.schema), deadline);
+          case "ollama":
+            return ollamaComplete(cfg, request, schema, deadline);
+          case "mock":
+            return mockComplete(mockResultPath);
+        }
+      },
+      lease ? (delayMs, signal) => lease.backoff(delayMs, signal) : undefined,
+      (usage) => {
+        observedUsage = usage;
+      },
+    );
+
+    if (context?.budgetLedger && operationId) {
+      context.budgetLedger.trackActiveAttempt(operationId, workPromise);
+    }
+
+    try {
+      const answered = await workPromise;
+      lease?.release("completed");
+      if (reservation && context?.budgetLedger) {
+        context.budgetLedger.settle(reservation.reservationId, observedUsage ?? null);
       }
-    });
-    return compacted ? answered.then((value) => expandWireNames(value, compacted.names)) : answered;
+      if (context?.timelineStore && operationId) {
+        context.timelineStore.record({
+          attemptId: randomUUID(),
+          operationId,
+          runId: request.runId ?? null,
+          stage: request.stage ?? "completion",
+          enqueuedAt: new Date(enqueuedAt).toISOString(),
+          admittedAt: new Date(lease?.admittedAt ?? enqueuedAt).toISOString(),
+          settledAt: new Date().toISOString(),
+          queueWaitMs: lease?.queueWaitMs ?? 0,
+          durationMs: Date.now() - (lease?.admittedAt ?? enqueuedAt),
+          provider: cfg.provider,
+          model: cfg.model,
+          binding: cfg.provider === "anthropic" ? "forced_tool_call" : "response_format",
+          priority: request.priority ?? "normal",
+          outcome: "completed",
+          tokens: {
+            promptTokens:
+              observedUsage?.inputTokens ?? reservation?.estimate.estimatedInputTokens ?? 0,
+            completionTokens:
+              observedUsage?.outputTokens ?? reservation?.estimate.estimatedOutputTokens ?? 0,
+            totalTokens:
+              (observedUsage?.inputTokens ?? reservation?.estimate.estimatedInputTokens ?? 0) +
+              (observedUsage?.outputTokens ?? reservation?.estimate.estimatedOutputTokens ?? 0),
+            estimated: observedUsage === undefined || observedUsage.inputTokens === null,
+          },
+          cost: {
+            dollars: observedUsage?.costUsd ?? reservation?.estimate.estimatedCostDollars ?? 0,
+            estimated: observedUsage === undefined || observedUsage.costUsd === null,
+            unverified: observedUsage === undefined || observedUsage.costUsd === null,
+          },
+          failureClassification: null,
+          validationOutcome: "valid",
+        });
+      }
+
+      // Check generation fence before returning
+      if (context?.budgetLedger && operationId && request.expectedGeneration !== undefined) {
+        context.budgetLedger.assertGeneration(operationId, request.expectedGeneration);
+      }
+
+      return compacted ? expandWireNames(answered, compacted.names) : answered;
+    } catch (error) {
+      lease?.release(request.signal?.aborted ? "cancelled" : "failed");
+      if (reservation && context?.budgetLedger) {
+        context.budgetLedger.settle(reservation.reservationId, null);
+      }
+      if (context?.timelineStore && operationId) {
+        context.timelineStore.record({
+          attemptId: randomUUID(),
+          operationId,
+          runId: request.runId ?? null,
+          stage: request.stage ?? "completion",
+          enqueuedAt: new Date(enqueuedAt).toISOString(),
+          admittedAt: new Date(lease?.admittedAt ?? enqueuedAt).toISOString(),
+          settledAt: new Date().toISOString(),
+          queueWaitMs: lease?.queueWaitMs ?? 0,
+          durationMs: Date.now() - (lease?.admittedAt ?? enqueuedAt),
+          provider: cfg.provider,
+          model: cfg.model,
+          binding: cfg.provider === "anthropic" ? "forced_tool_call" : "response_format",
+          priority: request.priority ?? "normal",
+          outcome: request.signal?.aborted ? "cancelled" : "failed",
+          tokens: {
+            promptTokens: reservation?.estimate.estimatedInputTokens ?? 0,
+            completionTokens: 0,
+            totalTokens: reservation?.estimate.estimatedInputTokens ?? 0,
+            estimated: true,
+          },
+          cost: {
+            dollars: reservation?.estimate.estimatedCostDollars ?? 0,
+            estimated: true,
+            unverified: true,
+          },
+          failureClassification: modelBoundaryDiagnostic(error)?.classification ?? null,
+          validationOutcome: null,
+        });
+      }
+      throw error;
+    }
   };
 }

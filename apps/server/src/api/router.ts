@@ -28,6 +28,11 @@ import type { WorkspaceActionItems } from "../tasks/action-items.js";
 import type { TaskLinking } from "../tasks/external-link.js";
 import type { AsanaLinking } from "../tasks/asana-link.js";
 
+import type { ModelAdmissionService } from "../llm/admission.js";
+import type { ModelBudgetLedger } from "../llm/budget.js";
+import type { ModelTimelineStore } from "../llm/timeline.js";
+import { generateCorpusLoadReport } from "../llm/timeline.js";
+import { ExpectedVersionConflictError } from "../engine/commit.js";
 export interface ApiContext {
   runs: Runs;
   port: number;
@@ -71,6 +76,9 @@ export interface ApiContext {
    */
   mockProviderAvailable: boolean;
   onConfigChanged: () => void | Promise<void>;
+  admission?: ModelAdmissionService | undefined;
+  budgetLedger?: ModelBudgetLedger | undefined;
+  timelineStore?: ModelTimelineStore | undefined;
 }
 
 /** A page nobody asked for by hand, and nothing the UI needs beyond it. */
@@ -105,7 +113,13 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       reply.code(404).send({ error: "run not found" });
       return;
     }
-    return detail;
+    const budget = ctx.budgetLedger?.getOperationSnapshot(id) ?? null;
+    const timeline = ctx.timelineStore?.getRunTimeline(id) ?? [];
+    return {
+      ...detail,
+      ...(budget ? { budget } : {}),
+      ...(timeline.length > 0 ? { timeline } : {}),
+    };
   });
 
   app.post("/api/runs/:id/retry", async (request, reply) => {
@@ -141,6 +155,90 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       }
       throw error;
     }
+  });
+
+  app.post("/api/runs/:id/cancel", async (request) => {
+    const { id } = request.params as { id: string };
+    ctx.admission?.cancelOperation(id);
+    ctx.budgetLedger?.cancelOperation(id);
+    const handle = runs.open(id);
+    if (handle) {
+      handle.appendEvent("run_cancelled", { operationId: id });
+    }
+    return { ok: true, cancelled: true };
+  });
+
+  app.get("/api/operations/:id/budget", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const snapshot = ctx.budgetLedger?.getOperationSnapshot(id);
+    if (!snapshot) {
+      reply.code(404).send({ error: "operation-budget-not-found" });
+      return;
+    }
+    return { budget: snapshot };
+  });
+
+  app.post("/api/operations/:id/extend", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as {
+      addedDollars?: unknown;
+      expectedVersion?: unknown;
+      addedInputTokens?: unknown;
+      addedOutputTokens?: unknown;
+      reason?: unknown;
+    };
+    if (
+      typeof body.addedDollars !== "number" ||
+      body.addedDollars <= 0 ||
+      typeof body.expectedVersion !== "number"
+    ) {
+      reply.code(400).send({ error: "invalid-extension-request" });
+      return;
+    }
+    if (!ctx.budgetLedger) {
+      reply.code(503).send({ error: "budget-ledger-unavailable" });
+      return;
+    }
+    try {
+      const snapshot = ctx.budgetLedger.extendOperation(id, {
+        addedDollars: body.addedDollars,
+        expectedVersion: body.expectedVersion,
+        addedInputTokens:
+          typeof body.addedInputTokens === "number" ? body.addedInputTokens : undefined,
+        addedOutputTokens:
+          typeof body.addedOutputTokens === "number" ? body.addedOutputTokens : undefined,
+        reason: typeof body.reason === "string" ? body.reason : undefined,
+      });
+      return { ok: true, budget: snapshot };
+    } catch (err) {
+      if (err instanceof ExpectedVersionConflictError) {
+        reply.code(409).send({ error: "version-conflict", message: err.message });
+        return;
+      }
+      throw err;
+    }
+  });
+
+  app.post("/api/operations/:id/cancel", async (request) => {
+    const { id } = request.params as { id: string };
+    ctx.admission?.cancelOperation(id);
+    ctx.budgetLedger?.cancelOperation(id);
+    return { ok: true, cancelled: true };
+  });
+
+  app.get("/api/operations/:id/timeline", async (request) => {
+    const { id } = request.params as { id: string };
+    const timeline = ctx.timelineStore?.getOperationTimeline(id) ?? [];
+    return { timeline };
+  });
+
+  app.get("/api/telemetry/corpus-load-report", async () => {
+    const report = generateCorpusLoadReport({
+      transcripts: [],
+      repairsByValidator: {},
+      operations: [],
+    });
+    return { report };
   });
 
   app.get("/api/runs/:id/artifacts/:name", async (request, reply) => {

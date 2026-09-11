@@ -190,6 +190,8 @@ async function extractWithModel(
       record,
       identity,
       complete: deps.getCompleteJson(),
+      operationId: ctx.runId,
+      runId: ctx.runId,
       ...(useCheckpoints
         ? {
             checkpoint: {

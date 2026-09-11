@@ -376,6 +376,26 @@ route can serve one model well and another badly, and it is carried on the next 
 to route around it rather than enforced by picking a route.
 _Avoid_: Ban, blocklist, allowlist (a rest names what just failed, never what will work)
 
+**Model admission**:
+The Shell-owned gate that serializes and paces all model dispatches across all providers and modules
+(ADR-0087). Enforces global bounded concurrency, prioritized FIFO queues (time-sensitive vs normal),
+starvation prevention (admitting waiting normal work after at most 3 time-sensitive calls), aged normal
+preference (60 seconds), slot release during retry backoff, and queue-age/deadline expiry.
+_Avoid_: Provider rate limit, module queue, worker pool
+
+**Operation budget**:
+A durable spend and token ceiling tracked cumulatively across retries, repairs, and restarts (ADR-0087).
+Whole Debrief and Brief operations default to USD 2.00 allowances with 4,000,000 input and 500,000 output
+token safety ceilings, within a USD 100.00 shared campaign budget. Enforces conservative preflight
+reservations via UTF-8 byte bounds and context capacity checks without silent truncation.
+_Avoid_: Request budget, model cost limit, token quota
+
+**Generation fence**:
+An integer counter incremented whenever an operation is cancelled or restarted (ADR-0087). Late callbacks
+and in-flight network completions from an older generation are refused before state or artifacts can be
+committed, preventing race conditions and stale writes.
+_Avoid_: Generation lock, write barrier, mutex
+
 **Prompt Eval Gate**:
 The check that a prompt still earns its result. The Gate Model answers every fixture transcript,
 and each answer is matched against that transcript's Golden by intent rather than by wording. A

@@ -45,6 +45,9 @@ import { buildDailyBriefingWork } from "../tasks/briefing-projection.js";
 import { WeeklyWorkspace } from "../meetings/weekly.js";
 import type { HostedModule } from "../engine/host.js";
 import { makeCompleteJson } from "../llm/providers.js";
+import { ModelAdmissionService } from "../llm/admission.js";
+import { ModelBudgetLedger } from "../llm/budget.js";
+import { ModelTimelineStore } from "../llm/timeline.js";
 import { googleFailureHint, openGoogleConnection } from "../google/connection.js";
 import { YoutubeHost } from "../modules/youtube/host.js";
 import { ContentScoutHost } from "../modules/content-scout/host.js";
@@ -194,6 +197,9 @@ interface ShellWorkspace {
   transcriptRelevance: TranscriptRelevanceService;
   transcriptDeletion: TranscriptDeletionService;
   transcriptCatalog: TranscriptCatalogRuntime;
+  admission: ModelAdmissionService;
+  budgetLedger: ModelBudgetLedger;
+  timelineStore: ModelTimelineStore;
 }
 
 export async function composeShell(options: ShellOptions): Promise<Shell> {
@@ -263,6 +269,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      owner reference is the active dependent configuration, and the residual
      disclosure scans the catalogued transcripts and collected public source
      items that name the person. All reads are local. */
+  const modelAdmission = new ModelAdmissionService();
+  const modelBudgetLedger = new ModelBudgetLedger(workspaceDir);
+  const modelTimelineStore = new ModelTimelineStore(workspaceDir);
   const transcriptCatalogStore = new TranscriptCatalogStore(workspaceDir);
   /* Resolve model settings per call so research and identity lookup pick up
      Settings edits without restarting the app. */
@@ -276,6 +285,11 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         baseUrl: current.ollama.baseUrl,
       },
       layout.mockResultFile,
+      {
+        admission: modelAdmission,
+        budgetLedger: modelBudgetLedger,
+        timelineStore: modelTimelineStore,
+      },
     );
   };
   const peopleCompleteJson = () => completeForPurpose("personResearch");
@@ -620,17 +634,17 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         google: googleConnection,
         getCompleteJson: meetingBriefCompleteJson,
         /* Owner onboarding (issue #123): delivery's outward send waits for the
-   confirmed owner reference; eligibility keeps the raw identity. */
+ confirmed owner reference; eligibility keeps the raw identity. */
         isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
         personProfiles: peopleProfiles,
         /* An attendee met for the first time is enriched from the public web
-   before the Brief pins its revision, so a Calendar shell is not the
-   whole of what the Brief knows about a new person. */
+ before the Brief pins its revision, so a Calendar shell is not the
+ whole of what the Brief knows about a new person. */
         resolveNewAttendee: (email) => peopleResolver.resolve(parsePersonIdentifier(email)),
         /* Confirmed transcript evidence (issue #138): the Brief reads the
-   Catalog's confirmed links and its reviewed relevance decisions. */
+ Catalog's confirmed links and its reviewed relevance decisions. */
         /* Meeting history (issue #152): the backward read reaches as far as
-   the oldest Transcript. */
+ the oldest Transcript. */
         oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
         associateTranscripts,
         transcriptRelevance,
@@ -708,6 +722,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     createMeetingDebriefProductionRuntime({
       runs,
       workspaceDir,
+      budgetLedger: modelBudgetLedger,
+      admission: modelAdmission,
+      timelineStore: modelTimelineStore,
       people: peopleProfiles,
       identity: transcriptIdentityService,
       ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
@@ -881,6 +898,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     runs,
     port,
     configStore,
+    admission: modelAdmission,
+    budgetLedger: modelBudgetLedger,
+    timelineStore: modelTimelineStore,
     mockProviderAvailable,
     modules,
     google: googleConnection,
@@ -1147,6 +1167,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       transcriptRelevance,
       transcriptDeletion,
       transcriptCatalog: transcriptCatalogRuntime,
+      admission: modelAdmission,
+      budgetLedger: modelBudgetLedger,
+      timelineStore: modelTimelineStore,
     },
     start: startModules,
     stop: stopModules,
