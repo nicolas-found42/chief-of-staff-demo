@@ -125,6 +125,23 @@ The optional external system and container that receive a new Task. A Task List 
 Task Destination, and Local only means that no External Task Link is created.
 _Avoid_: Provider, integration, sync target
 
+**Action Item Responsibility Claim**:
+The structured record of what relationship the source established for one exact obligation: its
+speaker and statement turn, the proposed performer and basis, the relationship kind — the
+performer's own commitment, a request they unambiguously accepted, an unanswered request, a
+reported commitment, shared work or unresolved — the assignment and acceptance turns, later
+changes, and the source revision, context and validator it was checked under. Evidence for review
+and for the promotion gate; never a Task acceptance, and never permission on its own.
+_Avoid_: confidence, score, ownership guess
+
+**Automatic Promotion Release**:
+The recorded state that decides whether automatic promotion is available at all: a release, named
+by the retained evidence it stands on, kept apart from the owner's Action Item Policy preference,
+followed by the owner's explicit enablement as its own act. A saved preference never lifts the
+restriction, a release never resumes a preference saved before it, and both are reserved with a
+Debrief operation so enablement reaches future first extractions only.
+_Avoid_: policy setting, toggle, auto-approve
+
 **Action Item Policy**:
 The Meeting Debrief rule that either stages every Action Item or automatically promotes an Action
 Item whose Responsible Person is the confirmed workspace owner. It never decides for an unassigned
