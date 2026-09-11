@@ -289,6 +289,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         admission: modelAdmission,
         budgetLedger: modelBudgetLedger,
         timelineStore: modelTimelineStore,
+        purpose,
       },
     );
   };

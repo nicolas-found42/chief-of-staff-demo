@@ -93,6 +93,11 @@ export class ResearchBudget {
 
   /** Room left, without reserving any of it. */
   within(): boolean {
+    /* A bound already reached is still a bound. A Workspace that declined one
+       call declines the next, and an operation that keeps asking spends every
+       remaining round learning nothing — which is how a resumed document with
+       a refused model call used to idle to the wall-clock backstop. */
+    if (this.boundReason !== null) return false;
     const now = (this.options.now ?? Date.now)();
     if (now - this.startedAtMs >= this.allowance.maxMilliseconds) {
       this.boundReason ??=

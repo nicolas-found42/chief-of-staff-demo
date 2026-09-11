@@ -21,7 +21,12 @@ const ClaimsSchema = z.strictObject({
 export type PersonClaimExtractor = (
   result: { title: string; summary: string; url: string },
   signals: PersonIdentitySignals,
+  /** The bootstrap this call is measured under (#381); attribution only. */
+  trace?: { operationId: string },
 ) => Promise<PersonEvidenceClaims>;
+
+/** The call site every claim extraction is attributed to in the timeline (C1). */
+export const CLAIM_EXTRACTION_CALL_SITE = "person-profile:claims";
 
 /** How many results are worth a model call; the rest carry no claims. */
 export const MAX_CLAIM_EXTRACTIONS = 8;
@@ -29,7 +34,7 @@ export const MAX_CLAIM_EXTRACTIONS = 8;
 export function createPersonClaimExtractor(
   getCompleteJson: () => CompleteJson,
 ): PersonClaimExtractor {
-  return async (result, signals) => {
+  return async (result, signals, trace) => {
     const searchedFor = [
       ...signals.emails,
       ...signals.fullNames,
@@ -54,6 +59,9 @@ export function createPersonClaimExtractor(
          under the small-call ceiling like every other bounded-slice call
          (ADR-0074). */
       absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
+      ...(trace
+        ? { trace: { operationId: trace.operationId, callSite: CLAIM_EXTRACTION_CALL_SITE } }
+        : {}),
     });
     const parsed = ClaimsSchema.parse(raw);
     /* Absent beats null: `claims` is an optional-field record, and the

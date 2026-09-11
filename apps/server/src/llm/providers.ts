@@ -21,6 +21,7 @@ import {
 import type { AdmissionLease, ModelAdmissionService } from "./admission.js";
 import type { ModelBudgetLedger, ReservationResult } from "./budget.js";
 import type { ModelTimelineStore } from "./timeline.js";
+import { requestFingerprint } from "./measurement.js";
 import {
   isUpstreamCapacityRefusal,
   modelBoundaryDiagnostic,
@@ -132,15 +133,40 @@ export interface CompletionRequest {
   queueAgeLimitMs?: number | undefined;
   processingDeadlineMs?: number | undefined;
   expectedGeneration?: number | undefined;
+  /**
+   * Measurement attribution (issue #381): which operation and call site this
+   * invocation belongs to, so the timeline can tell a claim extraction from
+   * a dossier extraction. Attribution only — never an admission or budget
+   * key, which is what `operationId` is (ADR-0087). A traced call is recorded
+   * in the timeline under `trace.operationId` when no `operationId` names a
+   * budgeted operation.
+   */
+  trace?: { operationId: string; callSite: string } | undefined;
 }
 
 export interface ModelExecutionContext {
   admission?: ModelAdmissionService | undefined;
   budgetLedger?: ModelBudgetLedger | undefined;
   timelineStore?: ModelTimelineStore | undefined;
+  /** The Settings purpose this seam was resolved for; stamped on every timeline entry. */
+  purpose?: string | undefined;
 }
 
-export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
+/**
+ * The resolved provider and model one seam was built for. Carried on the
+ * function so an operation that resolves its bindings once can name the
+ * model identity its exact-reuse keys depend on (#381) without seeing the
+ * key. Absent on fakes, which is what disables reuse under them.
+ */
+export interface ModelConfigurationIdentity {
+  provider: ProviderId;
+  model: string;
+  baseUrl?: string | undefined;
+}
+
+export type CompleteJson = ((request: CompletionRequest) => Promise<unknown>) & {
+  readonly configuration?: ModelConfigurationIdentity;
+};
 /** The ceiling on one model call. Exported so a test can drive it deterministically. */
 export const REQUEST_TIMEOUT_MS = MODEL_REQUEST_TIMEOUT_MS;
 
@@ -202,6 +228,12 @@ export interface ModelUsageObservation {
   outputTokens: number | null;
   /** The provider's own charge in US dollars, when it names one. */
   costUsd: number | null;
+  /**
+   * Input tokens the provider reports as served from its prompt cache, when
+   * it reports the split at all. The measurement that says whether a prefix
+   * discount is already applied before anyone asks for one (#381).
+   */
+  cachedInputTokens: number | null;
   systemFingerprint: string | null;
 }
 
@@ -262,6 +294,7 @@ function openAiUsage(payload: unknown): UsageFacts {
   const inputTokens = usageInt(usage?.prompt_tokens);
   const outputTokens = usageInt(usage?.completion_tokens);
   const costUsd = usageDollars(usage?.cost);
+  const cachedInputTokens = usageInt(usageRecord(usage?.prompt_tokens_details)?.cached_tokens);
   const systemFingerprint =
     usageName(choice?.system_fingerprint) ?? usageName(root?.system_fingerprint);
   if (
@@ -271,7 +304,7 @@ function openAiUsage(payload: unknown): UsageFacts {
     systemFingerprint === null
   )
     return null;
-  return { inputTokens, outputTokens, costUsd, systemFingerprint };
+  return { inputTokens, outputTokens, costUsd, cachedInputTokens, systemFingerprint };
 }
 
 /** Anthropic names its token fields its own way and reports no cost. */
@@ -280,7 +313,13 @@ function anthropicUsage(payload: unknown): UsageFacts {
   const inputTokens = usageInt(usage?.input_tokens);
   const outputTokens = usageInt(usage?.output_tokens);
   if (inputTokens === null && outputTokens === null) return null;
-  return { inputTokens, outputTokens, costUsd: null, systemFingerprint: null };
+  return {
+    inputTokens,
+    outputTokens,
+    costUsd: null,
+    cachedInputTokens: usageInt(usage?.cache_read_input_tokens),
+    systemFingerprint: null,
+  };
 }
 
 /** Gemini counts tokens in `usageMetadata` with camelCase names. */
@@ -289,7 +328,13 @@ function geminiUsage(payload: unknown): UsageFacts {
   const inputTokens = usageInt(usage?.promptTokenCount);
   const outputTokens = usageInt(usage?.candidatesTokenCount);
   if (inputTokens === null && outputTokens === null) return null;
-  return { inputTokens, outputTokens, costUsd: null, systemFingerprint: null };
+  return {
+    inputTokens,
+    outputTokens,
+    costUsd: null,
+    cachedInputTokens: usageInt(usage?.cachedContentTokenCount),
+    systemFingerprint: null,
+  };
 }
 
 /** One provider answer over the wire: status line plus body text. */
@@ -2287,9 +2332,90 @@ export function makeCompleteJson(
   mockResultPath: string,
   context?: ModelExecutionContext,
 ): CompleteJson {
-  return async (request) => {
+  const configuration: ModelConfigurationIdentity = {
+    provider: cfg.provider,
+    model: cfg.model,
+    ...(cfg.baseUrl !== undefined ? { baseUrl: cfg.baseUrl } : {}),
+  };
+  const complete = async (request: CompletionRequest): Promise<unknown> => {
     const full = wireJsonSchema(request.schema);
     const operationId = request.operationId;
+    /* Measurement attribution (#381): the timeline names the operation a
+       call is budgeted under, or the one it is traced to, and the call site
+       that made it. Counting wire attempts here — around the caller's own
+       observer — is what keeps "logical invocations" and "provider attempts"
+       two numbers instead of one. */
+    const timelineOperationId = operationId ?? request.trace?.operationId;
+    const fingerprint = context?.timelineStore ? requestFingerprint(cfg, request) : null;
+    let wireAttempts = 0;
+    const callerRetry = request.retry;
+    if (context?.timelineStore)
+      request = {
+        ...request,
+        retry: {
+          onAttempt: (event) => {
+            wireAttempts = Math.max(wireAttempts, event.attempt);
+            callerRetry?.onAttempt(event);
+          },
+          ...(callerRetry?.canRetry ? { canRetry: callerRetry.canRetry } : {}),
+        },
+      };
+    const enqueuedAt = Date.now();
+    const recordTimeline = (
+      lease: AdmissionLease | null,
+      reservation: ReservationResult | null,
+      outcome: "completed" | "failed" | "cancelled",
+      usage: ModelUsageObservation | undefined,
+      error: unknown,
+    ) => {
+      if (!context?.timelineStore || !timelineOperationId) return;
+      const succeeded = outcome === "completed";
+      const promptTokens = succeeded
+        ? (usage?.inputTokens ?? reservation?.estimate.estimatedInputTokens ?? 0)
+        : (reservation?.estimate.estimatedInputTokens ?? 0);
+      const completionTokens = succeeded
+        ? (usage?.outputTokens ?? reservation?.estimate.estimatedOutputTokens ?? 0)
+        : 0;
+      context.timelineStore.record({
+        attemptId: randomUUID(),
+        operationId: timelineOperationId,
+        runId: request.runId ?? null,
+        stage: request.stage ?? request.trace?.callSite ?? "completion",
+        enqueuedAt: new Date(enqueuedAt).toISOString(),
+        admittedAt: new Date(lease?.admittedAt ?? enqueuedAt).toISOString(),
+        settledAt: new Date().toISOString(),
+        queueWaitMs: lease?.queueWaitMs ?? 0,
+        durationMs: Date.now() - (lease?.admittedAt ?? enqueuedAt),
+        provider: cfg.provider,
+        model: cfg.model,
+        binding:
+          usage?.binding ?? (cfg.provider === "anthropic" ? "forced_tool_call" : "response_format"),
+        priority: request.priority ?? "normal",
+        outcome,
+        tokens: {
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens,
+          estimated: !succeeded || usage === undefined || usage.inputTokens === null,
+        },
+        cost: {
+          dollars: succeeded
+            ? (usage?.costUsd ?? reservation?.estimate.estimatedCostDollars ?? 0)
+            : (reservation?.estimate.estimatedCostDollars ?? 0),
+          estimated: !succeeded || usage === undefined || usage.costUsd === null,
+          unverified: !succeeded || usage === undefined || usage.costUsd === null,
+        },
+        failureClassification: succeeded
+          ? null
+          : (modelBoundaryDiagnostic(error)?.classification ?? null),
+        validationOutcome: succeeded ? "valid" : null,
+        ...(context.purpose !== undefined ? { purpose: context.purpose } : {}),
+        ...(request.trace ? { callSite: request.trace.callSite } : {}),
+        ...(fingerprint !== null ? { requestFingerprint: fingerprint } : {}),
+        wireAttempts,
+        cachedPromptTokens: usage?.cachedInputTokens ?? null,
+      });
+    };
 
     // 1. Generation fence assertion before starting
     if (context?.budgetLedger && operationId && request.expectedGeneration !== undefined) {
@@ -2311,7 +2437,6 @@ export function makeCompleteJson(
     }
 
     // 3. Admission slot acquisition
-    const enqueuedAt = Date.now();
     let lease: AdmissionLease | null = null;
     if (context?.admission) {
       lease = await context.admission.acquire({
@@ -2331,37 +2456,8 @@ export function makeCompleteJson(
         if (reservation && context?.budgetLedger) {
           context.budgetLedger.settle(reservation.reservationId, null);
         }
-        if (context?.timelineStore && operationId) {
-          context.timelineStore.record({
-            attemptId: randomUUID(),
-            operationId,
-            runId: request.runId ?? null,
-            stage: request.stage ?? "mock",
-            enqueuedAt: new Date(enqueuedAt).toISOString(),
-            admittedAt: new Date(lease?.admittedAt ?? enqueuedAt).toISOString(),
-            settledAt: new Date().toISOString(),
-            queueWaitMs: lease?.queueWaitMs ?? 0,
-            durationMs: Date.now() - (lease?.admittedAt ?? enqueuedAt),
-            provider: cfg.provider,
-            model: cfg.model,
-            binding: "response_format",
-            priority: request.priority ?? "normal",
-            outcome: "completed",
-            tokens: {
-              promptTokens: 0,
-              completionTokens: 0,
-              totalTokens: 0,
-              estimated: false,
-            },
-            cost: {
-              dollars: 0,
-              estimated: false,
-              unverified: false,
-            },
-            failureClassification: null,
-            validationOutcome: "valid",
-          });
-        }
+        wireAttempts = 1;
+        recordTimeline(lease, reservation, "completed", undefined, undefined);
         if (context?.budgetLedger && operationId && request.expectedGeneration !== undefined) {
           context.budgetLedger.assertGeneration(operationId, request.expectedGeneration);
         }
@@ -2425,41 +2521,7 @@ export function makeCompleteJson(
       if (reservation && context?.budgetLedger) {
         context.budgetLedger.settle(reservation.reservationId, observedUsage ?? null);
       }
-      if (context?.timelineStore && operationId) {
-        context.timelineStore.record({
-          attemptId: randomUUID(),
-          operationId,
-          runId: request.runId ?? null,
-          stage: request.stage ?? "completion",
-          enqueuedAt: new Date(enqueuedAt).toISOString(),
-          admittedAt: new Date(lease?.admittedAt ?? enqueuedAt).toISOString(),
-          settledAt: new Date().toISOString(),
-          queueWaitMs: lease?.queueWaitMs ?? 0,
-          durationMs: Date.now() - (lease?.admittedAt ?? enqueuedAt),
-          provider: cfg.provider,
-          model: cfg.model,
-          binding: cfg.provider === "anthropic" ? "forced_tool_call" : "response_format",
-          priority: request.priority ?? "normal",
-          outcome: "completed",
-          tokens: {
-            promptTokens:
-              observedUsage?.inputTokens ?? reservation?.estimate.estimatedInputTokens ?? 0,
-            completionTokens:
-              observedUsage?.outputTokens ?? reservation?.estimate.estimatedOutputTokens ?? 0,
-            totalTokens:
-              (observedUsage?.inputTokens ?? reservation?.estimate.estimatedInputTokens ?? 0) +
-              (observedUsage?.outputTokens ?? reservation?.estimate.estimatedOutputTokens ?? 0),
-            estimated: observedUsage === undefined || observedUsage.inputTokens === null,
-          },
-          cost: {
-            dollars: observedUsage?.costUsd ?? reservation?.estimate.estimatedCostDollars ?? 0,
-            estimated: observedUsage === undefined || observedUsage.costUsd === null,
-            unverified: observedUsage === undefined || observedUsage.costUsd === null,
-          },
-          failureClassification: null,
-          validationOutcome: "valid",
-        });
-      }
+      recordTimeline(lease, reservation, "completed", observedUsage, undefined);
 
       // Check generation fence before returning
       if (context?.budgetLedger && operationId && request.expectedGeneration !== undefined) {
@@ -2472,38 +2534,15 @@ export function makeCompleteJson(
       if (reservation && context?.budgetLedger) {
         context.budgetLedger.settle(reservation.reservationId, null);
       }
-      if (context?.timelineStore && operationId) {
-        context.timelineStore.record({
-          attemptId: randomUUID(),
-          operationId,
-          runId: request.runId ?? null,
-          stage: request.stage ?? "completion",
-          enqueuedAt: new Date(enqueuedAt).toISOString(),
-          admittedAt: new Date(lease?.admittedAt ?? enqueuedAt).toISOString(),
-          settledAt: new Date().toISOString(),
-          queueWaitMs: lease?.queueWaitMs ?? 0,
-          durationMs: Date.now() - (lease?.admittedAt ?? enqueuedAt),
-          provider: cfg.provider,
-          model: cfg.model,
-          binding: cfg.provider === "anthropic" ? "forced_tool_call" : "response_format",
-          priority: request.priority ?? "normal",
-          outcome: request.signal?.aborted ? "cancelled" : "failed",
-          tokens: {
-            promptTokens: reservation?.estimate.estimatedInputTokens ?? 0,
-            completionTokens: 0,
-            totalTokens: reservation?.estimate.estimatedInputTokens ?? 0,
-            estimated: true,
-          },
-          cost: {
-            dollars: reservation?.estimate.estimatedCostDollars ?? 0,
-            estimated: true,
-            unverified: true,
-          },
-          failureClassification: modelBoundaryDiagnostic(error)?.classification ?? null,
-          validationOutcome: null,
-        });
-      }
+      recordTimeline(
+        lease,
+        reservation,
+        request.signal?.aborted ? "cancelled" : "failed",
+        undefined,
+        error,
+      );
       throw error;
     }
   };
+  return Object.assign(complete, { configuration });
 }

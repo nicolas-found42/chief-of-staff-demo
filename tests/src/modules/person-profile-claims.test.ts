@@ -39,6 +39,59 @@ describe("createPersonClaimExtractor", () => {
     expect(seen!.user).toContain("<result-title>Ada Lovelace — Analyst</result-title>");
   });
 
+  it("keeps one result's content out of every other result's extraction call", async () => {
+    /* Each result is its own page about its own subject; a call carrying two
+       results' text could read one page's wording as a claim about the other. */
+    const results = [
+      {
+        title: "Ada Lovelace — Analyst",
+        summary: "Ada Lovelace analyses engines.",
+        url: "https://example.com/ada-lovelace-analyst",
+      },
+      {
+        title: "Grace Hopper — Rear Admiral",
+        summary: "Grace Hopper compiled the first compiler.",
+        url: "https://example.com/grace-hopper-navy",
+      },
+    ];
+    const seen: string[] = [];
+    const extract = createPersonClaimExtractor(() => async (request: unknown) => {
+      const typed = request as { user: string };
+      seen.push(typed.user);
+      return { fullName: null, role: null, currentEmployer: null };
+    });
+    const source = createPublicWebPersonProfileSource({
+      search: async () =>
+        results.map((result) => ({
+          title: result.title,
+          url: result.url,
+          snippet: result.summary,
+        })),
+      discoverFeeds: async () => [],
+      extractClaims: extract,
+    });
+
+    const collected = await source.collect(SIGNALS);
+
+    /* Both results were asked about, each in its own call. */
+    expect(collected.candidates).toHaveLength(2);
+    expect(seen).toHaveLength(2);
+    const ada = seen.find((user) => user.includes(results[0].title))!;
+    const grace = seen.find((user) => user.includes(results[1].title))!;
+    expect(ada).toContain(`<result-title>${results[0].title}</result-title>`);
+    expect(ada).toContain(`<result-snippet>${results[0].summary}</result-snippet>`);
+    expect(ada).toContain(`<result-url>${results[0].url}</result-url>`);
+    expect(grace).toContain(`<result-title>${results[1].title}</result-title>`);
+    /* One result's call carries that result and no other: a claim about Ada
+       can never be read off Grace's page, or the other way round. */
+    expect(ada).not.toContain(results[1].title);
+    expect(ada).not.toContain(results[1].summary);
+    expect(ada).not.toContain(results[1].url);
+    expect(grace).not.toContain(results[0].title);
+    expect(grace).not.toContain(results[0].summary);
+    expect(grace).not.toContain(results[0].url);
+  });
+
   it("lets a failed extraction cost the claims, never the evidence", async () => {
     const source = createPublicWebPersonProfileSource({
       search: async () => [

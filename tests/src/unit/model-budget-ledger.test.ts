@@ -73,6 +73,7 @@ describe("ModelBudgetLedger", () => {
       binding: "response_format",
       inputTokens: 1000,
       outputTokens: 200,
+      cachedInputTokens: null,
       costUsd: 0.000196,
       systemFingerprint: null,
     });

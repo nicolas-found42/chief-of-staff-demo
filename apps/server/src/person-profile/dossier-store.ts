@@ -19,6 +19,10 @@ import {
   type PersonDossierContent,
   type PersonSourceDocument,
 } from "@chief-of-staff-demo/shared";
+import {
+  ExtractionPartCheckpointSchema,
+  type ExtractionPartCheckpoint,
+} from "./extraction-parts.js";
 
 type PersonDossierSection = PersonDossierContent["sections"][number];
 
@@ -102,6 +106,54 @@ export class PersonDossierStore {
     const path = this.path("person-source-documents", id);
     if (!existsSync(path)) this.write(path, source);
     return PersonSourceDocumentSchema.parse(this.read(path));
+  }
+
+  /**
+   * Checkpoint one validated Extraction Part result under its complete
+   * request identity (issue #381, R1). Write-once: the key already names
+   * every dependency of the answer, so an identical key is the same answer.
+   */
+  retainExtractionPart(
+    input: Omit<ExtractionPartCheckpoint, "schemaVersion" | "recordedAt">,
+  ): ExtractionPartCheckpoint {
+    const checkpoint = ExtractionPartCheckpointSchema.parse({
+      ...input,
+      schemaVersion: 1,
+      recordedAt: new Date().toISOString(),
+    });
+    const path = this.path("person-extraction-parts", checkpoint.key);
+    if (!existsSync(path)) this.write(path, checkpoint);
+    return checkpoint;
+  }
+
+  /** The checkpointed part result under this key, if one was ever validated. */
+  extractionPart(key: string): ExtractionPartCheckpoint | null {
+    const raw = this.read(this.path("person-extraction-parts", key));
+    return raw === null ? null : ExtractionPartCheckpointSchema.parse(raw);
+  }
+
+  /** Every part checkpoint written for this Profile. A scan; for tests and purges. */
+  extractionParts(profileId: string): ExtractionPartCheckpoint[] {
+    return this.eachExtractionPart()
+      .filter((entry) => entry.checkpoint.profileId === profileId)
+      .map((entry) => entry.checkpoint);
+  }
+
+  private eachExtractionPart(): { path: string; checkpoint: ExtractionPartCheckpoint }[] {
+    const directory = join(this.root, "person-extraction-parts");
+    if (!existsSync(directory)) return [];
+    return readdirSync(directory)
+      .filter((file) => file.endsWith(".json"))
+      .map((file) => {
+        const path = join(directory, file);
+        return { path, checkpoint: ExtractionPartCheckpointSchema.parse(this.read(path)) };
+      });
+  }
+
+  /** Remove every part checkpoint the predicate names. Part results quote retained text. */
+  private purgeExtractionParts(remove: (checkpoint: ExtractionPartCheckpoint) => boolean): void {
+    for (const entry of this.eachExtractionPart())
+      if (remove(entry.checkpoint)) rmSync(entry.path, { force: true });
   }
 
   get(profileId: string): PersonDossier | null {
@@ -228,6 +280,7 @@ export class PersonDossierStore {
   }
 
   removeTranscript(transcriptId: string): void {
+    this.purgeExtractionParts((checkpoint) => checkpoint.transcriptId === transcriptId);
     const directory = join(this.root, "person-dossiers");
     if (!existsSync(directory)) return;
     for (const file of readdirSync(directory)) {
@@ -379,6 +432,7 @@ export class PersonDossierStore {
 
   privacyDelete(profileId: string): string[] {
     const sourceIds = [...new Set(this.get(profileId)?.sourceIds ?? [])];
+    this.purgeExtractionParts((checkpoint) => checkpoint.profileId === profileId);
     this.write(this.path("person-dossier-tombstones", profileId), { profileId });
     rmSync(this.path("person-dossiers", profileId), { force: true });
     rmSync(this.path("person-dossier-rejections", profileId), { force: true });

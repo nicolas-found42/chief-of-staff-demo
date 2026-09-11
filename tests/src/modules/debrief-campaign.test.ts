@@ -362,6 +362,7 @@ describe("terminal outcomes", () => {
       inputTokens: 1000,
       outputTokens: 500,
       costUsd: 0.0123,
+      cachedInputTokens: null,
       systemFingerprint: null,
     });
     const timeline = new ModelTimelineStore(root);
