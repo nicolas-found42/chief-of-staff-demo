@@ -170,3 +170,242 @@ it.each([
     expect(runs.list({ module: "meeting-debrief" }).runs[0]?.status).toBe("failed");
   },
 );
+
+/**
+ * Structured provenance for purpose, criteria, inputs and retrieval steps
+ * (MWR-046, spec #347). The extraction's claims are checked against the
+ * transcript: what the source states keeps its occurrences, what the model
+ * asserts without them is a suggestion, and a suggested retrieval step is
+ * never another commitment.
+ */
+it("grounds supported details and reads a claim without support as a suggestion", async () => {
+  const record = fromPartial<TranscriptRecord>({
+    id: "transcript-provenance",
+    source: { fileName: "2026-09-09.md" },
+    meetingDate: "2026-09-09",
+    meetingId: null,
+    occurrence: null,
+    roster: [],
+    speakers: ["Alice"],
+    speakerIdentityMappings: [],
+    normalizedText:
+      "[01:12–01:18] Alice: I will share the plan with the team, and they can read it once the budget is approved.\n",
+  });
+  const runs = openRuns(mkdtempSync(join(tmpdir(), "handoff-provenance-")));
+  const host = new MeetingDebriefHost({
+    runs,
+    catalog: { getTranscript: () => record },
+    identity: { reviewFor: () => ({ mentions: [], decisions: [], organizations: [] }) },
+    getCompleteJson: () =>
+      accountedHandoffModel({
+        version: 1,
+        summary: "Plan sharing",
+        decisions: [],
+        openQuestions: [],
+        effectivenessEvidence: "",
+        coachingAdvice: "",
+        suggestedRecipients: [],
+        actionItems: [
+          {
+            title: "Share the plan",
+            owner: "Alice",
+            ownerMentionId: null,
+            ownerProfileId: null,
+            dueDate: null,
+            evidence: "I will share the plan with the team",
+            handoff: {
+              ...operationalHandoff(),
+              purpose: {
+                text: "Keep the rollout verifiable",
+                provenance: "supported",
+                sources: [
+                  { quote: "Nobody said this in the meeting", speaker: null, timestamp: null },
+                ],
+              },
+              completionCriteria: [
+                {
+                  text: "The team can read the plan",
+                  provenance: "supported",
+                  sources: [
+                    {
+                      quote: "they can read it once the budget is approved",
+                      speaker: "Invented speaker",
+                      timestamp: "99:99",
+                    },
+                  ],
+                },
+                { text: "A rollout owner is named", provenance: "suggested", sources: [] },
+              ],
+              missingInputs: [
+                {
+                  information: { text: "Deployment access", provenance: "suggested", sources: [] },
+                  obtainBy: {
+                    text: "Ask the deployment administrator",
+                    provenance: "suggested",
+                    sources: [],
+                  },
+                },
+              ],
+              dependencies: [
+                {
+                  actionTitle: "Approve the budget",
+                  condition: "Only after approval",
+                  provenance: "suggested",
+                  sources: [],
+                  references: "external",
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    log: () => {},
+  });
+  const app = fastify();
+  host.routes(app);
+  try {
+    await host.process(record);
+    await host.idle();
+    const runId = runs.list({ module: "meeting-debrief" }).runs[0].id;
+    const response = await app.inject(`/api/meeting-debrief/${runId}`);
+    const detail = response.json<MeetingDebriefDetail>();
+    const items = detail.extraction?.actionItems ?? [];
+    /* The suggested retrieval step is detail about the commitment, not another
+       commitment: nothing was extracted beside it. */
+    expect(items).toHaveLength(1);
+    expect(items[0]?.handoff).toMatchObject({
+      version: 2,
+      purpose: { text: "Keep the rollout verifiable", provenance: "suggested", sources: [] },
+      completionCriteria: [
+        {
+          text: "The team can read the plan",
+          provenance: "supported",
+          sources: [
+            {
+              quote: "they can read it once the budget is approved",
+              speaker: "Alice",
+              timestamp: "01:12",
+            },
+          ],
+        },
+        { text: "A rollout owner is named", provenance: "suggested", sources: [] },
+      ],
+      missingInputs: [
+        {
+          information: { text: "Deployment access", provenance: "suggested", sources: [] },
+          obtainBy: {
+            text: "Ask the deployment administrator",
+            provenance: "suggested",
+            sources: [],
+          },
+        },
+      ],
+      dependencies: [
+        {
+          actionTitle: "Approve the budget",
+          condition: "Only after approval",
+          provenance: "suggested",
+          references: "external",
+        },
+      ],
+    });
+    expect(items[0]?.handoff?.dependencies[0]).not.toHaveProperty("target");
+  } finally {
+    await app.close();
+  }
+});
+
+it("keeps an internal dependency's own wording and its claim to name another proposal", async () => {
+  const record = fromPartial<TranscriptRecord>({
+    id: "transcript-dependency",
+    source: { fileName: "2026-09-09.md" },
+    meetingDate: "2026-09-09",
+    meetingId: null,
+    occurrence: null,
+    roster: [],
+    speakers: ["Alice", "Bob"],
+    speakerIdentityMappings: [],
+    normalizedText:
+      "[01:20] Alice: I will draft the rollout plan.\n[01:21] Bob: I will review the rollout plan once Alice shares it.\n",
+  });
+  const runs = openRuns(mkdtempSync(join(tmpdir(), "handoff-dependency-")));
+  const host = new MeetingDebriefHost({
+    runs,
+    catalog: { getTranscript: () => record },
+    identity: { reviewFor: () => ({ mentions: [], decisions: [], organizations: [] }) },
+    getCompleteJson: () =>
+      accountedHandoffModel({
+        version: 1,
+        summary: "Rollout planning",
+        decisions: [],
+        openQuestions: [],
+        effectivenessEvidence: "",
+        coachingAdvice: "",
+        suggestedRecipients: [],
+        actionItems: [
+          {
+            title: "Draft the rollout plan",
+            owner: "Alice",
+            ownerMentionId: null,
+            ownerProfileId: null,
+            dueDate: null,
+            evidence: "I will draft the rollout plan",
+            handoff: operationalHandoff(),
+          },
+          {
+            title: "Review the rollout plan",
+            owner: "Bob",
+            ownerMentionId: null,
+            ownerProfileId: null,
+            dueDate: null,
+            evidence: "I will review the rollout plan once Alice shares it",
+            handoff: {
+              ...operationalHandoff(),
+              responsibility: {
+                names: ["Bob"],
+                basis: "explicit",
+                reason: "Bob committed to reviewing it",
+              },
+              dependencies: [
+                {
+                  actionTitle: "Draft the rollout plan",
+                  condition: "Once Alice shares it",
+                  provenance: "supported",
+                  sources: [
+                    {
+                      quote: "once Alice shares it",
+                      speaker: "Invented speaker",
+                      timestamp: "99:99",
+                    },
+                  ],
+                  references: "extracted",
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    log: () => {},
+  });
+  const app = fastify();
+  host.routes(app);
+  try {
+    await host.process(record);
+    await host.idle();
+    const runId = runs.list({ module: "meeting-debrief" }).runs[0].id;
+    const detail = (await app.inject(`/api/meeting-debrief/${runId}`)).json<MeetingDebriefDetail>();
+    const dependency = detail.extraction?.actionItems[1]?.handoff?.dependencies[0];
+    expect(dependency).toEqual({
+      actionTitle: "Draft the rollout plan",
+      condition: "Once Alice shares it",
+      provenance: "supported",
+      sources: [{ quote: "once Alice shares it", speaker: "Bob", timestamp: "01:21" }],
+      references: "extracted",
+    });
+    /* The identity is the materialization's answer, resolved against the
+       checked output — never the artifact's own guess. */
+    expect(dependency).not.toHaveProperty("target");
+  } finally {
+    await app.close();
+  }
+});

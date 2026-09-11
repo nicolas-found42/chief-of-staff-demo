@@ -1,4 +1,3 @@
-import { handoffNotes } from "@chief-of-staff-demo/shared";
 import { proposedDue } from "../meetingDisplay";
 import { Link } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
@@ -7,6 +6,7 @@ import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { errorMessage } from "../client";
 import { MeetingActionItems } from "./MeetingActionItems";
 import { DebriefEmailPanel } from "./DebriefEmailPanel";
+import { HandoffDetail } from "./HandoffDetail";
 import { ReadingDisclosure } from "./ReadingDisclosure";
 
 const labels: Record<MeetingDebriefField, string> = {
@@ -197,7 +197,7 @@ export function MeetingDebriefContent({
                     id={`${detail.runId}-${index}-handoff`}
                     label="Execution details"
                   >
-                    <p style={{ whiteSpace: "pre-wrap" }}>{handoffNotes(item.handoff)}</p>
+                    <HandoffDetail handoff={item.handoff} />
                   </ReadingDisclosure>
                 )}
               </li>

@@ -25,7 +25,12 @@
  *   the owner's own Task edit can apply.
  */
 
-import type { MeetingHandoff } from "./meeting-debrief.js";
+import type {
+  HandoffDependencyTarget,
+  HandoffDependencyUnresolved,
+  HandoffProvenance,
+  MeetingHandoffRecord,
+} from "./meeting-debrief.js";
 import type { TaskResponsiblePerson } from "./task.js";
 
 /**
@@ -221,7 +226,7 @@ export interface ActionItemAmendmentSuggestion {
 }
 
 export interface ActionItem {
-  handoff?: MeetingHandoff;
+  handoff?: MeetingHandoffRecord;
   /**
    * Opaque Workspace identity, allocated once and stored with the record.
    * Nothing derives it: not content, not position, not a Run.
@@ -267,6 +272,16 @@ export interface ActionItem {
   decidedAt: string | null;
 }
 
+/** One dependency of a checked entry, as the materialization resolved it. */
+export interface ActionItemDependencyMapping {
+  /** Position in the checked dependency list, so a wording cannot move it. */
+  index: number;
+  /** The transcript's own words for the target, kept verbatim. */
+  wording: string;
+  /** The stable identity it resolved to, or the honest reason it did not. */
+  target: HandoffDependencyTarget;
+}
+
 /**
  * One materialization mapping (#355, MWR-010): the versioned key of a checked
  * output entry and the Action Item it is now, so a replay returns the same
@@ -291,12 +306,58 @@ export interface ActionItemMaterializationMapping {
   actionItemId: string;
   proposalRevision: number;
   allocatedAt: string;
+  /**
+   * The entry's dependencies, resolved to stable output identities against the
+   * checked output it came from (#347, MWR-048). Recorded with the mapping so
+   * the publication manifest carries the same dependency map the record does.
+   */
+  dependencies: ActionItemDependencyMapping[];
+}
+
+/** What one stored dependency resolves to against the records held now. */
+export type ResolvedActionItemDependencyTarget =
+  | {
+      kind: "action-item";
+      /** The record it named. A later rename does not move it. */
+      actionItemId: string;
+      /** The revision it resolved to when the reference was recorded. */
+      proposalRevision: number;
+      /**
+       * The Action Item the reference originally named, when reconciliation
+       * redirected it. The original identity is retained, never replaced.
+       */
+      redirectedFrom: string | null;
+    }
+  | {
+      kind: "unresolved";
+      reason: HandoffDependencyUnresolved;
+    }
+  | { kind: "external" };
+
+/**
+ * One dependency read at the Tasks boundary (#347, MWR-048): the transcript's
+ * words, condition and provenance preserved, plus what it resolves to now. A
+ * reference is a proposal/evidence reference — it never schedules, gates or
+ * blocks a Task (ADR-0054).
+ */
+export interface ResolvedActionItemDependency {
+  wording: string;
+  condition: string;
+  provenance: HandoffProvenance;
+  target: ResolvedActionItemDependencyTarget;
 }
 
 /** The Action Item queue as the Tasks product reads it. */
 export interface ActionItemIndex {
   items: ActionItem[];
   context?: Record<string, ActionItemContext>;
+  /**
+   * Each proposal's dependencies, resolved against the records held now
+   * (#347, MWR-048). A sibling map rather than a field on the record: the
+   * resolution is a projection of the stored reference, and the stored record
+   * is never rewritten to carry it.
+   */
+  dependencies?: Record<string, ResolvedActionItemDependency[]>;
 }
 
 /** Stored provenance resolved at the Tasks read boundary; no external evidence fetch. */

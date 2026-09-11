@@ -778,6 +778,7 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     const items = ctx.actionItems.list(filter);
     const index: ActionItemIndex = {
       items,
+      dependencies: ctx.actionItems.dependencyReferences(items),
       context: Object.fromEntries(
         items.map((item) => {
           let context: ActionItemContext = { meeting: null, evidence: null };

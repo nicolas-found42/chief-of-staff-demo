@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { parseReviewState } from "./review.js";
 import type {
   ActionItemMaterializationMapping,
+  HandoffDependencyTarget,
   MeetingDebriefRunResult,
   ExtractionContextSnapshot,
   TranscriptRecord,
@@ -140,6 +141,22 @@ interface DebriefOutputMappingRecord {
   candidateAlias: string | null;
   actionItemId: string;
   proposalRevision: number;
+  /**
+   * This entry's dependencies, resolved to stable output identities against
+   * the checked output it came from (#347, MWR-048). The immutable dependency
+   * map travels with the publication, so a reader can tell what the entry
+   * depended on and what the resolution honestly could not name. Absent in
+   * manifests prepared before the map was recorded.
+   */
+  dependencies?: DebriefDependencyMappingRecord[];
+}
+
+/** One recorded dependency: its wording kept verbatim, and what it named. */
+interface DebriefDependencyMappingRecord {
+  /** Position in the checked dependency list, so a wording cannot move it. */
+  index: number;
+  wording: string;
+  target: HandoffDependencyTarget;
 }
 
 /**
@@ -643,6 +660,11 @@ function prepareRevision(
           candidateAlias: mapping.candidateAlias,
           actionItemId: mapping.actionItemId,
           proposalRevision: mapping.proposalRevision,
+          dependencies: mapping.dependencies.map((dependency) => ({
+            index: dependency.index,
+            wording: dependency.wording,
+            target: dependency.target,
+          })),
         })),
     },
     completeness: { required: "complete", sections: [...DEBRIEF_REQUIRED_SECTIONS] },
@@ -805,6 +827,7 @@ function preparedFailures(io: DebriefReader, manifest: DebriefRevisionManifest):
     failures.push("undeclared-mappings");
   }
   const keys = new Set<string>();
+  const entryIds = new Set(outputs.map((output) => output.entryId));
   for (const output of outputs) {
     if (keys.has(output.materializationKey)) failures.push(`duplicate-mapping:${output.entryId}`);
     keys.add(output.materializationKey);
@@ -812,6 +835,14 @@ function preparedFailures(io: DebriefReader, manifest: DebriefRevisionManifest):
       failures.push(`mapping-key:${output.entryId}`);
     }
     if (output.actionItemId === "") failures.push(`mapping-record:${output.entryId}`);
+    /* The dependency map may only name entries this revision actually checked.
+       A reference to anything else is not a resolved identity — it is a
+       manifest that no longer describes the output it claims to. */
+    for (const dependency of output.dependencies ?? []) {
+      if (dependency.target.kind === "output" && !entryIds.has(dependency.target.outputEntryId)) {
+        failures.push(`dependency-target:${output.entryId}`);
+      }
+    }
   }
   return failures;
 }

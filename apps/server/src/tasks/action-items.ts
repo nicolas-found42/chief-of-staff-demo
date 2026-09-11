@@ -12,12 +12,17 @@ import type {
   ActionItemReconciliation,
   ActionItemState,
   ActionItemVersions,
+  HandoffDependencyTarget,
+  HandoffDependencyUnresolved,
   MeetingDebriefActionItem,
+  MeetingHandoffRecord,
+  ResolvedActionItemDependency,
   TaskResponsiblePerson,
 } from "@chief-of-staff-demo/shared";
 import {
   actionItemProposal,
   currentReconciliation,
+  handoffDependencies,
   handoffNotes,
   latestProposalRevision,
 } from "@chief-of-staff-demo/shared";
@@ -28,6 +33,7 @@ import {
   outputEntryId,
   materializationIndex,
   payloadChecksum,
+  resolveDependencyTargets,
   type CheckedEntryPayload,
   type CheckedOutputEntry,
 } from "./materialization.js";
@@ -139,6 +145,10 @@ export class WorkspaceActionItems {
         input.candidateAliases?.[index] ?? null,
       ),
     );
+    /* The dependency map is resolved against the checked output itself, before
+       anything is committed: an entry's target is another entry's identity, or
+       the honest reason it has none. */
+    const targets = resolveDependencyTargets(entries);
     const revision = nextRevision(
       stored.filter((item) => item.source.debriefRunId === input.debriefRunId),
       entries,
@@ -180,6 +190,7 @@ export class WorkspaceActionItems {
         revision,
         at,
         candidates: this.reconciliationCandidates(stored, input, entry.payload),
+        targets: targets[index]!,
       });
       added.push(item);
       materialized.push(item);
@@ -217,6 +228,23 @@ export class WorkspaceActionItems {
       current,
       earlier: items.filter((item) => !ids.includes(item.id)),
     };
+  }
+
+  /**
+   * The queue's dependency references, resolved against every record the
+   * Workspace holds — not merely the ones this read returned, because the
+   * target of a reference is exactly the record a filter would hide.
+   */
+  dependencyReferences(
+    items: readonly ActionItem[],
+  ): Record<string, ResolvedActionItemDependency[]> {
+    const resolved = actionItemDependencyReferences(this.store.readActionItems());
+    return Object.fromEntries(
+      items.flatMap((item) => {
+        const references = resolved.get(item.id);
+        return references ? [[item.id, references] as const] : [];
+      }),
+    );
   }
 
   /**
@@ -761,6 +789,8 @@ export class WorkspaceActionItems {
     revision: number;
     at: string;
     candidates: string[];
+    /** One target per dependency of the checked handoff, in its own order. */
+    targets: HandoffDependencyTarget[];
   }): ActionItem {
     const { payload } = input.entry;
     const origin: ActionItemProposalRevision["origin"] = {
@@ -778,8 +808,12 @@ export class WorkspaceActionItems {
     return {
       /* The checked handoff travels with the record: the review surface reads
          its execution detail, and automatic promotion reads its commitment and
-         responsibility basis to decline what only the owner can judge. */
-      ...(payload.handoff ? { handoff: payload.handoff } : {}),
+         responsibility basis to decline what only the owner can judge. Its
+         dependencies carry the targets resolved against the checked output;
+         the artifact the model produced keeps the claims without them. */
+      ...(payload.handoff
+        ? { handoff: withDependencyTargets(payload.handoff, input.targets) }
+        : {}),
       id: input.id,
       source: {
         debriefRunId: input.input.debriefRunId,
@@ -916,6 +950,119 @@ function sameReconciliation(
 /** An opaque Workspace identity. Allocated once; nothing derives it. */
 function allocateActionItemId(): string {
   return `ai_${randomUUID().replaceAll("-", "")}`;
+}
+
+/**
+ * The handoff a record stores: the checked claims plus the targets resolved
+ * against the checked output. A handoff written before targets existed keeps
+ * its own shape untouched, because its dependency names were never resolved
+ * and today's titles are not the evidence that they meant the same work.
+ */
+function withDependencyTargets(
+  handoff: MeetingHandoffRecord,
+  targets: HandoffDependencyTarget[],
+): MeetingHandoffRecord {
+  if (handoff.version === 1) return handoff;
+  return {
+    ...handoff,
+    dependencies: handoff.dependencies.map((dependency, index) => ({
+      ...dependency,
+      ...(targets[index] ? { target: targets[index] } : {}),
+    })),
+  };
+}
+
+/**
+ * What one recorded reference resolves to now. A reference that named a record
+ * the Workspace later reconciled into another one follows that redirect and
+ * keeps the identity it originally named; a chain that points back at itself
+ * resolves to nothing rather than looping.
+ */
+function followRedirect(
+  items: readonly ActionItem[],
+  actionItemId: string,
+): { actionItemId: string; redirectedFrom: string | null } | "missing-record" | "redirect-cycle" {
+  const visited = new Set<string>();
+  let current = actionItemId;
+  for (;;) {
+    if (visited.has(current)) return "redirect-cycle";
+    visited.add(current);
+    const held = items.find((item) => item.id === current);
+    if (!held) return "missing-record";
+    if (held.reconciledInto === null) {
+      return {
+        actionItemId: current,
+        redirectedFrom: current === actionItemId ? null : actionItemId,
+      };
+    }
+    current = held.reconciledInto;
+  }
+}
+
+/**
+ * Every Action Item's dependencies resolved against the records held now
+ * (#347, MWR-048). The reference is proposal/evidence lineage — it names what
+ * the work depends on and never schedules it (ADR-0054): nothing here is a
+ * Task field, and no Task is created to stand in for an external target.
+ */
+function actionItemDependencyReferences(
+  items: readonly ActionItem[],
+): Map<string, ResolvedActionItemDependency[]> {
+  const byKey = materializationIndex(items);
+  const references = new Map<string, ResolvedActionItemDependency[]>();
+  for (const item of items) {
+    if (!item.handoff) continue;
+    const dependencies = handoffDependencies(item.handoff);
+    if (dependencies.length === 0) continue;
+    references.set(
+      item.id,
+      dependencies.map((dependency) => {
+        const base = {
+          wording: dependency.wording,
+          condition: dependency.condition,
+          provenance: dependency.provenance,
+        };
+        if (dependency.target.kind === "external") {
+          return { ...base, target: { kind: "external" } as const };
+        }
+        if (dependency.target.kind === "unresolved") {
+          return {
+            ...base,
+            target: { kind: "unresolved", reason: dependency.target.reason },
+          };
+        }
+        const mapping = byKey.get(
+          materializationKey(item.source.debriefRunId, dependency.target.outputEntryId),
+        );
+        if (!mapping) {
+          return {
+            ...base,
+            target: {
+              kind: "unresolved",
+              reason: "missing-record" satisfies HandoffDependencyUnresolved,
+            },
+          };
+        }
+        const followed = followRedirect(items, mapping.actionItemId);
+        if (typeof followed === "string") {
+          return {
+            ...base,
+            target: { kind: "unresolved", reason: followed satisfies HandoffDependencyUnresolved },
+          };
+        }
+        return {
+          ...base,
+          target: {
+            kind: "action-item",
+            actionItemId: followed.actionItemId,
+            proposalRevision: mapping.proposalRevision,
+            redirectedFrom: followed.redirectedFrom,
+          },
+        };
+      }),
+    );
+  }
+  return references;
 }
 
 /** An unset filter matches everything; a set one has to be equal. */

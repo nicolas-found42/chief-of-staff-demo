@@ -1,8 +1,11 @@
 import { z } from "zod/v3";
 
 import {
+  handoffProvenanceIsSupported,
   MeetingDebriefExtractionSchema,
   MeetingHandoffSchema,
+  type HandoffDetail,
+  type HandoffProvenance,
   type IdentityDecision,
   type MeetingDebriefActionItem,
   type MeetingHandoff,
@@ -22,14 +25,15 @@ export const DEBRIEF_ACTION_INSTRUCTIONS = `FOR EACH ACTION
 - owner: supported sole responsible person's surface name, or null when shared or uncertain. A first-person promise belongs to its speaker; a request belongs to the person asked; a reported pledge belongs to its pledger. Do not assign work to the note-taker just because they read it aloud. Preserve the workstream owner when a helper discusses it. Never use an organization as a person.
 - ownerMentionId: only an actual supplied identity-context mention id; otherwise null. ownerProfileId: always null, resolved by the app.
 - dueDate: YYYY-MM-DD only when this work has a stated deadline, scheduled execution day or delivery day. Copy the matching date from the trusted Date reference. Today/tonight refer to meeting day, tomorrow to next day. Preserve explicit named weekdays, using their matching reference date; do not borrow another topic's date. Conditional triggers are not dates. No default-to-today. No extrapolation beyond the Date reference, invented timezone, or dates for undated meetings.
-- handoff: required version 1 object with ALL fields below. Write compact details without dropping entire commitments to keep the response short.
+  handoff: required version 2 object with ALL fields below. Write compact details without dropping entire commitments to keep the response short.
   commitment: "explicit" or "inferred"; mere suggestions without agreement are not commitments.
-  purpose: why it matters, or "Not stated".
+  purpose: { text: why it matters or "Not stated", provenance, sources }. provenance is "supported" when the transcript states it and "suggested" when you propose it; "unknown" only when nothing is known about where it came from. sources are the exact short quotes that state it, with speaker and timestamp when known, and [] unless provenance is "supported".
   responsibility: names (all supported people, empty if unknown), basis (explicit/inferred/unknown), reason (support and uncertainty). Shared names remain shared; owner is null unless the transcript clearly names one accountable person.
-  completionCriteria: observable outcomes with text and basis explicit/inferred. Label a suggested criterion inferred; never claim it was stated.
-  requiredInputs: known prerequisites as strings, [] when none.
-  missingInputs: important gaps with information, obtainBy (specific suggested retrieval action), basis explicit/inferred. Suggestions do not mean the information was retrieved. [] when none.
-  dependencies: actionTitle, condition, basis explicit/inferred. Reference another extracted title when possible; otherwise name the external dependency explicitly. [] when none.
+  completionCriteria: array of { text, provenance, sources }. Observable outcomes with the same provenance rule: a criterion you propose is "suggested", one the transcript states is "supported" with its quotes. Never claim it was stated.
+  requiredInputs: array of { text, provenance, sources }. Known prerequisites with the same provenance rule; [] when none.
+  missingInputs: array of { information: { text, provenance, sources }, obtainBy: { text, provenance, sources } }. obtainBy is a specific suggested retrieval action and stays "suggested" unless the transcript states it; a suggestion does not mean the information was retrieved. [] when none.
+  dependencies: array of { actionTitle, condition, provenance, sources, references }. actionTitle is the target's exact title, or the external dependency's own description when references is "external". references is "extracted" only when actionTitle names another action item in THIS same output — never invent such a target; anything else is "external". [] when none.
+  sources quotes are copied exactly from the transcript and are grounded against it on return: a claim whose quotes are not found is relabelled a suggestion, so never assert support you cannot quote.
   timing: kind deadline/trigger/unspecified, stated (STRING: exact timing words or "Not stated", NEVER null), referenceDate (trusted meeting YYYY-MM-DD or null), reasoning (how the date resolves or why uncertain). Scheduled work and event deliverables use deadline; "after approval" is trigger.
   evidence: quote, speaker or null, timestamp or null. Exact quotes only; timestamps are recording locations, not converted wall-clock times. [] if no defensible exact quote.
   statusReasoning: why work remains open after checking later corrections, completion and supersession; mention any partial completion.`;
@@ -257,25 +261,88 @@ function groundHandoffEvidence(
     ...extraction,
     actionItems: extraction.actionItems.map((item) => {
       if (!item.handoff) return item;
-      const evidence = groundTranscriptQuotes(item.handoff.evidence, record);
+      const handoff = item.handoff;
+      /* A record written before provenance existed keeps its own labels and
+         never gains occurrences it did not carry — but its evidence is still
+         grounded against the transcript, exactly as it always was. */
+      if (handoff.version === 1) {
+        return {
+          ...item,
+          dueDate: handoff.timing.kind === "deadline" ? item.dueDate : null,
+          handoff: {
+            ...handoff,
+            evidence: groundTranscriptQuotes(handoff.evidence, record),
+            timing: { ...handoff.timing, referenceDate: groundedReferenceDate(record) },
+          },
+        };
+      }
+      const evidence = groundTranscriptQuotes(handoff.evidence, record);
       return {
         ...item,
-        dueDate: item.handoff.timing.kind === "deadline" ? item.dueDate : null,
+        dueDate: handoff.timing.kind === "deadline" ? item.dueDate : null,
         handoff: {
-          ...item.handoff,
+          ...handoff,
           evidence,
-          timing: {
-            ...item.handoff.timing,
-            referenceDate: /^\d{4}-\d{2}-\d{2}$/.test(
-              record.timeAnchor?.date ?? record.meetingDate ?? "",
-            )
-              ? (record.timeAnchor?.date ?? record.meetingDate)
-              : null,
-          },
+          purpose: groundDetail(handoff.purpose, record),
+          completionCriteria: handoff.completionCriteria.map((detail) =>
+            groundDetail(detail, record),
+          ),
+          requiredInputs: handoff.requiredInputs.map((detail) => groundDetail(detail, record)),
+          missingInputs: handoff.missingInputs.map((input) => ({
+            information: groundDetail(input.information, record),
+            obtainBy: groundDetail(input.obtainBy, record),
+          })),
+          dependencies: handoff.dependencies.map((dependency) => {
+            const grounded = groundDetail(
+              {
+                text: dependency.actionTitle,
+                provenance: dependency.provenance,
+                sources: dependency.sources,
+              },
+              record,
+            );
+            return { ...dependency, provenance: grounded.provenance, sources: grounded.sources };
+          }),
+          timing: { ...handoff.timing, referenceDate: groundedReferenceDate(record) },
         },
       };
     }),
   };
+}
+
+/** The trusted meeting date a handoff's timing may reference; null when none parses. */
+function groundedReferenceDate(record: TranscriptRecord): string | null {
+  const date = record.timeAnchor?.date ?? record.meetingDate;
+  return /^\d{4}-\d{2}-\d{2}$/.test(date ?? "") ? date : null;
+}
+
+/**
+ * One detail as its transcript supports it. Occurrences are grounded against
+ * the retained text, and a claim of support without a grounded occurrence is
+ * relabelled as the suggestion it actually is — not an error in the
+ * extraction, but a strength no evidence backs. `sources` stays non-empty
+ * exactly when the provenance claims the transcript states the detail, which
+ * is the invariant every reader of a handoff relies on.
+ */
+function groundDetail(detail: HandoffDetail, record: TranscriptRecord): HandoffDetail {
+  const claimsSupport = handoffProvenanceIsSupported(detail.provenance);
+  const sources = claimsSupport ? groundTranscriptQuotes(detail.sources, record) : [];
+  if (!claimsSupport) {
+    return {
+      text: detail.text,
+      provenance: normalizedProvenance(detail.provenance),
+      sources: [],
+    };
+  }
+  if (sources.length === 0) return { text: detail.text, provenance: "suggested", sources: [] };
+  return { text: detail.text, provenance: "supported", sources };
+}
+
+/** The two words a record written before provenance existed used for today's two. */
+function normalizedProvenance(provenance: HandoffProvenance): HandoffProvenance {
+  if (provenance === "explicit") return "supported";
+  if (provenance === "inferred") return "suggested";
+  return provenance;
 }
 
 /**

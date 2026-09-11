@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -6,6 +6,8 @@ import type {
   ActionItem,
   ActionItemProposal,
   MeetingDebriefActionItem,
+  MeetingHandoff,
+  MeetingHandoffRecord,
 } from "@chief-of-staff-demo/shared";
 import { actionItemProposal, currentReconciliation, promotable } from "@chief-of-staff-demo/shared";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
@@ -494,4 +496,196 @@ it("commits a completed acceptance in one canonical generation too", () => {
   expect(store.readTasks()[0].status).toBe("completed");
   expect(store.readTasks()[0].completedAt).not.toBeNull();
   expect(store.readActionItems()[0].promotedTaskId).toBe(task.id);
+});
+
+/**
+ * A record written before provenance existed keeps its identity and its own
+ * labels (#359, MWR-047). The entry id and payload checksum are over the
+ * checked payload as it was stored: reshaping a version-1 handoff on the way in
+ * would silently rekey every Action Item already in the Workspace, which is
+ * exactly what must not happen. The literal identity below is the one this
+ * payload checksummed to before the change — the payload fields and the
+ * canonical JSON are the same code — so a reshape fails here rather than in a
+ * real Workspace.
+ */
+it("replays a stored version-1 handoff under the identity it was written with", () => {
+  const { root, actionItems } = workspace();
+  const legacyHandoff = storedHandoff();
+
+  const [first] = actionItems.materialize(extraction([proposed({ handoff: legacyHandoff })]));
+  const origin = first.proposalRevisions[0].origin;
+  expect(origin.kind).toBe("extraction");
+  expect(origin.kind === "extraction" ? origin.outputEntryId : null).toBe("ce_fe462b37e560e6f8");
+  expect(origin.kind === "extraction" ? origin.payloadChecksum : null).toBe(
+    "sha256:67ef450816f51405e39cc68cf7084e060737ebd3314dabe47938fb1449048d27",
+  );
+
+  const replay = actionItems.materialize(extraction([proposed({ handoff: legacyHandoff })]));
+
+  expect(replay.map((item) => item.id)).toEqual([first.id]);
+  expect(replay[0]?.handoff).toEqual(legacyHandoff);
+  expect(actionItems.list()).toEqual([first]);
+  expect(readFileSync(join(root, "tasks/action-items.json"), "utf8")).toContain(
+    '"purpose": "Make the rollout verifiable"',
+  );
+});
+
+/** A handoff as a Workspace or Run stored it before provenance existed. */
+function storedHandoff(): MeetingHandoffRecord {
+  return {
+    version: 1,
+    commitment: "explicit",
+    purpose: "Make the rollout verifiable",
+    responsibility: { names: ["Alice"], basis: "explicit", reason: "She said so" },
+    completionCriteria: [{ text: "A recorded rollout", basis: "inferred" }],
+    requiredInputs: ["Rollout plan"],
+    missingInputs: [
+      {
+        information: "Deployment access",
+        obtainBy: "Ask the deployment administrator",
+        basis: "inferred",
+      },
+    ],
+    dependencies: [
+      {
+        actionTitle: "Approve the rollout plan",
+        condition: "Only after approval",
+        basis: "explicit",
+      },
+    ],
+    timing: {
+      kind: "deadline",
+      stated: "tomorrow",
+      referenceDate: null,
+      reasoning: "Relative to the meeting",
+    },
+    evidence: [{ quote: "We will do this together", speaker: "Alice", timestamp: "01:12" }],
+    statusReasoning: "Still outstanding",
+  };
+}
+
+/**
+ * The affected state in isolation (#359): a Workspace holding a record written
+ * before provenance existed beside one written after it. Nothing here is a live
+ * migration — the point is that both read, promote and resolve in the same
+ * Workspace, and that neither is rewritten into the other's shape.
+ */
+it("reads a Workspace holding both handoff shapes", () => {
+  const { actionItems } = workspace();
+  const current: MeetingHandoff = {
+    version: 2,
+    commitment: "explicit",
+    purpose: { text: "Make the rollout verifiable", provenance: "suggested", sources: [] },
+    responsibility: { names: ["Bob"], basis: "explicit", reason: "Bob said so" },
+    completionCriteria: [
+      {
+        text: "A recorded rollout",
+        provenance: "supported",
+        sources: [{ quote: "we will roll it out", speaker: "Bob", timestamp: "02:00" }],
+      },
+    ],
+    requiredInputs: [],
+    missingInputs: [],
+    dependencies: [
+      {
+        actionTitle: "Approve the rollout plan",
+        condition: "Only after approval",
+        provenance: "suggested",
+        sources: [],
+        references: "extracted",
+      },
+    ],
+    timing: {
+      kind: "deadline",
+      stated: "tomorrow",
+      referenceDate: null,
+      reasoning: "Relative to the meeting",
+    },
+    evidence: [{ quote: "we will roll it out", speaker: "Bob", timestamp: "02:00" }],
+    statusReasoning: "Still outstanding",
+  };
+  const items = actionItems.materialize(
+    extraction([
+      proposed({ title: "Approve the rollout plan", owner: "Alice" }),
+      proposed({ title: "Legacy follow-up", handoff: storedHandoff() }),
+      proposed({ title: "Current follow-up", owner: "Bob", handoff: current }),
+    ]),
+  );
+
+  expect(items.map((item) => item.handoff?.version)).toEqual([undefined, 1, 2]);
+  const references = actionItems.dependencyReferences(items);
+  const legacy = items.find((item) => actionItemProposal(item).title === "Legacy follow-up")!;
+  const held = items.find((item) => actionItemProposal(item).title === "Current follow-up")!;
+  const target = items.find(
+    (item) => actionItemProposal(item).title === "Approve the rollout plan",
+  )!;
+
+  /* Neither shape is resolved by today's titles; the newer one resolves to the
+     record the checked output actually materialized. */
+  expect(references[legacy.id]?.[0]?.target).toEqual({
+    kind: "unresolved",
+    reason: "not-resolved",
+  });
+  expect(references[held.id]?.[0]?.target).toMatchObject({
+    kind: "action-item",
+    actionItemId: target.id,
+  });
+  expect(actionItems.get(legacy.id)?.handoff?.version).toBe(1);
+  expect(actionItems.get(held.id)?.handoff?.version).toBe(2);
+});
+
+/**
+ * A dependency whose wording two checked entries share stays unresolved, even
+ * when one of those entries is the one asking (#347): a duplicated title is
+ * never evidence that the other record was meant, and resolving to it would be
+ * the guessed identity the contract forbids.
+ */
+it("leaves a duplicated title unresolved even for the entry that carries it", () => {
+  const { actionItems } = workspace();
+  const doubled: MeetingHandoff = {
+    version: 2,
+    commitment: "explicit",
+    purpose: { text: "Keep the rollout verifiable", provenance: "suggested", sources: [] },
+    responsibility: { names: ["Alice"], basis: "explicit", reason: "Alice said so" },
+    completionCriteria: [],
+    requiredInputs: [],
+    missingInputs: [],
+    dependencies: [
+      {
+        actionTitle: "Approve the rollout plan",
+        condition: "Only after approval",
+        provenance: "suggested",
+        sources: [],
+        references: "extracted",
+      },
+    ],
+    timing: {
+      kind: "deadline",
+      stated: "tomorrow",
+      referenceDate: null,
+      reasoning: "Relative to the meeting",
+    },
+    evidence: [{ quote: "We will do this together", speaker: "Alice", timestamp: "01:12" }],
+    statusReasoning: "Still outstanding",
+  };
+  const items = actionItems.materialize(
+    extraction([
+      proposed({ title: "Approve the rollout plan" }),
+      proposed({ title: "Approve the rollout plan", handoff: doubled }),
+    ]),
+  );
+
+  const depender = items.find((item) => item.handoff?.version === 2)!;
+  const references = actionItems.dependencyReferences(items);
+
+  expect(references[depender.id]?.[0]?.target).toEqual({
+    kind: "unresolved",
+    reason: "ambiguous-title",
+  });
+  expect(depender.handoff?.version === 2 ? depender.handoff.dependencies[0]?.target : null).toEqual(
+    {
+      kind: "unresolved",
+      reason: "ambiguous-title",
+    },
+  );
 });

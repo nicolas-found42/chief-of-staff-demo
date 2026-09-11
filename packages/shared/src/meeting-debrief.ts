@@ -184,32 +184,120 @@ export interface MeetingDebriefDecision {
   evidence: string | null;
 }
 
+/**
+ * How one handoff detail stands against the transcript (MWR-046, spec #347).
+ *
+ * `supported` and `suggested` are what this build produces: a supported
+ * purpose, criterion, input or retrieval step cites the occurrences it stands
+ * on, while a suggested one is the extraction's own proposal and nobody agreed
+ * to it. `explicit` and `inferred` are the labels a record written before
+ * provenance existed carried for those same two claims — imported verbatim
+ * rather than translated, because the record's own word is the evidence of
+ * what it claimed, and its stored occurrences were never recorded.
+ * `unknown` means no provenance was recorded at all.
+ */
+export const HandoffProvenanceSchema = z.enum([
+  "supported",
+  "suggested",
+  "unknown",
+  "explicit",
+  "inferred",
+]);
+export type HandoffProvenance = z.infer<typeof HandoffProvenanceSchema>;
+
+/** The two claims a record written before provenance existed could make. */
+export type LegacyHandoffBasis = "explicit" | "inferred";
+
+/** One transcript occurrence a handoff detail stands on, as its evidence does. */
+export const HandoffSourceSchema = z.strictObject({
+  quote: z.string(),
+  speaker: z.string().nullable(),
+  timestamp: z.string().nullable(),
+});
+export type HandoffSource = z.infer<typeof HandoffSourceSchema>;
+
+/**
+ * One purpose, criterion, input or retrieval step: the text as the extraction
+ * wrote it, what its provenance is, and the occurrences a supported claim
+ * stands on. The occurrences are grounded against the transcript before the
+ * handoff leaves the Module, so a claim cannot carry a quotation its source
+ * does not say.
+ */
+export const HandoffDetailSchema = z.strictObject({
+  text: z.string(),
+  provenance: HandoffProvenanceSchema,
+  /** Non-empty exactly when `provenance` claims the transcript supports it. */
+  sources: z.array(HandoffSourceSchema),
+});
+export type HandoffDetail = z.infer<typeof HandoffDetailSchema>;
+
+/**
+ * Why a dependency carries no resolved identity. Each is a fact about the
+ * checked output rather than a guess: `ambiguous-title` is two entries sharing
+ * the wording, `not-extracted` is no entry carrying it, `self-reference` is the
+ * dependency naming its own entry, `not-resolved` is a record or artifact that
+ * never had targets written, `missing-record` is a resolved mapping whose
+ * Action Item is no longer in the Workspace, and `redirect-cycle` is a
+ * reconciliation chain pointing back at itself.
+ */
+export const HandoffDependencyUnresolvedSchema = z.enum([
+  "ambiguous-title",
+  "not-extracted",
+  "self-reference",
+  "not-resolved",
+  "missing-record",
+  "redirect-cycle",
+]);
+export type HandoffDependencyUnresolved = z.infer<typeof HandoffDependencyUnresolvedSchema>;
+
+/**
+ * What one dependency names. `output` is the checked output entry itself — the
+ * stable identity inside this Run's result — which is what the Workspace then
+ * resolves to the Action Item and proposal revision it materialized as
+ * (MWR-048). Display titles are labels; this is the reference.
+ */
+export const HandoffDependencyTargetSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("output"), outputEntryId: z.string() }),
+  z.strictObject({ kind: z.literal("unresolved"), reason: HandoffDependencyUnresolvedSchema }),
+  z.strictObject({ kind: z.literal("external") }),
+]);
+export type HandoffDependencyTarget = z.infer<typeof HandoffDependencyTargetSchema>;
+
 /** Source responsibility and execution context are distinct from a Task's Responsible Person. */
 export const MeetingHandoffSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(2),
   commitment: z.enum(["explicit", "inferred"]),
-  purpose: z.string(),
+  purpose: HandoffDetailSchema,
   responsibility: z.strictObject({
     names: z.array(z.string()),
     basis: z.enum(["explicit", "inferred", "unknown"]),
     reason: z.string(),
   }),
-  completionCriteria: z.array(
-    z.strictObject({ text: z.string(), basis: z.enum(["explicit", "inferred"]) }),
-  ),
-  requiredInputs: z.array(z.string()),
+  completionCriteria: z.array(HandoffDetailSchema),
+  requiredInputs: z.array(HandoffDetailSchema),
   missingInputs: z.array(
-    z.strictObject({
-      information: z.string(),
-      obtainBy: z.string(),
-      basis: z.enum(["explicit", "inferred"]),
-    }),
+    z.strictObject({ information: HandoffDetailSchema, obtainBy: HandoffDetailSchema }),
   ),
   dependencies: z.array(
     z.strictObject({
+      /** The transcript's own words for what this depends on; kept verbatim. */
       actionTitle: z.string(),
       condition: z.string(),
-      basis: z.enum(["explicit", "inferred"]),
+      provenance: HandoffProvenanceSchema,
+      sources: z.array(HandoffSourceSchema),
+      /**
+       * What the extraction says this names: another proposal in this same
+       * extraction, or something outside it. The Module resolves `extracted`
+       * against the checked output and never invents a target for `external`.
+       */
+      references: z.enum(["extracted", "external"]),
+      /**
+       * The stable identity the dependency resolved to, written by
+       * materialization against the checked output. Absent in the artifact the
+       * extraction produced and in records written before targets existed; a
+       * reader treats absence as unresolved rather than guessing.
+       */
+      target: HandoffDependencyTargetSchema.optional(),
     }),
   ),
   timing: z.strictObject({
@@ -218,16 +306,50 @@ export const MeetingHandoffSchema = z.strictObject({
     referenceDate: z.string().nullable(),
     reasoning: z.string(),
   }),
-  evidence: z.array(
-    z.strictObject({
-      quote: z.string(),
-      speaker: z.string().nullable(),
-      timestamp: z.string().nullable(),
-    }),
-  ),
+  evidence: z.array(HandoffSourceSchema),
   statusReasoning: z.string(),
 });
 export type MeetingHandoff = z.infer<typeof MeetingHandoffSchema>;
+
+/**
+ * A handoff as a Workspace or Run stored it before provenance existed (version
+ * 1): purpose and inputs are plain text, and each labelled detail carries
+ * `explicit`/`inferred` instead of provenance and occurrences. Read through the
+ * accessors in `handoff-notes.ts`, never written by this build.
+ */
+export interface StoredMeetingHandoff {
+  version: 1;
+  commitment: "explicit" | "inferred";
+  purpose: string;
+  responsibility: {
+    names: string[];
+    basis: "explicit" | "inferred" | "unknown";
+    reason: string;
+  };
+  completionCriteria: Array<{ text: string; basis: LegacyHandoffBasis }>;
+  requiredInputs: string[];
+  missingInputs: Array<{
+    information: string;
+    obtainBy: string;
+    basis: LegacyHandoffBasis;
+  }>;
+  dependencies: Array<{
+    actionTitle: string;
+    condition: string;
+    basis: LegacyHandoffBasis;
+  }>;
+  timing: {
+    kind: "deadline" | "trigger" | "unspecified";
+    stated: string;
+    referenceDate: string | null;
+    reasoning: string;
+  };
+  evidence: HandoffSource[];
+  statusReasoning: string;
+}
+
+/** Every handoff shape a record or artifact may carry. */
+export type MeetingHandoffRecord = MeetingHandoff | StoredMeetingHandoff;
 
 /**
  * One action item with an inferred owner. The owner is a surface name the
@@ -236,7 +358,7 @@ export type MeetingHandoff = z.infer<typeof MeetingHandoffSchema>;
  * extraction named; ambiguity stays ambiguous.
  */
 export interface MeetingDebriefActionItem {
-  handoff?: MeetingHandoff | undefined;
+  handoff?: MeetingHandoffRecord | undefined;
   title: string;
   owner: string | null;
   /** The Catalog mention the owner refers to, when the extraction identified one. */
