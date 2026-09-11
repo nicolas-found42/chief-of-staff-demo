@@ -37,6 +37,7 @@ import { promotionEligibility } from "../../../apps/server/src/tasks/promotion-e
 const OWNER_PROFILE = "profile_owner";
 const TRANSCRIPT = "drive_fileA_r1";
 const CHECKSUM = "sha256:source-revision-1";
+const CONTEXT_CHECKSUM = "sha256:context";
 const NOW = new Date("2026-09-04T09:00:00.000Z");
 
 /** The authorization facts of an operation reserved while automation was on. */
@@ -157,6 +158,7 @@ function materialize(
       meetingId: "meeting_1",
       transcriptObservedRevision: 1,
       transcriptChecksum: CHECKSUM,
+      contextChecksum: CONTEXT_CHECKSUM,
       actionItems: proposals,
       ...(source.reviewOnly ? { reviewOnly: true } : {}),
       ...(source.contract === "absent"
@@ -401,6 +403,71 @@ describe("automatically create my Tasks", () => {
     expect(tasks.list({})).toEqual([]);
   });
 
+  it("promotes an anonymous speaker's commitment once the owner resolution is theirs", () => {
+    /* A label may supply the commitment (#343): what automation trusts is the
+       record's owner resolution — the Catalog's confirmed identity — not the
+       label, and a label that never resolved to the owner stays pending. */
+    const anonymous = claim({
+      speaker: "Speaker 2",
+      statement: {
+        quote: "I will fix the billing flow.",
+        speaker: "Speaker 2",
+        timestamp: null,
+        locator: "turn:1",
+      },
+      performer: { name: "Speaker 2", basis: "explicit" },
+    });
+
+    const [item] = materialize([proposal({ owner: "Speaker 2", responsibilityClaim: anonymous })]);
+    expect(item.state).toBe("promoted");
+    expect(tasks.list({})).toHaveLength(1);
+
+    // The same label that resolves to somebody else never becomes this owner's.
+    const [other] = materialize(
+      [
+        proposal({
+          title: "Somebody else's label",
+          owner: "Speaker 3",
+          ownerProfileId: "profile_other",
+          responsibilityClaim: anonymous,
+        }),
+      ],
+      { debriefRunId: "run_other" },
+    );
+    expect(other.state).toBe("pending");
+  });
+
+  it("keeps a claim checked under a different frozen context pending", () => {
+    const moved = claim({
+      contract: { ...claim().contract, contextChecksum: "sha256:another-context" },
+    });
+    actionItems.materialize({
+      debriefRunId: "run_1",
+      transcriptId: TRANSCRIPT,
+      meetingId: "meeting_1",
+      transcriptObservedRevision: 1,
+      transcriptChecksum: CHECKSUM,
+      contextChecksum: CONTEXT_CHECKSUM,
+      actionItems: [proposal({ title: "Context moved", responsibilityClaim: moved })],
+      firstExtraction: {
+        operationId: "op_run_1",
+        claim: "first",
+        basis: "no-retained-first-reservation",
+        reservedAt: NOW.toISOString(),
+        authorization: AUTHORIZED,
+      },
+    });
+
+    const item = actionItems
+      .list()
+      .find((entry) => actionItemProposal(entry).title === "Context moved");
+    expect(item?.source.contextChecksum).toBe(CONTEXT_CHECKSUM);
+
+    const verdict = promotionEligibility(item!, AUTHORIZED, false);
+    expect(verdict.code).toBe("claim-unsupported");
+    expect(verdict.reason).toContain("different context");
+  });
+
   it("keeps a proposal whose owner resolution changed after the extraction pending", () => {
     /* The claim still names Alice, but the proposal no longer resolves to the
        confirmed owner: a changed identity decision is review, never a silent
@@ -570,6 +637,7 @@ describe("automatically create my Tasks", () => {
         meetingId: "meeting_1",
         transcriptObservedRevision: 1,
         transcriptChecksum: CHECKSUM,
+        contextChecksum: CONTEXT_CHECKSUM,
         actionItems: [proposal()],
       },
     );
@@ -774,6 +842,7 @@ describe("the release restriction and explicit enablement", () => {
       meetingId: "meeting_1",
       transcriptObservedRevision: 1,
       transcriptChecksum: CHECKSUM,
+      contextChecksum: CONTEXT_CHECKSUM,
       actionItems: [proposal({ responsibilityClaim: undefined })],
       firstExtraction: {
         operationId: "op_run_1",
@@ -813,6 +882,7 @@ describe("the release restriction and explicit enablement", () => {
       meetingId: "meeting_1",
       transcriptObservedRevision: 1,
       transcriptChecksum: CHECKSUM,
+      contextChecksum: CONTEXT_CHECKSUM,
       actionItems: [proposal()],
       firstExtraction: {
         operationId: "op_run_1",

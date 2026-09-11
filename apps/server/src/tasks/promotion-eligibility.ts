@@ -1,4 +1,5 @@
 import type { ActionItem, ResponsibilityClaim } from "@chief-of-staff-demo/shared";
+import { authorizationAuthorizes } from "./promotion-authorization.js";
 import {
   RESPONSIBILITY_CLAIM_VALIDATOR_VERSION,
   ResponsibilityClaimSchema,
@@ -43,11 +44,6 @@ function declined(code: string, reason: string): PromotionEligibility {
 }
 
 /**
- * The authorization facts are used twice: the ones recorded at reservation
- * authorize the operation, and the live ones have to still agree. A changed
- * prerequisite is review, never a silent new decision (#343 §6).
- */
-/**
  * The facts a record stores. The preference is a stored string rather than
  * today's enum: a historical reservation must stay readable even if the
  * policies this build offers change, and an unrecognized one authorizes
@@ -60,16 +56,10 @@ export interface StoredAuthorizationFacts {
   basis: string;
 }
 
-function authorizes(
-  facts: { released: boolean; enabledAt: string | null; preference: string } | null,
-): boolean {
-  return (
-    facts !== null &&
-    facts.released &&
-    facts.enabledAt !== null &&
-    facts.preference === "auto-create-mine"
-  );
-}
+/* The authorization facts are read twice — the ones recorded at reservation and
+   the live ones — and they have to agree; a changed prerequisite is review
+   rather than a silent new decision (#343 §6). One predicate serves both. */
+const authorizes = authorizationAuthorizes;
 
 /**
  * One claim's reference checks, re-run at the commit boundary. Grounding was
@@ -84,6 +74,10 @@ function claimRefusal(item: ActionItem, claim: ResponsibilityClaim | undefined):
   if (!parsed.success) return "the recorded responsibility claim is not structurally sound";
   if (claim.contract.validatorVersion !== RESPONSIBILITY_CLAIM_VALIDATOR_VERSION)
     return `the responsibility claim was checked by validator ${claim.contract.validatorVersion}, which this build does not trust`;
+  if (!item.source.contextChecksum)
+    return "this proposal does not record which frozen context it was checked under, so its claim cannot be verified";
+  if (claim.contract.contextChecksum !== item.source.contextChecksum)
+    return "the responsibility claim was checked under a different context than this proposal records";
   const observation = item.observations.find(
     (entry) => entry.proposalRevision === item.selectedRevision,
   );
@@ -100,6 +94,14 @@ function claimRefusal(item: ActionItem, claim: ResponsibilityClaim | undefined):
   return null;
 }
 
+/** A source label the Catalog may resolve later; it names nobody yet. */
+const ANONYMOUS_SPEAKER_LABEL = /^speaker\s+\d+$/i;
+
+/** Whether a claim's turn was spoken by this performer, anonymous labels included. */
+function spokenBy(speaker: string | null, performer: string): boolean {
+  return speaker === null || speaker === performer || ANONYMOUS_SPEAKER_LABEL.test(speaker);
+}
+
 /** The relationship reasons, each naming what the source actually established. */
 function relationshipRefusal(claim: ResponsibilityClaim): string | null {
   const performer = claim.performer.name;
@@ -109,7 +111,10 @@ function relationshipRefusal(claim: ResponsibilityClaim): string | null {
   if (claim.unresolvedReasons.length > 0)
     return `the responsibility claim is unresolved: ${claim.unresolvedReasons.join("; ")}`;
   if (claim.relationship === "self-commitment") {
-    if (claim.speaker !== null && claim.speaker !== performer)
+    /* An anonymous label may supply the commitment: what automation trusts is
+       the record's owner resolution — the Catalog's confirmed identity — never
+       the label itself (#343, settled rule). */
+    if (!spokenBy(claim.speaker, performer))
       return "the commitment's speaker is not the performer the claim names";
     return null;
   }
@@ -118,7 +123,7 @@ function relationshipRefusal(claim: ResponsibilityClaim): string | null {
       return "an accepted request has no recorded request or assignment turn";
     if (claim.acceptance === null)
       return "the request was never unambiguously accepted for this obligation";
-    if (claim.acceptance.speaker !== null && claim.acceptance.speaker !== performer)
+    if (!spokenBy(claim.acceptance.speaker, performer))
       return "the acceptance is not the performer's own";
     return null;
   }

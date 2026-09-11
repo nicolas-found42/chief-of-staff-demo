@@ -156,6 +156,8 @@ interface DebriefActionItemHandover {
   /** The immutable source revision the extraction read, when it is known. */
   transcriptObservedRevision?: number | null;
   transcriptChecksum?: string | null;
+  /** The frozen context checksum this revision was checked under (#360). */
+  contextChecksum?: string;
   actionItems: MeetingDebriefExtraction["actionItems"];
   /** The extraction's own candidate ids, aligned with `actionItems`. */
   candidateAliases?: (string | null)[];
@@ -445,6 +447,12 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       2,
     )}\n`;
 
+  /** The frozen context's checksum, or undefined while none has been captured. */
+  const contextChecksum = (ctx: RunContext): string | undefined => {
+    const frozen = ctx.readFile("context-snapshot.json");
+    return frozen === null ? undefined : debriefChecksum(frozen);
+  };
+
   /** The Run directory as the publication machinery reads and writes it. */
   const ioFor = (ctx: RunContext): DebriefArtifactIO => ({
     read: (name) => ctx.readFile(name),
@@ -658,6 +666,10 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           meetingId: record.meetingId,
           transcriptObservedRevision: record.source.observedRevision,
           transcriptChecksum: record.source.checksum,
+          /* The frozen context the checked revision stands on: read from the
+             Run's own artifact, so the claim binds what the publication bound
+             rather than a context re-captured later. */
+          ...(contextChecksum(ctx) ? { contextChecksum: contextChecksum(ctx)! } : {}),
           actionItems: result.debrief.actionItems,
           candidateAliases: aliases,
           ...(revision.reviewOnly ? { reviewOnly: true } : {}),

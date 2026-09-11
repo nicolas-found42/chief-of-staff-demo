@@ -35,6 +35,22 @@ export interface PromotionAuthorizationDeps {
   now?: () => Date;
 }
 
+/**
+ * Whether facts authorize automatic promotion. The stored form names the
+ * preference as a string, so a reservation recorded under a policy this build
+ * no longer offers authorizes nothing.
+ */
+export function authorizationAuthorizes(
+  facts: { released: boolean; enabledAt: string | null; preference: string } | null,
+): boolean {
+  return (
+    facts !== null &&
+    facts.released &&
+    facts.enabledAt !== null &&
+    facts.preference === "auto-create-mine"
+  );
+}
+
 /** What one recorded release stands on: identified retained evidence, never its content. */
 export interface PromotionReleaseEvidence {
   /** Where the retained release evidence lives; an operator's own reference. */
@@ -100,12 +116,7 @@ export class WorkspacePromotionAuthorization {
    * them at the commit boundary rather than consulted in their place.
    */
   authorizes(facts: AutomaticPromotionAuthorizationFacts | null): boolean {
-    return (
-      facts !== null &&
-      facts.released &&
-      facts.enabledAt !== null &&
-      facts.preference === "auto-create-mine"
-    );
+    return authorizationAuthorizes(facts);
   }
 
   /** What the policy surface answers: the preference, the release, and why. */

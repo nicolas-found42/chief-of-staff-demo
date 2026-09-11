@@ -78,6 +78,12 @@ export interface ActionItemSource {
    * honestly unknown — legacy, or an older writer — which never authorizes
    * either.
    */
+  /**
+   * The frozen context checksum this revision was checked under (#360). The
+   * claim binds it, and the commit boundary compares the two: a context that
+   * changed after the reservation is review, never a silent acceptance.
+   */
+  contextChecksum?: string;
   promotion?: {
     claim: "first" | "review-only" | "unknown";
     basis: string;

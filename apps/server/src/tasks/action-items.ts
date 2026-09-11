@@ -49,6 +49,8 @@ export interface ActionItemMaterialization {
   /** The immutable source revision the extraction read, when it is known. */
   transcriptObservedRevision?: number | null;
   transcriptChecksum?: string | null;
+  /** The frozen context checksum this revision was checked under (#360). */
+  contextChecksum?: string;
   actionItems: MeetingDebriefActionItem[];
   /**
    * The extraction pipeline's own candidate ids, aligned with `actionItems`.
@@ -856,6 +858,7 @@ export class WorkspaceActionItems {
         transcriptId: input.input.transcriptId,
         meetingId: input.input.meetingId,
         ...(input.input.reviewOnly === true ? { reviewOnly: true } : {}),
+        ...(input.input.contextChecksum ? { contextChecksum: input.input.contextChecksum } : {}),
         ...(input.input.firstExtraction
           ? {
               promotion: {

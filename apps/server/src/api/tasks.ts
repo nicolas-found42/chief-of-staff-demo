@@ -803,10 +803,11 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
       ...(query.meetingId ? { meetingId: query.meetingId } : {}),
     };
     const items = ctx.actionItems.list(filter);
+    const promotion = ctx.promotion;
     const index: ActionItemIndex = {
       items,
       dependencies: ctx.actionItems.dependencyReferences(items),
-      ...(ctx.promotion
+      ...(promotion
         ? {
             /* Why automation would or would not answer for each proposal
                (#360 §4): shown beside the proposal rather than left to be
@@ -814,7 +815,7 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
             automation: Object.fromEntries(
               items.map((item) => [
                 item.id,
-                promotionEligibility(item, ctx.promotion!.facts(), duplicates(item)),
+                promotionEligibility(item, promotion.facts(), duplicates(item)),
               ]),
             ),
           }
