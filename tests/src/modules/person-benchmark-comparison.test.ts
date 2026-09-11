@@ -125,6 +125,33 @@ it("declares a comparison with no measured pair not comparable", () => {
   expect(comparison.conditionChanges.join("\n")).toContain("no pair");
 });
 
+it("renders a not-comparable refusal however many conditions the pair records", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  /* A subset arm against a full population records one reference-version
+     difference per person, and divergent settings add one per key. These 61
+     differences used to overrun the comparison schema's 40-entry bound, so
+     the evaluator threw a schema error instead of rendering the refusal; the
+     verdict detail now elides the tail with a pointer to the full list. */
+  for (let index = 0; index < 60; index += 1) {
+    const key = `probe-${String(index)}`;
+    baseline.provenance.researchSettings[key] = "b".repeat(48);
+    candidate.provenance.researchSettings[key] = "a".repeat(48);
+  }
+  candidate.provenance.judgeModel = "inception/mercury-2.5";
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.comparable).toBe(false);
+  expect(comparison.verdict).toBe("not-comparable");
+  expect(comparison.conditionChanges.length).toBeGreaterThan(40);
+  expect(comparison.verdictDetail.length).toBeLessThanOrEqual(2000);
+  expect(comparison.verdictDetail).toContain("more recorded condition differences");
+  /* The elision is a pointer, not a loss: every difference stays recorded and
+     rendered. */
+  expect(comparison.conditionChanges.join("\n")).toContain("probe-59");
+  expect(renderComparison(comparison)).toContain("not-comparable");
+  expect(renderComparison(comparison)).toContain("probe-59");
+});
+
 it("compares the reports' labelled groups side by side with each side's denominator", () => {
   const baseline = assessedReport();
   const candidate = structuredClone(baseline);

@@ -142,6 +142,32 @@ and rejects one whose rationale says the reference's dated content is absent —
 251: 207 app-supported, 44 beyond current coverage) as the follow-up acceptance targets. See
 [the validation record](../../docs/research/person-benchmark-validation-2026-09-11.md).
 
+## The verbatim model id (#259)
+
+The owner's correction after the merge: live model calls use `inception/mercury-2.5` exactly, for
+research, planning and judging. The merged recovery run had recorded and issued
+`inception/mercury-2.5-preview`; that record stays as it is, and
+[ADR-0091](../../docs/adr/0091-mercury-2-5-verbatim-is-the-only-permitted-model-string.md) records
+the standing decision and the deviation behind it.
+
+`live-discovery-expanded-4c03326082a59064` (`4c03326082a59064`), 2026-09-11T18:19:50Z–18:29:54Z at
+gitSha `bfba3d10907a9242d1210b83a9e6b341990ef3c6`, is a fresh standalone run of the same five
+withheld people — no `--retry`, no `--reassess`, nothing carried — with `--people`,
+`--concurrency 4`, `--no-cache`, `--max-cost 2`, the recovery run's own default allowances and no
+render route. Research, planning and judge are all `openrouter inception/mercury-2.5` verbatim;
+corpus `14bca86ee0b97d28`, prompt `2026-09-06.4`, `JUDGE_VERSION` `2026-09-06.10`, live network.
+Every person's research completed and all five assessments completed (`bong-joon-ho` 2/7,
+`chimamanda-ngozi-adichie` 3/8, `doug-mcmillon` 3/8, `hilary-cottam` 2/5, `laurent-freixe` 6/9),
+so the run's status is **completed**. Spend **$0.178268** against the $2 cap; an earlier attempt
+under the same verbatim settings was billed **$0.163052** with no surviving artifacts (its staging
+directory was lost to a filesystem purge before commit), so the ticket's total spend is
+**$0.341320**.
+
+It is **not** pairable with the incumbent: the judge model, the research and planning models and
+the evaluated population all differ, so `comparison.json` / `comparison.md` are untouched and no
+verdict is claimed for these five. See
+[the validation record](../../docs/research/person-benchmark-validation-2026-09-11.md).
+
 ## Frozen acceptance corpus (#243)
 
 Corpus `14bca86ee0b97d28` (content identity from `loadCorpus`, sha256 over the

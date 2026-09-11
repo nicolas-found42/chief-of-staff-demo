@@ -830,13 +830,31 @@ export const BenchmarkReportSchema = z.object({
 });
 export type BenchmarkReport = z.infer<typeof BenchmarkReportSchema>;
 
+/**
+ * The comparison records one `conditionChanges` entry per person whose
+ * reference version differs across the two populations (each population
+ * capped at the comparison's own `perPerson` ceiling of 200), one per
+ * research-settings key the two reports record, and a fixed handful of notes
+ * plus at most two recovery-audit notes. The list is therefore data-scaled;
+ * its bound covers that sum rather than a round number that a subset arm
+ * against a full population overruns (the #259 defect: 43 differences threw a
+ * schema error instead of rendering the refusal).
+ */
+export const MAX_CONDITION_CHANGES = 300;
+
+/** The verdict detail's own bound. The not-comparable detail repeats the
+ *  condition list only while it fits, eliding the rest with a pointer to the
+ *  full list, and the comparable branch enumerates excluded pairs and
+ *  regressed people, both bounded by the same per-person ceiling. */
+export const MAX_VERDICT_DETAIL = 2000;
+
 /** Two reports compared under a fixed reference and judge configuration. */
 export const BenchmarkComparisonSchema = z.object({
   schemaVersion: z.literal(1),
   baselineRunId: z.string().max(80),
   candidateRunId: z.string().max(80),
   /** Conditions that differed; disclosed research allowances can remain comparable. */
-  conditionChanges: z.array(z.string().max(1000)).max(40),
+  conditionChanges: z.array(z.string().max(1000)).max(MAX_CONDITION_CHANGES),
   comparable: z.boolean(),
   /** Per-side absence remains explicit when an older report did not measure this. */
   sourceContributions: z
