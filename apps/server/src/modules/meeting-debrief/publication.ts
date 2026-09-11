@@ -9,6 +9,7 @@ import {
 } from "@chief-of-staff-demo/shared";
 import type {
   ActionItemMaterializationMapping,
+  AutomaticPromotionAuthorizationFacts,
   HandoffDependencyTarget,
   MeetingDebriefRunResult,
   ExtractionContextSnapshot,
@@ -102,6 +103,13 @@ export interface DebriefFirstExtractionReservation {
   reservedAt: string;
   /** The Run holding the retained first reservation this claim deferred to. */
   lineageRunId: string | null;
+  /**
+   * The automatic-promotion authorization facts in force when the operation
+   * was reserved (#360, ADR-0083), carried through to the Action Items it
+   * materializes. A later release or enablement never rewrites them, which is
+   * what makes "future first extractions only" a fact rather than a promise.
+   */
+  authorization: AutomaticPromotionAuthorizationFacts | null;
 }
 
 /** The policy facts in force when the operation was reserved. */
@@ -109,6 +117,13 @@ export interface DebriefPolicySnapshot {
   capturedAt: string;
   /** The configured Action Item Policy, or null when no policy surface is wired. */
   actionItemPolicy: string | null;
+  /**
+   * The authorization facts recorded with the reservation: the release
+   * restriction, the owner's explicit enablement, and the saved preference, as
+   * one snapshot. Null when no authorization surface is wired, which reads as
+   * restricted.
+   */
+  authorization: AutomaticPromotionAuthorizationFacts | null;
 }
 
 export interface DebriefOperationRecord {

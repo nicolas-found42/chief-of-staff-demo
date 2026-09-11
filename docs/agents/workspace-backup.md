@@ -112,6 +112,17 @@ power-loss guarantee is claimed. Before later format activation, repeat capture
 and restoration, retain a compatible reader/image, and state any post-backup loss
 interval explicitly. Never activate a stale backup before current lifecycle fences.
 
+## The promotion authorization record
+
+Issue #360 adds `config.json:tasks.promotion`: the release restriction, the retained evidence it
+names and the owner's explicit enable/disable history. It is a stored format, and activating it on
+a live Workspace is a deployment step that needs exactly what this document describes — quiesce
+every writer, inventory and checksum the configuration, capture a private baseline, prove an
+isolated network-disabled restoration and a twice-repeated fault migration, and state any
+post-backup loss interval. Rollback to a build that predates the record refuses the configuration
+rather than ignoring the restriction, so it needs a compatible reader or the verified backup.
+No such migration was run for #360; the live activation is not claimed.
+
 ## Verification evidence
 
 The public-store/HTTP tests in `tests/src/migration/workspace-backup.test.ts`

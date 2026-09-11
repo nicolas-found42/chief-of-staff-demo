@@ -504,9 +504,9 @@ it("commits a completed acceptance in one canonical generation too", () => {
  * checked payload as it was stored: reshaping a version-1 handoff on the way in
  * would silently rekey every Action Item already in the Workspace, which is
  * exactly what must not happen. The literal identity below is the one this
- * payload checksummed to before the change — the payload fields and the
- * canonical JSON are the same code — so a reshape fails here rather than in a
- * real Workspace.
+ * payload checksums to; the payload fields and the canonical JSON are the same
+ * code, so a reshape fails here rather than in a real Workspace. Issue #360
+ * added a field to that payload and moved both values once, deliberately.
  */
 it("replays a stored version-1 handoff under the identity it was written with", () => {
   const { root, actionItems } = workspace();
@@ -515,9 +515,9 @@ it("replays a stored version-1 handoff under the identity it was written with", 
   const [first] = actionItems.materialize(extraction([proposed({ handoff: legacyHandoff })]));
   const origin = first.proposalRevisions[0].origin;
   expect(origin.kind).toBe("extraction");
-  expect(origin.kind === "extraction" ? origin.outputEntryId : null).toBe("ce_fe462b37e560e6f8");
+  expect(origin.kind === "extraction" ? origin.outputEntryId : null).toBe("ce_c0b957062fa67b43");
   expect(origin.kind === "extraction" ? origin.payloadChecksum : null).toBe(
-    "sha256:67ef450816f51405e39cc68cf7084e060737ebd3314dabe47938fb1449048d27",
+    "sha256:aa9ad0255182f94847c5aeb1e3fd8324118770f39a454c5e38bfef0989ca9cdc",
   );
 
   const replay = actionItems.materialize(extraction([proposed({ handoff: legacyHandoff })]));

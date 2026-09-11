@@ -56,6 +56,46 @@ const PurposeModelsSchema = z.strictObject({
 });
 const ModelsSchema = z.record(ProviderIdSchema, PurposeModelsSchema);
 
+/**
+ * The automatic-promotion release restriction and the owner's explicit
+ * enablement (issue #360, ADR-0083, spec #343 §7). It sits beside the Action
+ * Item Policy preference and is deliberately separate from it: this record is
+ * what a preference is read against, never something a saved preference can
+ * write. `restricted` is the shape of an unrecorded release too, so a config
+ * written before this existed reads as restricted rather than as authorized.
+ */
+const PromotionReleaseSchema = z.union([
+  z.strictObject({
+    state: z.literal("restricted"),
+    basis: z.string().min(1),
+    /** When this restriction began; null when no release was ever recorded. */
+    since: z.string().nullable(),
+  }),
+  z.strictObject({
+    state: z.literal("released"),
+    basis: z.string().min(1),
+    /* The restriction's own start, carried forward. The config is deep-merged
+       over its defaults before parsing, so a released record that omitted this
+       would inherit the restricted branch's null and fail to parse. */
+    since: z.string().nullable().default(null),
+    releasedAt: z.string().min(1),
+    /** The retained release evidence this release stands on, identified only. */
+    evidence: z.strictObject({ reference: z.string().min(1), checksum: z.string().min(1) }),
+  }),
+]);
+
+const PromotionAuthorizationSchema = z.strictObject({
+  version: z.literal(1),
+  release: PromotionReleaseSchema,
+  /** The owner's explicit enable and disable acts, oldest first. */
+  decisions: z.array(
+    z.strictObject({
+      id: z.string().min(1),
+      kind: z.enum(["enable", "disable"]),
+      at: z.string().min(1),
+    }),
+  ),
+});
 export const ConfigSchema = z.strictObject({
   provider: ProviderIdSchema,
   model: z.string(),
@@ -103,6 +143,17 @@ export const ConfigSchema = z.strictObject({
        * inherit.
        */
       actionItemPolicy: z.enum(ACTION_ITEM_POLICIES).default("stage-all"),
+      /**
+       * The release restriction and the owner's explicit enablement for
+       * automatic promotion (#360, ADR-0083). Recorded apart from the
+       * preference above because a saved preference never lifts the
+       * restriction, and a release never resumes a preference saved before it.
+       */
+      promotion: PromotionAuthorizationSchema.default({
+        version: 1,
+        release: { state: "restricted", basis: "release-evidence-not-recorded", since: null },
+        decisions: [],
+      }),
       googleTasks: z
         .strictObject({
           enabled: z.boolean().default(false),
@@ -148,6 +199,11 @@ export const ConfigSchema = z.strictObject({
     })
     .default({
       actionItemPolicy: "stage-all",
+      promotion: {
+        version: 1,
+        release: { state: "restricted", basis: "release-evidence-not-recorded", since: null },
+        decisions: [],
+      },
       googleTasks: { enabled: false, taskListId: "", taskListTitle: "" },
       asana: {
         token: "",

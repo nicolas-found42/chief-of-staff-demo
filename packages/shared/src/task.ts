@@ -297,3 +297,73 @@ export interface TaskIndex {
  */
 export const ACTION_ITEM_POLICIES = ["stage-all", "auto-create-mine"] as const;
 export type ActionItemPolicy = (typeof ACTION_ITEM_POLICIES)[number];
+/**
+ * The release restriction on automatic promotion (issue #360, ADR-0083, spec
+ * #343 §7). It is recorded deliberately apart from the owner's
+ * `ActionItemPolicy` preference: a saved preference can never lift it, and
+ * passing the code tests never does either. Only a recorded release — the
+ * dedicated policy fixtures and the live-output audit, retained as private
+ * evidence — makes explicit enablement available, and even then the owner
+ * still has to enable.
+ */
+export type AutomaticPromotionRelease =
+  | { state: "restricted"; basis: string; since: string | null }
+  | {
+      state: "released";
+      basis: string;
+      /**
+       * When the restriction the release lifted began; null when the record
+       * predates the field. Carried forward so the history stays readable
+       * after the release.
+       */
+      since: string | null;
+      releasedAt: string;
+      /** The retained release evidence this release stands on, identified — never copied. */
+      evidence: { reference: string; checksum: string };
+    };
+
+/**
+ * The durable authorization state automatic promotion is reserved under
+ * (issue #360). `decisions` is an append-only history of the owner's explicit
+ * enable and disable acts; the last one is the current state. Enablement after
+ * a release applies only to future first extractions: it is read when an
+ * operation is reserved, and the reservation is what the promotion gate
+ * consults afterwards, so no backlog is swept and no recorded review-only
+ * outcome is reconsidered.
+ */
+export interface AutomaticPromotionAuthorization {
+  version: 1;
+  release: AutomaticPromotionRelease;
+  decisions: Array<{ id: string; kind: "enable" | "disable"; at: string }>;
+}
+
+/** The authorization facts in force at one moment, as a reservation records them. */
+export interface AutomaticPromotionAuthorizationFacts {
+  /** Whether the release restriction was lifted. */
+  released: boolean;
+  /**
+   * When the owner's explicit enablement was recorded, or null while no
+   * enablement stands. Enablement recorded before the release does not count:
+   * a release does not resume a saved preference.
+   */
+  enabledAt: string | null;
+  /** The Action Item Policy the owner had at that moment. */
+  preference: ActionItemPolicy;
+  /** Why the authorization is what it is, in words a surface can show. */
+  basis: string;
+}
+
+/**
+ * What the policy surface answers about automatic promotion (issue #360). The
+ * saved preference and the release restriction are reported separately so the
+ * interface can say which one is holding automation back.
+ */
+export interface AutomaticPromotionStatus {
+  /** True only when the preference is `auto-create-mine`, released and enabled. */
+  effective: boolean;
+  /** Why automatic promotion is unavailable right now; empty when effective. */
+  reason: string;
+  release: AutomaticPromotionRelease;
+  /** When the owner explicitly enabled after the release; null while disabled. */
+  enabledAt: string | null;
+}

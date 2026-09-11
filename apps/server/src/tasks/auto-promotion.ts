@@ -1,11 +1,17 @@
-import type { ActionItem, ActionItemPolicy, Task } from "@chief-of-staff-demo/shared";
-import { actionItemProposal, promotable } from "@chief-of-staff-demo/shared";
+import type {
+  ActionItem,
+  AutomaticPromotionAuthorizationFacts,
+  Task,
+} from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import type { ActionItemMaterialization, WorkspaceActionItems } from "./action-items.js";
 import { promoteActionItem } from "./promotion.js";
+import { promotionEligibility } from "./promotion-eligibility.js";
 import type { WorkspaceTasks } from "./tasks.js";
 
 /**
- * Automatic promotion of the owner's own commitments (ADR-0053, issue #181).
+ * Automatic promotion of the owner's own commitments (ADR-0053/0083, issues
+ * #181/#360).
  *
  * The Workspace default is Stage all: a model proposal waits for a person.
  * `auto-create-mine` is the owner's deliberate exception, and everything here
@@ -14,16 +20,28 @@ import type { WorkspaceTasks } from "./tasks.js";
  *
  * Automatic promotion never decides anything a review could not; it only
  * decides sooner. So it declines every case where the answer is not already
- * obvious: an unassigned or ambiguously owned commitment, another person's
- * commitment, anything a re-extraction produced, and anything an open Task
- * already looks like. Those stay pending, which is exactly what Stage all
- * would have done with them.
+ * obvious, and since #360 "obvious" means a *supported responsibility claim*
+ * (the owner's own commitment, or a request they unambiguously accepted, for
+ * this exact obligation, with nothing later changing it) recorded under an
+ * operation that was reserved while automation was authorized. A saved
+ * preference, a high confidence, a handoff alone or an older contract version
+ * authorizes nothing.
+ *
+ * Eligibility is read from the record, never from live settings: the
+ * reservation travels on the Action Item, so a restart, a replay or a later
+ * enablement reaches the verdict the operation was reserved under.
  */
 export interface AutoPromotionDeps {
   tasks: WorkspaceTasks;
   actionItems: WorkspaceActionItems;
-  /** Read live: the policy can change between one Debrief and the next. */
-  policy: () => ActionItemPolicy;
+  /**
+   * The authorization in force now: the release restriction, the owner's
+   * explicit enablement and the saved preference. Read once per materialization
+   * so a prerequisite that changed since the reservation yields review instead
+   * of a silent new decision (#343 §6). It never authorizes anything the
+   * reservation did not.
+   */
+  authorization: () => AutomaticPromotionAuthorizationFacts;
   /**
    * Deliver one committed Task to its configured external destination. The
    * local write has already happened when this is called, so a rejected
@@ -34,11 +52,11 @@ export interface AutoPromotionDeps {
 }
 
 /**
- * Materialize one extraction's proposals, then promote the ones the policy
- * makes obvious. One function rather than two calls at the composition seam:
+ * Materialize one extraction's proposals, then promote the ones every guard
+ * allows. One function rather than two calls at the composition seam:
  * eligibility depends on what the queue held *before* this materialization —
- * whether this Transcript has been extracted before at all — and a caller that
- * had to remember to read that first would eventually forget.
+ * whether this Transcript has been extracted before at all — and a caller
+ * that had to remember to read that first would eventually forget.
  *
  * The answer is the materialized Action Items, in materialization order, with
  * whatever state this call left them in.
@@ -49,25 +67,16 @@ export function materializeUnderPolicy(
 ): ActionItem[] {
   const first = firstExtractionRunId(deps.actionItems, input);
   const materialized = deps.actionItems.materialize(input);
-  if (deps.policy() !== "auto-create-mine") return materialized;
   /* A later extraction of the same Transcript is regeneration, and
      regeneration always stages: the owner has already reviewed this
      Transcript's proposals once, and automation must not answer for them a
      second time. */
-  if (first !== null && first !== input.debriefRunId) return materialized;
-  /* The reservation deciding this is the one the Debrief recorded before it
-     asked the model anything (#358, ADR-0084). It is a *necessary* condition,
-     not a sufficient one: `review-only` is permanent, so an operation
-     reserved while automation was not enabled is never promoted by a later
-     enablement, and the retained reservation of a zero-action first
-     extraction is what keeps the next Run from being mistaken for the first. */
-  if (input.firstExtraction !== undefined && input.firstExtraction.claim !== "first") {
-    deps.log?.(
-      `automatic promotion withheld: ${input.firstExtraction.claim} (${input.firstExtraction.basis})`,
-    );
+  if (first !== null && first !== input.debriefRunId) {
+    deps.log?.(`automatic promotion withheld: ${input.debriefRunId} regenerates ${first}`);
     return materialized;
   }
-  return materialized.map((item) => promoteIfEligible(deps, item));
+  const live = deps.authorization();
+  return materialized.map((item) => promoteIfEligible(deps, item, live));
 }
 
 /**
@@ -85,13 +94,36 @@ function firstExtractionRunId(
 }
 
 /**
- * Promote one Action Item if the policy's conditions all hold, and answer with
- * the record either way. Failure to promote is never an error: this is an
- * optimization over a review the owner can still perform, so an item that
- * cannot be promoted automatically is simply an item still waiting for them.
+ * Promote one Action Item if every guard holds, and answer with the record
+ * either way. Failure to promote is never an error: this is an optimization
+ * over a review the owner can still perform, so an item that cannot be
+ * promoted automatically is simply an item still waiting for them.
  */
-function promoteIfEligible(deps: AutoPromotionDeps, item: ActionItem): ActionItem {
-  if (!isEligible(deps, item)) return item;
+function promoteIfEligible(
+  deps: AutoPromotionDeps,
+  item: ActionItem,
+  live: AutomaticPromotionAuthorizationFacts,
+): ActionItem {
+  const proposal = actionItemProposal(item);
+  const decision = promotionEligibility(
+    item,
+    live,
+    deps.tasks.findDuplicates({
+      title: proposal.title,
+      dueDate: proposal.dueDate,
+      responsiblePerson: proposal.responsiblePerson,
+    }).length > 0,
+  );
+  if (!decision.eligible) {
+    /* Only an operation that expected automation is worth a line: a Stage all
+       Workspace declines every proposal by design, and the review surface
+       already shows the reason beside the proposal. */
+    if (item.source.promotion?.claim === "first")
+      deps.log?.(
+        `automatic promotion declined for ${item.id}: ${decision.code} (${decision.reason})`,
+      );
+    return item;
+  }
   try {
     /* Open, never completed: automation may accept a commitment the meeting
        made, but it may not invent the news that the work is already done. */
@@ -113,46 +145,4 @@ function promoteIfEligible(deps: AutoPromotionDeps, item: ActionItem): ActionIte
     deps.log?.(`automatic promotion declined for ${item.id}: ${String(error)}`);
     return item;
   }
-}
-
-/**
- * Whether automatic promotion may answer for this Action Item. Every clause is
- * a case where a person's judgment is the only defensible answer, so an
- * ineligible item is left exactly as Stage all would have left it.
- */
-function isEligible(deps: AutoPromotionDeps, item: ActionItem): boolean {
-  /* A decision already made — promoted or dismissed — is not automation's to
-     revisit; a retry of this same materialization simply finds it made. */
-  if (item.state !== "pending") return false;
-  /* Review cannot be bypassed (#355): an unresolved relationship, an
-     unreviewed correction, a record that is evidence about another one and a
-     proposal imported from an older Workspace all raise a question only the
-     owner can answer, and automation warns nobody. */
-  if (promotable(item) === false) return false;
-  const selected = item.proposalRevisions.find((entry) => entry.revision === item.selectedRevision);
-  if (selected?.origin.kind === "legacy-import") return false;
-  if (
-    item.handoff &&
-    (item.handoff.commitment !== "explicit" ||
-      item.handoff.responsibility.basis !== "explicit" ||
-      item.handoff.responsibility.names.length !== 1 ||
-      item.handoff.evidence.length === 0)
-  )
-    return false;
-  /* Only the first extraction's own proposals. A revision beyond the first is
-     something the model said the second time around. */
-  if (item.extractionRevision !== 1) return false;
-  /* "Mine", confidently: the Debrief resolved this commitment to the
-     confirmed owner's Profile. Nobody, or somebody else, waits for review —
-     automation must never write another person's work into my list. */
-  if (actionItemProposal(item).responsiblePerson?.kind !== "owner") return false;
-  /* An obvious duplicate is the case the owner most needs to see (issue
-     #180). Automation warns nobody, so it declines instead. */
-  return (
-    deps.tasks.findDuplicates({
-      title: actionItemProposal(item).title,
-      dueDate: actionItemProposal(item).dueDate,
-      responsiblePerson: actionItemProposal(item).responsiblePerson,
-    }).length === 0
-  );
 }

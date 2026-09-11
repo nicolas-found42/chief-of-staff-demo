@@ -2,6 +2,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
   ActionItemIndex,
   ActionItem,
+  AutomaticPromotionAuthorization,
+  AutomaticPromotionAuthorizationFacts,
+  AutomaticPromotionStatus,
   ActionItemContext,
   ActionItemDisposition,
   ActionItemPolicy,
@@ -18,6 +21,7 @@ import {
   ACTION_ITEM_POLICIES,
   INBOX_TASK_LIST_ID,
   TASK_PRIORITIES,
+  actionItemProposal,
 } from "@chief-of-staff-demo/shared";
 import {
   TaskValidationError,
@@ -26,6 +30,9 @@ import {
   type WorkspaceTasks,
 } from "../tasks/tasks.js";
 import type { ActionItemQuery, WorkspaceActionItems } from "../tasks/action-items.js";
+import { promotionEligibility } from "../tasks/promotion-eligibility.js";
+import type { PromotionReleaseEvidence } from "../tasks/promotion-authorization.js";
+import { PromotionAuthorizationError } from "../tasks/promotion-authorization.js";
 import { promoteActionItem } from "../tasks/promotion.js";
 import type { TaskLinking, TaskLinkResolution } from "../tasks/external-link.js";
 import type { AsanaLinking } from "../tasks/asana-link.js";
@@ -57,6 +64,19 @@ export interface TasksApiContext {
   actionItemPolicy?: {
     get: () => ActionItemPolicy;
     set: (policy: ActionItemPolicy) => void;
+  };
+  /**
+   * Automatic promotion's release restriction and the owner's explicit
+   * enablement (#360, ADR-0083). Absent when the Workspace composes no
+   * configuration store, and then automation is restricted: the release is
+   * recorded state, and nothing stands in for it.
+   */
+  promotion?: {
+    facts: () => AutomaticPromotionAuthorizationFacts;
+    status: () => AutomaticPromotionStatus;
+    release: (evidence: PromotionReleaseEvidence) => AutomaticPromotionAuthorization;
+    enable: () => AutomaticPromotionAuthorization;
+    disable: () => AutomaticPromotionAuthorization;
   };
 }
 
@@ -110,6 +130,12 @@ const ACTION_ITEM_STATES: readonly ActionItemState[] = ["pending", "promoted", "
 const NO_POLICY = {
   error: "action-item-policy-unavailable",
   message: "This Workspace has no Action Item Policy setting.",
+};
+
+/** The same refusal for automatic promotion's own record (#360). */
+const NO_PROMOTION = {
+  error: "automatic-promotion-unavailable",
+  message: "This Workspace composes no automatic-promotion authorization.",
 };
 
 /** The refusal a resolution request without a side earns. */
@@ -777,9 +803,23 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
       ...(query.meetingId ? { meetingId: query.meetingId } : {}),
     };
     const items = ctx.actionItems.list(filter);
+    const promotion = ctx.promotion;
     const index: ActionItemIndex = {
       items,
       dependencies: ctx.actionItems.dependencyReferences(items),
+      ...(promotion
+        ? {
+            /* Why automation would or would not answer for each proposal
+               (#360 §4): shown beside the proposal rather than left to be
+               inferred from a policy setting. */
+            automation: Object.fromEntries(
+              items.map((item) => [
+                item.id,
+                promotionEligibility(item, promotion.facts(), duplicates(item)),
+              ]),
+            ),
+          }
+        : {}),
       context: Object.fromEntries(
         items.map((item) => {
           let context: ActionItemContext = { meeting: null, evidence: null };
@@ -1066,15 +1106,111 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     return policyAnswer();
   });
 
-  /** The policy and what selecting automatic promotion would send outward. */
+  /**
+   * Recording a release, and the owner's explicit enablement of automatic
+   * promotion (#360, ADR-0083, spec #343 §7).
+   *
+   * Deliberately not a settings field. A release has to name the retained
+   * evidence it stands on, and enablement is available only once a release is
+   * recorded — so neither passing tests nor a saved preference can turn
+   * automation on from here, and the answer always says which of the two is
+   * holding it back.
+   */
+  app.put("/api/action-item-promotion", async (request: FastifyRequest, reply: FastifyReply) => {
+    const promotion = ctx.promotion;
+    if (!promotion) {
+      reply.code(409);
+      return NO_PROMOTION;
+    }
+    const body = (request.body ?? {}) as {
+      action?: string;
+      evidence?: { reference?: string; checksum?: string };
+      confirmedExternalWrites?: boolean;
+    };
+    if (body.action === "release") {
+      const evidence = {
+        reference: body.evidence?.reference?.trim() ?? "",
+        checksum: body.evidence?.checksum?.trim() ?? "",
+      };
+      if (evidence.reference === "" || !/^[0-9a-f]{64}$/.test(evidence.checksum)) {
+        reply.code(400);
+        return {
+          error: "invalid-release-evidence",
+          message:
+            "A release names the retained evidence it stands on: a reference and the sha256 of those exact bytes.",
+        };
+      }
+      try {
+        promotion.release(evidence);
+      } catch (error) {
+        if (error instanceof PromotionAuthorizationError) {
+          reply.code(409);
+          return { error: error.code, message: error.message };
+        }
+        throw error;
+      }
+      return policyAnswer();
+    }
+    if (body.action !== "enable" && body.action !== "disable") {
+      reply.code(400);
+      return {
+        error: "invalid-promotion-action",
+        message: 'Automatic promotion takes one of: "release", "enable", "disable".',
+      };
+    }
+    const outward = outwardDestination();
+    if (body.action === "enable" && outward !== null && body.confirmedExternalWrites !== true) {
+      reply.code(428);
+      return {
+        error: "confirmation-required",
+        message:
+          `Automatically created Tasks would be written to ${outward} without review. ` +
+          "Confirm the outbound writes to enable automatic promotion.",
+      };
+    }
+    try {
+      if (body.action === "enable") promotion.enable();
+      else promotion.disable();
+    } catch (error) {
+      if (error instanceof PromotionAuthorizationError) {
+        reply.code(409);
+        return { error: error.code, message: error.message };
+      }
+      throw error;
+    }
+    return policyAnswer();
+  });
+
+  /** The policy, the release restriction, and what automation would send outward. */
   function policyAnswer(): {
     policy: ActionItemPolicy;
     externalDestination: string | null;
+    automaticPromotion: AutomaticPromotionStatus;
   } {
+    const policy = ctx.actionItemPolicy?.get() ?? "stage-all";
     return {
-      policy: ctx.actionItemPolicy?.get() ?? "stage-all",
+      policy,
       externalDestination: outwardDestination(),
+      automaticPromotion: ctx.promotion?.status() ?? {
+        effective: false,
+        reason:
+          "Automatic promotion is restricted: this Workspace composes no authorization record.",
+        release: { state: "restricted", basis: "no-authorization-surface", since: null },
+        enabledAt: null,
+      },
     };
+  }
+
+  /** Whether an open Task already looks like this proposal (issue #180). */
+  function duplicates(item: ActionItem): boolean {
+    const proposal = actionItemProposal(item);
+    return (
+      tasks.findDuplicates({
+        title: proposal.title,
+        dueDate: proposal.dueDate,
+        responsiblePerson: proposal.responsiblePerson,
+      }).length > 0
+    );
   }
 
   /**

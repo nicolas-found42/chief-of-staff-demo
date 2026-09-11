@@ -357,6 +357,32 @@ const CONFIG_KEYS: Record<string, TableEntry> = {
   "tasks.asana.projectName": "asana-destinations",
   "tasks.asana.sectionGid": "asana-destinations",
   "tasks.asana.sectionName": "asana-destinations",
+  /* The automatic-promotion release restriction and the owner's explicit
+     enablement (#360): recorded product state about how work may be accepted.
+     It names no remote record and holds no credential, so a reset returns the
+     Workspace to restricted — the fail-closed direction. */
+  "tasks.promotion": composite("non-auth-workflow-configuration", {
+    kind: "object",
+    keys: {
+      version: SCALAR,
+      release: {
+        kind: "object",
+        keys: {
+          state: SCALAR,
+          basis: SCALAR,
+          since: SCALAR,
+          releasedAt: SCALAR,
+          /* The retained release evidence, identified by reference and checksum
+             so a reset never has to interpret its contents. */
+          evidence: { kind: "object", keys: { reference: SCALAR, checksum: SCALAR } },
+        },
+      },
+      decisions: {
+        kind: "array",
+        elements: { kind: "object", keys: { id: SCALAR, kind: SCALAR, at: SCALAR } },
+      },
+    },
+  }),
   "ollama.baseUrl": "non-auth-workflow-configuration",
   "search.searxngUrl": "non-auth-workflow-configuration",
   "modules.youtube-trends.channels": composite("youtube-channels", {

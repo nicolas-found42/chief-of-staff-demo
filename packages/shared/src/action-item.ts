@@ -30,6 +30,7 @@ import type {
   HandoffDependencyUnresolved,
   HandoffProvenance,
   MeetingHandoffRecord,
+  ResponsibilityClaim,
 } from "./meeting-debrief.js";
 import type { TaskResponsiblePerson } from "./task.js";
 
@@ -39,6 +40,20 @@ import type { TaskResponsiblePerson } from "./task.js";
  * decision survives re-extraction of the Debrief it came from.
  */
 export type ActionItemState = "pending" | "promoted" | "dismissed";
+/**
+ * Whether automatic promotion would answer for one proposal, and why not when
+ * it would not (#360). Reported beside the proposal so the owner reads the
+ * reason rather than a policy setting: "restricted in this release", "not the
+ * owner's own commitment", "a later turn completed it" and the rest each name
+ * a different answer.
+ */
+export interface ActionItemAutomationView {
+  eligible: boolean;
+  /** Stable machine code — `eligible` when nothing declined it. */
+  code: string;
+  /** Why automation declined, in words the review surface shows. */
+  reason: string;
+}
 
 /** Where the proposal came from. Every reference may later be unavailable. */
 export interface ActionItemSource {
@@ -54,6 +69,34 @@ export interface ActionItemSource {
    * records materialized from a complete publication.
    */
   reviewOnly?: boolean;
+  /**
+   * The lineage/policy reservation the Debrief recorded before it asked the
+   * model anything, carried with the record (#360, #358). It is a fact about
+   * the operation rather than something re-derived later, so a replay, a
+   * restart and a later enablement all reach the same verdict: `first` is the
+   * only claim that can authorize automation, and an absent reservation is
+   * honestly unknown — legacy, or an older writer — which never authorizes
+   * either.
+   */
+  /**
+   * The frozen context checksum this revision was checked under (#360). The
+   * claim binds it, and the commit boundary compares the two: a context that
+   * changed after the reservation is review, never a silent acceptance.
+   */
+  contextChecksum?: string;
+  promotion?: {
+    claim: "first" | "review-only" | "unknown";
+    basis: string;
+    operationId: string | null;
+    reservedAt: string;
+    /** The automatic-promotion authorization facts in force when it was reserved. */
+    authorization: {
+      released: boolean;
+      enabledAt: string | null;
+      preference: string;
+      basis: string;
+    } | null;
+  };
 }
 
 /**
@@ -241,6 +284,13 @@ export interface ActionItemAmendmentSuggestion {
 export interface ActionItem {
   handoff?: MeetingHandoffRecord;
   /**
+   * The structured responsibility claim this proposal was checked under
+   * (issue #360). Absent on every record materialized from an extraction that
+   * produced only the handoff — legacy, or a claim the pipeline could not
+   * support — and its absence is what keeps such a record review-only.
+   */
+  responsibilityClaim?: ResponsibilityClaim | undefined;
+  /**
    * Opaque Workspace identity, allocated once and stored with the record.
    * Nothing derives it: not content, not position, not a Run.
    */
@@ -362,6 +412,8 @@ export interface ResolvedActionItemDependency {
 
 /** The Action Item queue as the Tasks product reads it. */
 export interface ActionItemIndex {
+  /** Per-proposal automatic-promotion verdicts, when a policy surface is composed. */
+  automation?: Record<string, ActionItemAutomationView>;
   items: ActionItem[];
   context?: Record<string, ActionItemContext>;
   /**

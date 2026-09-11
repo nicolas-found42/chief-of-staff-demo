@@ -100,6 +100,11 @@ const config: AppConfig = {
   tasklistName: "Meeting Followups",
   tasks: {
     actionItemPolicy: "stage-all",
+    promotion: {
+      version: 1,
+      release: { state: "restricted", basis: "release-evidence-not-recorded", since: null },
+      decisions: [],
+    },
     googleTasks: { enabled: false, taskListId: "", taskListTitle: "" },
     asana: {
       token: "",

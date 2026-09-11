@@ -415,6 +415,165 @@ export interface StoredMeetingHandoff {
 
 /** Every handoff shape a record or artifact may carry. */
 export type MeetingHandoffRecord = MeetingHandoff | StoredMeetingHandoff;
+/**
+ * The exact-obligation responsibility claim (issue #360, MWR-013/014; ADR-0083,
+ * spec #343 §1). The handoff says *who* a deliverable is for and on what basis;
+ * this says *what kind of relationship* the source actually established
+ * between a speaker and a performer for one concrete obligation, and every
+ * source turn that supports or later changes it.
+ *
+ * It is deliberately separate from the handoff and separately versioned: a
+ * version-1 handoff cannot be relabelled into a claim, so historical proposals
+ * stay honestly unknown rather than borrowing proof they never had.
+ *
+ * A claim is evidence, never permission. It is not a Task acceptance, and it
+ * authorizes nothing on its own — the promotion gate reads it together with
+ * every other eligibility guard.
+ */
+export const RESPONSIBILITY_CLAIM_VERSION = 1 as const;
+
+/**
+ * The deterministic validator that produced a claim. A claim checked by any
+ * other version authorizes nothing: the promotion gate compares this against
+ * the version it knows, so changing the claim rules is a visible release
+ * decision rather than a silent widening of what automation may accept.
+ */
+export const RESPONSIBILITY_CLAIM_VALIDATOR_VERSION = 1 as const;
+
+/**
+ * How the obligation came to exist, as the source shows it. Only a performer's
+ * own commitment (`self-commitment`) or a request that performer unambiguously
+ * accepted for *this* obligation (`accepted-request`) can authorize automatic
+ * promotion; everything else is a question for review (#343, settled rule).
+ */
+export const RESPONSIBILITY_RELATIONSHIPS = [
+  "self-commitment",
+  "accepted-request",
+  "request",
+  "reported-commitment",
+  "shared",
+  "unresolved",
+] as const;
+export type ResponsibilityRelationship = (typeof RESPONSIBILITY_RELATIONSHIPS)[number];
+
+/**
+ * Later source turns that change an obligation. Any of them defeats an
+ * otherwise-supported claim: automation never creates work the meeting has
+ * since completed, cancelled, reassigned or materially qualified.
+ */
+export const RESPONSIBILITY_LATER_UPDATE_KINDS = [
+  "completion",
+  "cancellation",
+  "reassignment",
+  "qualification",
+] as const;
+export type ResponsibilityLaterUpdateKind = (typeof RESPONSIBILITY_LATER_UPDATE_KINDS)[number];
+
+/**
+ * One source occurrence the claim stands on. The `locator` is derived from the
+ * revision's own turn order rather than copied from the model, so two
+ * identical quotations stay two occurrences and a repeated citation is
+ * detectable.
+ */
+export interface ResponsibilityOccurrence {
+  /** The quotation, verbatim from the source revision. */
+  quote: string;
+  /** The turn's speaker label as the source states it (labels may be anonymous). */
+  speaker: string | null;
+  timestamp: string | null;
+  /** `turn:<n>` — the 1-based spoken turn, stable for one source revision. */
+  locator: string;
+}
+
+/** One later turn that changes the obligation, and which kind of change it is. */
+export interface ResponsibilityLaterUpdate {
+  kind: ResponsibilityLaterUpdateKind;
+  occurrence: ResponsibilityOccurrence;
+}
+
+/**
+ * The contract facts a claim was validated under. They bind the claim to the
+ * exact source revision and frozen context it was checked against, so a
+ * Workspace read later can tell a supported claim from a stale or unverifiable
+ * one instead of trusting a bare assertion (#343 §1).
+ */
+export interface ResponsibilityClaimContract {
+  contractVersion: typeof RESPONSIBILITY_CLAIM_VERSION;
+  /** The deterministic validator that checked the claim. */
+  validatorVersion: number;
+  source: {
+    transcriptId: string;
+    /** The source revision the claim was read from; null when unknown. */
+    observedRevision: number | null;
+    /** sha256 of that revision; null when unknown. */
+    checksum: string | null;
+  };
+  /** The frozen extraction context the claim was validated against. */
+  contextChecksum: string;
+  validatedAt: string;
+}
+
+export interface ResponsibilityClaim {
+  version: typeof RESPONSIBILITY_CLAIM_VERSION;
+  /** The exact deliverable this obligation is about, in the source's words. */
+  obligation: string;
+  /** Who stated the obligation; anonymous labels allowed, null when unstated. */
+  speaker: string | null;
+  /** The turn that stated the obligation. */
+  statement: ResponsibilityOccurrence;
+  /** Who would perform it, and how that was established. */
+  performer: { name: string | null; basis: "explicit" | "inferred" | "unknown" };
+  relationship: ResponsibilityRelationship;
+  /** The request or assignment turn; required by the request relationships. */
+  assignment: ResponsibilityOccurrence | null;
+  /** The turn where the performer accepted this particular obligation. */
+  acceptance: ResponsibilityOccurrence | null;
+  /** Later turns that change the obligation; any of these defeats automation. */
+  laterUpdates: ResponsibilityLaterUpdate[];
+  /** Why this is not a supported commitment, when it is not. */
+  unresolvedReasons: string[];
+  contract: ResponsibilityClaimContract;
+}
+
+/** Structural check for a stored claim; the gate re-validates before it trusts one. */
+export const ResponsibilityOccurrenceSchema = z.strictObject({
+  quote: z.string().min(1),
+  speaker: z.string().nullable(),
+  timestamp: z.string().nullable(),
+  locator: z.string().min(1),
+});
+
+export const ResponsibilityClaimSchema = z.strictObject({
+  version: z.literal(RESPONSIBILITY_CLAIM_VERSION),
+  obligation: z.string().min(1),
+  speaker: z.string().nullable(),
+  statement: ResponsibilityOccurrenceSchema,
+  performer: z.strictObject({
+    name: z.string().min(1).nullable(),
+    basis: z.enum(["explicit", "inferred", "unknown"]),
+  }),
+  relationship: z.enum(RESPONSIBILITY_RELATIONSHIPS),
+  assignment: ResponsibilityOccurrenceSchema.nullable(),
+  acceptance: ResponsibilityOccurrenceSchema.nullable(),
+  laterUpdates: z.array(
+    z.strictObject({
+      kind: z.enum(RESPONSIBILITY_LATER_UPDATE_KINDS),
+      occurrence: ResponsibilityOccurrenceSchema,
+    }),
+  ),
+  unresolvedReasons: z.array(z.string().min(1)),
+  contract: z.strictObject({
+    contractVersion: z.literal(RESPONSIBILITY_CLAIM_VERSION),
+    validatorVersion: z.number().int().positive(),
+    source: z.strictObject({
+      transcriptId: z.string().min(1),
+      observedRevision: z.number().int().nullable(),
+      checksum: z.string().nullable(),
+    }),
+    contextChecksum: z.string().min(1),
+    validatedAt: z.string().min(1),
+  }),
+});
 
 /**
  * One action item with an inferred owner. The owner is a surface name the
@@ -424,6 +583,12 @@ export type MeetingHandoffRecord = MeetingHandoff | StoredMeetingHandoff;
  */
 export interface MeetingDebriefActionItem {
   handoff?: MeetingHandoffRecord | undefined;
+  /**
+   * The structured responsibility claim this proposal was checked under
+   * (issue #360). Absent on every extraction that produced only the version-1
+   * handoff — legacy, or a claim the pipeline could not support.
+   */
+  responsibilityClaim?: ResponsibilityClaim | undefined;
   title: string;
   owner: string | null;
   /** The Catalog mention the owner refers to, when the extraction identified one. */

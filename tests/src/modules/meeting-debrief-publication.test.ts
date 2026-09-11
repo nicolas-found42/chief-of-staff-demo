@@ -178,6 +178,15 @@ function makeHarness(): Harness {
     policy: () => ({
       capturedAt: new Date(BASE_TIME).toISOString(),
       actionItemPolicy: policy,
+      /* The authorization facts reserved with the operation (#360): released
+         and explicitly enabled, so a first extraction can still be reserved as
+         eligible. */
+      authorization: {
+        released: true,
+        enabledAt: new Date(BASE_TIME).toISOString(),
+        preference: policy === "auto-create-mine" ? "auto-create-mine" : "stage-all",
+        basis: "enabled-at:fixture",
+      },
     }),
     extract: async (input) => {
       extractInputs.push(input);
@@ -314,10 +323,11 @@ describe("Debrief publication (#358)", () => {
     );
 
     // The materialization was told what was reserved, not asked to re-derive it.
-    expect(h.handovers[0].firstExtraction).toEqual({
+    expect(h.handovers[0].firstExtraction).toMatchObject({
       operationId: operation.operationId,
       claim: "first",
       basis: "no-retained-first-reservation",
+      authorization: { released: true, preference: "auto-create-mine" },
     });
   });
 
@@ -721,8 +731,18 @@ describe("Debrief final-write faults (#358)", () => {
         basis: "test",
         reservedAt: new Date(BASE_TIME).toISOString(),
         lineageRunId: null,
+        authorization: {
+          released: true,
+          enabledAt: new Date(BASE_TIME).toISOString(),
+          preference: "auto-create-mine" as const,
+          basis: "enabled-at:fixture",
+        },
       },
-      policy: { capturedAt: new Date(BASE_TIME).toISOString(), actionItemPolicy: null },
+      policy: {
+        capturedAt: new Date(BASE_TIME).toISOString(),
+        actionItemPolicy: null,
+        authorization: null,
+      },
       intent: "publish" as const,
       now: () => new Date(BASE_TIME),
       produce: async () => {
@@ -830,8 +850,18 @@ describe("Debrief dependency map (MWR-048)", () => {
         basis: "test",
         reservedAt: new Date(BASE_TIME).toISOString(),
         lineageRunId: null,
+        authorization: {
+          released: true,
+          enabledAt: new Date(BASE_TIME).toISOString(),
+          preference: "auto-create-mine" as const,
+          basis: "enabled-at:fixture",
+        },
       },
-      policy: { capturedAt: new Date(BASE_TIME).toISOString(), actionItemPolicy: null },
+      policy: {
+        capturedAt: new Date(BASE_TIME).toISOString(),
+        actionItemPolicy: null,
+        authorization: null,
+      },
       intent: "publish" as const,
       now: () => new Date(BASE_TIME),
       produce: async () => ({
@@ -1004,8 +1034,18 @@ describe("Incomplete Debrief publication (MWR-035, MWR-038)", () => {
         basis: "test",
         reservedAt: new Date(BASE_TIME).toISOString(),
         lineageRunId: null,
+        authorization: {
+          released: true,
+          enabledAt: new Date(BASE_TIME).toISOString(),
+          preference: "auto-create-mine" as const,
+          basis: "enabled-at:fixture",
+        },
       },
-      policy: { capturedAt: new Date(BASE_TIME).toISOString(), actionItemPolicy: null },
+      policy: {
+        capturedAt: new Date(BASE_TIME).toISOString(),
+        actionItemPolicy: null,
+        authorization: null,
+      },
       intent: input.intent ?? "publish",
       now: () => new Date(BASE_TIME),
       produce: async () => ({

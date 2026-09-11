@@ -6,6 +6,7 @@ import type {
   MeetingDebriefReviewState,
   ExtractionContextSnapshot,
   ActionItemMaterializationMapping,
+  AutomaticPromotionAuthorizationFacts,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -155,18 +156,26 @@ interface DebriefActionItemHandover {
   /** The immutable source revision the extraction read, when it is known. */
   transcriptObservedRevision?: number | null;
   transcriptChecksum?: string | null;
+  /** The frozen context checksum this revision was checked under (#360). */
+  contextChecksum?: string;
   actionItems: MeetingDebriefExtraction["actionItems"];
   /** The extraction's own candidate ids, aligned with `actionItems`. */
   candidateAliases?: (string | null)[];
   /**
    * The lineage reservation recorded before inference, passed through so the
    * Tasks side decides eligibility on what was reserved rather than on what
-   * the queue happens to hold now (#358).
+   * the queue happens to hold now (#358). It carries the automatic-promotion
+   * authorization facts too (#360): the release restriction and the owner's
+   * explicit enablement as they stood before the model was asked anything, so
+   * a later release never reopens this operation and a later enablement never
+   * sweeps it up.
    */
   firstExtraction?: {
     operationId: string;
     claim: "first" | "review-only" | "unknown";
     basis: string;
+    reservedAt: string;
+    authorization: AutomaticPromotionAuthorizationFacts | null;
   };
 }
 
@@ -318,6 +327,7 @@ function modelExtractionOptions(
   identity: DebriefIdentityReview,
   deps: MeetingDebriefModuleDeps,
   useCheckpoints: boolean,
+  contextChecksum: string,
 ): CandidateExtractionOptions {
   if (!deps.getCompleteJson) {
     throw new Error("Meeting Debrief extraction provider is unavailable");
@@ -327,6 +337,7 @@ function modelExtractionOptions(
   return {
     record,
     identity,
+    contextChecksum,
     complete: deps.getCompleteJson(),
     operationId: ctx.runId,
     runId: ctx.runId,
@@ -436,6 +447,12 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       2,
     )}\n`;
 
+  /** The frozen context's checksum, or undefined while none has been captured. */
+  const contextChecksum = (ctx: RunContext): string | undefined => {
+    const frozen = ctx.readFile("context-snapshot.json");
+    return frozen === null ? undefined : debriefChecksum(frozen);
+  };
+
   /** The Run directory as the publication machinery reads and writes it. */
   const ioFor = (ctx: RunContext): DebriefArtifactIO => ({
     read: (name) => ctx.readFile(name),
@@ -449,10 +466,15 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       basis: "no-lineage-resolver-wired",
       reservedAt: now().toISOString(),
       lineageRunId: null,
+      authorization: null,
     };
 
   const policySnapshot = (): DebriefPolicySnapshot =>
-    deps.policy?.() ?? { capturedAt: now().toISOString(), actionItemPolicy: null };
+    deps.policy?.() ?? {
+      capturedAt: now().toISOString(),
+      actionItemPolicy: null,
+      authorization: null,
+    };
 
   const ensureReviewState = (
     ctx: RunContext,
@@ -532,6 +554,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         identity,
         deps,
         options.useCheckpoints,
+        match.contextChecksum,
       );
       let core: DebriefStoredCore<DebriefCheckedCorePayload> | null = options.reuseCore
         ? resumableCheckedCore<DebriefCheckedCorePayload>(stream, ctx.artifactNames(), match)
@@ -643,6 +666,10 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           meetingId: record.meetingId,
           transcriptObservedRevision: record.source.observedRevision,
           transcriptChecksum: record.source.checksum,
+          /* The frozen context the checked revision stands on: read from the
+             Run's own artifact, so the claim binds what the publication bound
+             rather than a context re-captured later. */
+          ...(contextChecksum(ctx) ? { contextChecksum: contextChecksum(ctx)! } : {}),
           actionItems: result.debrief.actionItems,
           candidateAliases: aliases,
           ...(revision.reviewOnly ? { reviewOnly: true } : {}),
@@ -652,6 +679,8 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
                   operationId: `op-${ctx.runId}`,
                   claim: reservation.claim,
                   basis: reservation.basis,
+                  reservedAt: reservation.reservedAt,
+                  authorization: reservation.authorization,
                 },
               }
             : {}),

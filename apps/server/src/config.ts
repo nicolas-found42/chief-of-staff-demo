@@ -57,6 +57,14 @@ function defaultConfig(): AppConfig {
       /* Stage all Action Items (issue #181): a fresh Workspace never promotes
          a model proposal on its own. */
       actionItemPolicy: "stage-all",
+      /* The release restriction and the owner's explicit enablement (#360):
+         a fresh Workspace is restricted until the dedicated evidence gate has
+         been recorded, and no saved preference changes that. */
+      promotion: {
+        version: 1,
+        release: { state: "restricted", basis: "release-evidence-not-recorded", since: null },
+        decisions: [],
+      },
       googleTasks: { enabled: false, taskListId: "", taskListTitle: "" },
       asana: {
         token: "",
@@ -241,6 +249,19 @@ export class ConfigStore {
   setActionItemPolicy(next: AppConfig["tasks"]["actionItemPolicy"]): void {
     const current = this.get();
     this.config = { ...current, tasks: { ...current.tasks, actionItemPolicy: next } };
+    this.persist();
+  }
+
+  /**
+   * The automatic-promotion release restriction and the owner's explicit
+   * enablement (issue #360, ADR-0083). Its own method rather than a
+   * `PUT /api/config` field, like the Action Item Policy beside it: recording
+   * a release stands on retained evidence, and enabling after one is a
+   * decision the Tasks product takes on its own route.
+   */
+  setPromotionAuthorization(next: AppConfig["tasks"]["promotion"]): void {
+    const current = this.get();
+    this.config = { ...current, tasks: { ...current.tasks, promotion: next } };
     this.persist();
   }
 

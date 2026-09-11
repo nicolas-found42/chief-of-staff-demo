@@ -25,6 +25,7 @@ import type { PersonProfileResolver } from "../person-profile/resolver.js";
 import type { OwnerOnboarding } from "../onboarding/owner.js";
 import type { WorkspaceTasks } from "../tasks/tasks.js";
 import type { WorkspaceActionItems } from "../tasks/action-items.js";
+import type { WorkspacePromotionAuthorization } from "../tasks/promotion-authorization.js";
 import type { TaskLinking } from "../tasks/external-link.js";
 import type { AsanaLinking } from "../tasks/asana-link.js";
 
@@ -58,6 +59,12 @@ export interface ApiContext {
   contentProjects: WorkspaceContentProjects;
   /** The Tasks product area's Workspace-owned interface (ADR-0052). */
   tasks: WorkspaceTasks;
+  /**
+   * Automatic promotion's durable authorization (#360). Present wherever a
+   * Tasks product is composed, so the policy surface can report the release
+   * restriction and the owner's explicit enablement.
+   */
+  promotion?: WorkspacePromotionAuthorization;
   /** The Action Items a Meeting Debrief proposed, which Tasks presents (issue #177). */
   actionItems: WorkspaceActionItems;
   actionItemContext?: import("./tasks.js").TasksApiContext["actionItemContext"];
@@ -409,5 +416,19 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       get: () => ctx.configStore.get().tasks.actionItemPolicy,
       set: (policy) => ctx.configStore.setActionItemPolicy(policy),
     },
+    /* Automatic promotion's release restriction and explicit enablement
+       (#360): recorded state the policy surface reports and the owner acts on,
+       never a preference read as authorization. */
+    ...(ctx.promotion
+      ? {
+          promotion: {
+            facts: () => ctx.promotion!.facts(ctx.configStore.get().tasks.actionItemPolicy),
+            status: () => ctx.promotion!.status(ctx.configStore.get().tasks.actionItemPolicy),
+            release: (evidence) => ctx.promotion!.recordRelease(evidence),
+            enable: () => ctx.promotion!.enable(),
+            disable: () => ctx.promotion!.disable(),
+          },
+        }
+      : {}),
   });
 }
