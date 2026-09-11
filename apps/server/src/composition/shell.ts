@@ -717,6 +717,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           policy: () => ({
             capturedAt: new Date().toISOString(),
             actionItemPolicy: configStore.get().tasks.actionItemPolicy,
+            /* The reservation records the release restriction and the owner's
+               explicit enablement alongside the preference (#360), so a later
+               release never reopens this operation. */
+            authorization: taskProduct.promotion.facts(configStore.get().tasks.actionItemPolicy),
           }),
           log: (message) => console.log(`[meeting-debrief] ${message}`),
         })
@@ -753,6 +757,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       policy: () => ({
         capturedAt: new Date().toISOString(),
         actionItemPolicy: configStore.get().tasks.actionItemPolicy,
+        /* The release restriction and the owner's explicit enablement (#360)
+           are reserved with it: a saved preference never lifts the first, and
+           a release never resumes a preference saved before it. */
+        authorization: taskProduct.promotion.facts(configStore.get().tasks.actionItemPolicy),
       }),
       log: (message) => console.log(`[meeting-debrief] ${message}`),
     }).host;
@@ -923,6 +931,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     contentProjects,
     tasks,
     actionItems,
+    promotion: taskProduct.promotion,
     taskLinking,
     asanaLinking,
     actionItemContext: (item) => {
