@@ -32,6 +32,16 @@ export const PERSON_PROFILE_CALL_SITES = [
  * served. A repeat whose predecessors all failed has no validated success to
  * reuse and is a retry, not a candidate; entries without a fingerprint cannot
  * be compared at all.
+ *
+ * `cachedTokens` is the input tokens the provider reported as served from its
+ * own prompt cache (issue #381, R3), which is why it sits beside `dollars`
+ * rather than beside `calls`: an exact prefix the provider has already seen
+ * bills those tokens at a discount that `dollars` already includes, so the
+ * saving is dollars only and never a call reduction. No code change makes the
+ * caching happen — the provider applies it automatically to a repeated exact
+ * prefix — so this figure exists to make the already-recorded utilization
+ * visible in the three-site baseline, not to announce a transport or routing
+ * change. Entries that reported no cache hit contribute zero.
  */
 export interface CallSiteCostSummary {
   callSite: string;
@@ -39,6 +49,7 @@ export interface CallSiteCostSummary {
   calls: number;
   dollars: number;
   totalTokens: number;
+  cachedTokens: number;
   exactRepeatCalls: number;
 }
 
@@ -69,11 +80,13 @@ export function summarizeCallSites(
     );
     let dollars = 0;
     let totalTokens = 0;
+    let cachedTokens = 0;
     let exactRepeatCalls = 0;
     const validatedFingerprints = new Set<string>();
     for (const entry of ordered) {
       dollars += entry.cost.dollars;
       totalTokens += entry.tokens.totalTokens;
+      cachedTokens += entry.cachedPromptTokens ?? 0;
       const fingerprint = entry.requestFingerprint;
       if (fingerprint === undefined) continue;
       if (validatedFingerprints.has(fingerprint)) exactRepeatCalls += 1;
@@ -85,6 +98,7 @@ export function summarizeCallSites(
       calls: ordered.length,
       dollars,
       totalTokens,
+      cachedTokens,
       exactRepeatCalls,
     });
   }

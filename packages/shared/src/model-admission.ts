@@ -120,6 +120,12 @@ export function defaultModelPriceEvidence(): Map<string, ModelPriceEvidence> {
     contextWindowTokens: 1_000_000,
   });
   add({
+    model: "inception/mercury-2.5",
+    inputDollarsPerMillion: 0.04,
+    outputDollarsPerMillion: 0.15,
+    contextWindowTokens: 260_000,
+  });
+  add({
     model: "z-ai/glm-5.3-flash",
     inputDollarsPerMillion: 0.2,
     outputDollarsPerMillion: 0.4,

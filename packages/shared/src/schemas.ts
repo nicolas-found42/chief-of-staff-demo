@@ -24,7 +24,7 @@ export const ProviderIdSchema = z.enum(PROVIDERS);
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-5.2",
   anthropic: "claude-sonnet-5",
-  openrouter: "z-ai/glm-5.3-flash",
+  openrouter: "inception/mercury-2.5",
   gemini: "gemini-3.7-flash",
   ollama: "nemotron",
   mock: "",

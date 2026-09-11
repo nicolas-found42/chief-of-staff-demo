@@ -110,6 +110,7 @@ describe("calls and dollars by call site", () => {
         calls: 1,
         dollars: 0.002,
         totalTokens: 200,
+        cachedTokens: 0,
         exactRepeatCalls: 0,
       },
       {
@@ -118,8 +119,31 @@ describe("calls and dollars by call site", () => {
         calls: 2,
         dollars: 0.01,
         totalTokens: 1500,
+        cachedTokens: 0,
         exactRepeatCalls: 0,
       },
+    ]);
+  });
+
+  it("sums provider prompt-cache hits per group, treating an unreported hit as none", () => {
+    const summaries = summarizeCallSites([
+      entry({
+        callSite: EXTRACTION,
+        admittedAt: "2026-09-11T10:00:00.000Z",
+        cachedPromptTokens: 11406,
+      }),
+      entry({
+        callSite: EXTRACTION,
+        admittedAt: "2026-09-11T10:00:10.000Z",
+        cachedPromptTokens: null,
+      }),
+      entry({ callSite: EXTRACTION, admittedAt: "2026-09-11T10:00:20.000Z" }),
+      entry({ callSite: CLAIMS }),
+    ]);
+
+    expect(summaries).toMatchObject([
+      { callSite: CLAIMS, calls: 1, cachedTokens: 0 },
+      { callSite: EXTRACTION, calls: 3, cachedTokens: 11406 },
     ]);
   });
 
@@ -144,6 +168,7 @@ describe("calls and dollars by call site", () => {
         calls: 2,
         dollars: 0.002,
         totalTokens: 240,
+        cachedTokens: 0,
         exactRepeatCalls: 1,
       },
     ]);
@@ -183,6 +208,7 @@ describe("calls and dollars by call site", () => {
         calls: 1,
         dollars: 0.5,
         totalTokens: 120,
+        cachedTokens: 0,
         exactRepeatCalls: 0,
       },
     ]);
@@ -196,6 +222,7 @@ describe("calls and dollars by call site", () => {
         calls: 1,
         dollars: 9.99,
         totalTokens: 120,
+        cachedTokens: 0,
         exactRepeatCalls: 0,
       },
     ]);
@@ -339,6 +366,7 @@ describe("the composed Person Profile cost summary", () => {
         calls: 1,
         dollars: 0.002,
         totalTokens: 120,
+        cachedTokens: 0,
         exactRepeatCalls: 0,
       },
       {
@@ -347,6 +375,7 @@ describe("the composed Person Profile cost summary", () => {
         calls: 2,
         dollars: 0.008,
         totalTokens: 240,
+        cachedTokens: 0,
         exactRepeatCalls: 1,
       },
     ]);
