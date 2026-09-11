@@ -23,8 +23,9 @@ import { createSourceLifecycleGrant } from "../../../apps/server/src/llm/grants"
 import { parseResultShape } from "../../../apps/server/src/llm/failure";
 import type {
   CandidateExtractionOptions,
-  CheckedExtraction,
+  DebriefExtractionRun,
 } from "../../../apps/server/src/modules/meeting-debrief/candidate-extraction";
+import { validatedDebriefSections } from "@chief-of-staff-demo/shared";
 import {
   loadCampaignCorpus,
   type LoadedCampaignCorpus,
@@ -820,10 +821,32 @@ describe("campaign runner and extraction executor", () => {
     } as unknown as MeetingDebriefExtraction;
   }
 
+  /**
+   * One finished extraction, as the pipeline's whole-run seam returns it
+   * (#345). The campaign executor reads `extraction` and the ids; the checked
+   * core the production pipeline commits is described here as the empty one
+   * this fixture actually checks, and its sections all validated because the
+   * injected extraction is a complete revision.
+   */
+  function extractionRun(): DebriefExtractionRun {
+    return {
+      extraction: extractionFixture(),
+      checkedAliases: [],
+      core: {
+        sourceChecksum: "campaign-fixture",
+        candidates: [],
+        dispositions: [],
+        actions: [],
+        retainedIds: [],
+      },
+      sections: validatedDebriefSections(),
+    };
+  }
+
   function extractionExecutor(
     corpus: LoadedCampaignCorpus,
     stateDir: string,
-    extract: ((options: CandidateExtractionOptions) => Promise<CheckedExtraction>) | undefined,
+    extract: ((options: CandidateExtractionOptions) => Promise<DebriefExtractionRun>) | undefined,
     writeFile?: (path: string, contents: string) => void,
   ) {
     const ledger = new ModelBudgetLedger(stateDir);
@@ -864,7 +887,7 @@ describe("campaign runner and extraction executor", () => {
     const executor = extractionExecutor(
       corpus,
       stateDir,
-      async () => ({ extraction: extractionFixture(), checkedAliases: [] }),
+      async () => extractionRun(),
       () => {
         throw new Error("ENOSPC: no space left on device");
       },
@@ -907,7 +930,7 @@ describe("campaign runner and extraction executor", () => {
         sourceGrant: options.grant,
         stage: "probe",
       });
-      return { extraction: extractionFixture(), checkedAliases: [] };
+      return extractionRun();
     });
     const first = await runValidationCampaign({ campaignDir, executor, concurrency: 1 });
     expect(first.outcomes).toHaveLength(1);
@@ -944,7 +967,7 @@ describe("campaign runner and extraction executor", () => {
     const stopping = new AbortController();
     const executor = extractionExecutor(corpus, stateDir, async () => {
       stopping.abort();
-      return { extraction: extractionFixture(), checkedAliases: [] };
+      return extractionRun();
     });
     const { outcomes, report } = await runValidationCampaign({
       campaignDir,
@@ -977,7 +1000,7 @@ describe("campaign runner and extraction executor", () => {
     const stateDir = tempDir("campaign-state-");
     const executor = extractionExecutor(corpus, stateDir, async () => {
       parseResultShape("Campaign-Probe", z.strictObject({ answer: z.string() }), {});
-      return { extraction: extractionFixture(), checkedAliases: [] };
+      return extractionRun();
     });
     const { outcomes } = await runValidationCampaign({ campaignDir, executor, concurrency: 1 });
     expect(outcomes[0].status).toBe("schema-invalid");
