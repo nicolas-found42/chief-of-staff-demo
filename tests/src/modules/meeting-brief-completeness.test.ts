@@ -134,7 +134,7 @@ function makeHarness(overrides: Partial<MeetingBriefHostDeps> = {}): Harness {
   let sends = 0;
   const delivery = {
     async findByDeliveryId() {
-      return null;
+      return { kind: "none" } as const;
     },
     async send() {
       sends += 1;

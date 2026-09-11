@@ -231,7 +231,7 @@ describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
             repaired = true;
             people.correct(profile.id, { role: "Founder", note: "Corrected before delivery." });
           }
-          return null;
+          return { kind: "none" } as const;
         },
         async send() {
           sends += 1;
@@ -350,7 +350,8 @@ describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
       completeBrief: completeFixtureBrief,
       gmailDeliveryProvider: {
         async findByDeliveryId(deliveryId) {
-          return sent.get(deliveryId) ?? null;
+          const found = sent.get(deliveryId);
+          return found ? { kind: "found", ...found } : { kind: "none" };
         },
         async send({ deliveryId }) {
           sendCalls += 1;

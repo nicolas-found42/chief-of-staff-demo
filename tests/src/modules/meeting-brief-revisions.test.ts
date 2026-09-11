@@ -164,7 +164,7 @@ function defaultCompleteBrief() {
 function defaultDeliver() {
   return {
     async findByDeliveryId() {
-      return null;
+      return { kind: "none" } as const;
     },
     async send() {
       return { messageId: "msg-1", recipient: "owner@example.com" };
@@ -742,7 +742,7 @@ describe("Cancellation — removes future candidate, skips active before deliver
       completeBrief: defaultCompleteBrief(),
       gmailDeliveryProvider: {
         async findByDeliveryId() {
-          return null;
+          return { kind: "none" } as const;
         },
         async send() {
           deliverCalls.push("called");
@@ -822,7 +822,7 @@ describe("Cancellation — removes future candidate, skips active before deliver
       completeBrief: defaultCompleteBrief(),
       gmailDeliveryProvider: {
         async findByDeliveryId() {
-          return null;
+          return { kind: "none" } as const;
         },
         async send() {
           return { messageId: "msg", recipient: "owner@example.com" };

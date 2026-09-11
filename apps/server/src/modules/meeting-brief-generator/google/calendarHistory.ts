@@ -148,6 +148,7 @@ export async function enrichCalendarHistory(
   guestEmail: string,
   before: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+  retrievedAt?: string,
 ): Promise<{
   artifact: GoogleEnrichmentArtifact;
   section: MeetingBriefEnrichmentSection;
@@ -163,6 +164,7 @@ export async function enrichCalendarHistory(
     ctx,
     filename,
     eventVersion,
+    ...(retrievedAt ? { retrievedAt } : {}),
     async lookup(attempts) {
       const events = await provider.listPastMeetings(normalized, maxResults, before);
       if (events.length === 0) {
@@ -183,6 +185,9 @@ export async function enrichCalendarHistory(
       const evidence = limited.map((e) =>
         sanitizeEvidence(e.summary || `Meeting ${e.id} at ${e.startAt}`),
       );
+      // The event date is the date that matters for a past meeting; a source
+      // that states none leaves a null the freshness policy reads as undated.
+      const evidenceDates = limited.map((e) => e.startAt || null);
       const references = limited.map(
         (e) => `https://calendar.google.com/calendar/event?eid=${encodeURIComponent(e.id)}`,
       );
@@ -193,6 +198,7 @@ export async function enrichCalendarHistory(
         source: "calendar-history",
         status: "completed",
         evidence,
+        evidenceDates,
         references,
         diagnostics: {
           bounded: true,

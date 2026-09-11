@@ -229,7 +229,14 @@ export class MeetingBriefingCoordinator {
       if (state.error !== null || state.briefing === null || !this.options.getOwnerEmail()) return;
       if (this.options.isOwnerProfileConfirmed && !this.options.isOwnerProfileConfirmed()) return;
       const deliveryId = `mb-daily-${date}`;
-      if (!(await provider.findByDeliveryId(deliveryId))) {
+      const reconciliation = await provider.findByDeliveryId(deliveryId);
+      if (reconciliation.kind === "ambiguous" || reconciliation.kind === "unreadable") {
+        // Never send on an answer that cannot rule out an accepted message
+        // (issue #362); the next day's attempt reconciles again.
+        this.options.log?.(`daily briefing email reconciliation refused (${reconciliation.kind})`);
+        return;
+      }
+      if (reconciliation.kind === "none") {
         const rendered = renderDailyBriefingEmail(state.briefing);
         await provider.send({ ...rendered, deliveryId });
       }

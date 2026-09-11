@@ -58,14 +58,61 @@ describe("Gmail delivery Output Adapter — issue #90", () => {
     expect(mime).not.toContain("\r\nBcc:");
   });
 
-  it("fails reconciliation closed when a candidate message cannot be inspected", async () => {
+  it("classifies an unreadable candidate as unreadable instead of throwing", async () => {
     gmailApi.list.mockResolvedValue({ data: { messages: [{ id: "candidate-1" }] } });
     gmailApi.get.mockRejectedValue(new Error("Gmail metadata unavailable"));
     const provider = createGmailDeliveryProvider({} as GoogleAuth, "owner@example.com");
 
-    await expect(provider.findByDeliveryId("delivery-1")).rejects.toThrow(
-      "Gmail metadata unavailable",
-    );
+    await expect(provider.findByDeliveryId("delivery-1")).resolves.toEqual({
+      kind: "unreadable",
+      reason: "Gmail metadata unavailable",
+    });
     expect(gmailApi.list.mock.calls[0]?.[0]?.q).toMatch(/^rfc822msgid:/);
+  });
+
+  it("classifies no candidate as none and one verified candidate as found", async () => {
+    const provider = createGmailDeliveryProvider({} as GoogleAuth, "owner@example.com");
+    gmailApi.list.mockResolvedValue({ data: { messages: [] } });
+    await expect(provider.findByDeliveryId("delivery-1")).resolves.toEqual({ kind: "none" });
+
+    gmailApi.list.mockResolvedValue({ data: { messages: [{ id: "message-1" }] } });
+    gmailApi.get.mockResolvedValue({
+      data: {
+        payload: {
+          headers: [
+            { name: "X-MeetingBrief-Delivery-Id", value: "delivery-1" },
+            { name: "To", value: "owner@example.com" },
+          ],
+        },
+      },
+    });
+    await expect(provider.findByDeliveryId("delivery-1")).resolves.toEqual({
+      kind: "found",
+      messageId: "message-1",
+      recipient: "owner@example.com",
+    });
+  });
+
+  it("classifies several messages carrying one delivery identity as ambiguous", async () => {
+    gmailApi.list.mockResolvedValue({
+      data: { messages: [{ id: "message-1" }, { id: "message-2" }] },
+    });
+    gmailApi.get.mockImplementation(({ id }: { id: string }) =>
+      Promise.resolve({
+        data: {
+          payload: {
+            headers: [
+              { name: "X-MeetingBrief-Delivery-Id", value: "delivery-1" },
+              { name: "To", value: "owner@example.com" },
+            ],
+            id,
+          },
+        },
+      }),
+    );
+    const provider = createGmailDeliveryProvider({} as GoogleAuth, "owner@example.com");
+
+    const reconciliation = await provider.findByDeliveryId("delivery-1");
+    expect(reconciliation).toEqual({ kind: "ambiguous", messageIds: ["message-1", "message-2"] });
   });
 });

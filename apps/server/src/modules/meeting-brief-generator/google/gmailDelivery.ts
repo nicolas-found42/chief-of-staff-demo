@@ -16,6 +16,22 @@ import type { GoogleAuth } from "../../../google/oauth.js";
  * may reference users.messages.send.
  */
 
+/**
+ * Deterministic reconciliation outcome (issue #362).
+ *
+ * A retry may only send when the provider proves nothing was accepted. A
+ * message that cannot be inspected, or several that match one delivery
+ * identity, is never read as "no message": that is what a blind resend is
+ * made of.
+ */
+export type GmailReconciliation =
+  | { kind: "none" }
+  | { kind: "found"; messageId: string; recipient: string }
+  /** More than one message carries this delivery identity. */
+  | { kind: "ambiguous"; messageIds: string[] }
+  /** A candidate message could not be inspected, so its identity is unknown. */
+  | { kind: "unreadable"; reason: string };
+
 export interface GmailDeliveryProvider {
   /**
    * Send the rendered Meeting Brief to the workspace owner.
@@ -33,7 +49,7 @@ export interface GmailDeliveryProvider {
    * Reconcile: did a message with this deliveryId already send?
    * Read-only; used before retry so a lost ack converges to one message.
    */
-  findByDeliveryId(deliveryId: string): Promise<{ messageId: string; recipient: string } | null>;
+  findByDeliveryId(deliveryId: string): Promise<GmailReconciliation>;
 }
 
 /** Resolve the recipient from the authenticated Gmail account, never Calendar/model input. */
@@ -118,37 +134,61 @@ export function createGmailDeliveryProvider(
       return { messageId: id, recipient: owner };
     },
 
-    async findByDeliveryId(
-      deliveryId: string,
-    ): Promise<{ messageId: string; recipient: string } | null> {
-      if (!deliveryId) return null;
+    async findByDeliveryId(deliveryId: string): Promise<GmailReconciliation> {
+      if (!deliveryId) return { kind: "none" };
       const gmail = google.gmail({ version: "v1", auth });
       // Gmail exposes an exact RFC Message-ID search operator. The hashed ID is
       // deterministic and contains no provider-controlled query syntax.
       const q = `rfc822msgid:${messageIdFor(deliveryId)} in:sent`;
-      const list = await gmail.users.messages.list({ userId: "me", maxResults: 10, q });
-      const messages = (list.data as { messages?: Array<{ id?: string }> }).messages ?? [];
+      let messages: Array<{ id?: string | null }>;
+      try {
+        const list = await gmail.users.messages.list({ userId: "me", maxResults: 10, q });
+        messages = (list.data as { messages?: Array<{ id?: string | null }> }).messages ?? [];
+      } catch (error) {
+        return {
+          kind: "unreadable",
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
+      const matched: Array<{ id: string; recipient: string }> = [];
       for (const m of messages) {
         const id = m.id;
         if (!id) continue;
-        const get = await gmail.users.messages.get({
-          userId: "me",
-          id,
-          format: "metadata",
-          metadataHeaders: ["X-MeetingBrief-Delivery-Id", "Message-ID", "To"],
-        });
-        const headers = (
-          get.data as { payload?: { headers?: Array<{ name?: string; value?: string }> } }
-        ).payload?.headers;
+        let headers: Array<{ name?: string | null; value?: string | null }> | undefined;
+        try {
+          const get = await gmail.users.messages.get({
+            userId: "me",
+            id,
+            format: "metadata",
+            metadataHeaders: ["X-MeetingBrief-Delivery-Id", "Message-ID", "To"],
+          });
+          headers = (
+            get.data as {
+              payload?: { headers?: Array<{ name?: string | null; value?: string | null }> };
+            }
+          ).payload?.headers;
+        } catch (error) {
+          // One candidate we cannot inspect could be the sent message, so the
+          // whole reconciliation is unreadable rather than "nothing found".
+          return {
+            kind: "unreadable",
+            reason: error instanceof Error ? error.message : String(error),
+          };
+        }
         const headerId = headers?.find(
           (h) => h.name?.toLowerCase() === "x-meetingbrief-delivery-id",
         )?.value;
         if (headerId === deliveryId) {
           const to = headers?.find((h) => h.name?.toLowerCase() === "to")?.value ?? owner;
-          return { messageId: id, recipient: to };
+          matched.push({ id, recipient: to });
         }
       }
-      return null;
+      if (matched.length === 0) return { kind: "none" };
+      if (matched.length === 1) {
+        const only = matched[0]!;
+        return { kind: "found", messageId: only.id, recipient: only.recipient };
+      }
+      return { kind: "ambiguous", messageIds: matched.map((entry) => entry.id) };
     },
   };
 }
@@ -159,16 +199,26 @@ export function createGmailDeliveryProvider(
  */
 export type FakeGmailDeliveryMode = "normal" | "unavailable" | "lostAck" | "permanentFailure";
 
+/**
+ * How the fake answers reconciliation (issue #362). The default derives the
+ * answer from what it has actually sent; the other modes simulate a provider
+ * that cannot give a single unambiguous answer.
+ */
+export type FakeGmailReconciliationMode = "derived" | "ambiguous" | "unreadable";
+
 export interface FakeGmailDeliveryOptions {
   ownerEmail: string;
   mode?: FakeGmailDeliveryMode;
   /** Fail the Nth send call (1-indexed) with transient error for lostAck simulation. */
   failOnAttempt?: number | null;
+  /** Reconciliation behaviour; defaults to answering from what was sent. */
+  reconciliation?: FakeGmailReconciliationMode;
 }
 
 export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
   private readonly ownerEmail: string;
   private readonly mode: FakeGmailDeliveryMode;
+  private readonly reconciliationMode: FakeGmailReconciliationMode;
   private failOnAttempt: number | null;
   private sendCount = 0;
   private readonly sentByDeliveryId = new Map<
@@ -188,6 +238,7 @@ export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
     if (!opts.ownerEmail) throw new Error("FakeGmailDeliveryProvider requires ownerEmail");
     this.ownerEmail = opts.ownerEmail;
     this.mode = opts.mode ?? "normal";
+    this.reconciliationMode = opts.reconciliation ?? "derived";
     this.failOnAttempt = opts.failOnAttempt ?? null;
   }
 
@@ -268,11 +319,19 @@ export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
     return { messageId, recipient: this.ownerEmail };
   }
 
-  async findByDeliveryId(
-    deliveryId: string,
-  ): Promise<{ messageId: string; recipient: string } | null> {
+  async findByDeliveryId(deliveryId: string): Promise<GmailReconciliation> {
+    if (this.reconciliationMode === "unreadable") {
+      return { kind: "unreadable", reason: "Fake reconciliation unreadable" };
+    }
+    if (this.reconciliationMode === "ambiguous") {
+      const found = this.sentByDeliveryId.get(deliveryId);
+      return {
+        kind: "ambiguous",
+        messageIds: found ? [found.messageId, `${found.messageId}-copy`] : ["fake-ambiguous-1"],
+      };
+    }
     const found = this.sentByDeliveryId.get(deliveryId);
-    if (!found) return null;
-    return { messageId: found.messageId, recipient: found.recipient };
+    if (!found) return { kind: "none" };
+    return { kind: "found", messageId: found.messageId, recipient: found.recipient };
   }
 }

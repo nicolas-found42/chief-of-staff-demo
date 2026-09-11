@@ -33,6 +33,24 @@ import type { TranscriptRelevanceService } from "../../transcript-catalog/releva
 import { catalogTranscriptEvidence } from "./catalogTranscriptEvidence.js";
 import { ContentResearchStore } from "../content-research/store.js";
 import type { ConfirmedOwnerReference } from "@chief-of-staff-demo/shared";
+import { resolveMeetingBriefFreshnessWindows } from "@chief-of-staff-demo/shared";
+
+/**
+ * Freshness windows are operator configuration, not product constants
+ * (issue #362): the spec defaults hold unless the deployment states otherwise.
+ */
+function freshnessWindowsFromEnvironment(): ReturnType<typeof resolveMeetingBriefFreshnessWindows> {
+  const roleDays = Number(process.env.MEETING_BRIEF_CURRENT_ROLE_FRESHNESS_DAYS);
+  const newsHours = Number(process.env.MEETING_BRIEF_NEWS_FRESHNESS_HOURS);
+  return resolveMeetingBriefFreshnessWindows({
+    ...(Number.isFinite(roleDays) && roleDays > 0
+      ? { currentRoleCompanyHours: roleDays * 24 }
+      : {}),
+    ...(Number.isFinite(newsHours) && newsHours > 0
+      ? { newsConversationHookHours: newsHours }
+      : {}),
+  });
+}
 
 export interface MeetingBriefProductionRuntimeOptions {
   runs: Runs;
@@ -205,6 +223,7 @@ export function createMeetingBriefProductionRuntime(
       ? { isOwnerProfileConfirmed: options.isOwnerProfileConfirmed }
       : {}),
     gmailDeliveryProvider,
+    freshnessWindows: freshnessWindowsFromEnvironment(),
     personProfiles,
     ...(options.oldestTranscriptAt ? { oldestTranscriptAt: options.oldestTranscriptAt } : {}),
     ...(options.getBriefingWork ? { getBriefingWork: options.getBriefingWork } : {}),
