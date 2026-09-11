@@ -8,7 +8,7 @@ import {
   responsibleLabel,
   type TaskFormValues,
 } from "./taskReviewFields";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type {
   ActionItem,
@@ -308,9 +308,16 @@ export function ActionItemRow({
   onPromote,
   onDismiss,
   onResolved,
+  leading,
 }: {
   item: ActionItem;
   isNew?: boolean;
+  /**
+   * Content the calling surface puts at the head of this row, inside the
+   * `<li>`: an acknowledgment a promotion needs, for instance. A sibling
+   * wrapper would break the list's own structure (#361).
+   */
+  leading?: ReactNode;
   context: ActionItemContext | undefined;
   /** This proposal's dependencies resolved to the records held now (MWR-048). */
   dependencies?: ResolvedActionItemDependency[] | undefined;
@@ -410,6 +417,7 @@ export function ActionItemRow({
   return (
     /* The anchor a compact surface links a proposal by (issue #192). */
     <li className="card" id={`action-item-${item.id}`}>
+      {leading}
       <h3>{actionItemProposal(item).title}</h3>
       {isNew && <span aria-label="New proposal">New proposal</span>}
       {item.handoff && (

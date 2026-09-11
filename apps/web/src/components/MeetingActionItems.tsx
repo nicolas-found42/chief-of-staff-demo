@@ -192,63 +192,66 @@ export function MeetingActionItems({
       {tasks && (
         <ul className="card-list">
           {(expanded ? pending : pending.slice(0, 5)).map((item) => (
-            <div key={`${item.id}-review-only`}>
-              {item.source.reviewOnly === true && (
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={acknowledged.includes(item.id)}
-                    onChange={() => acknowledge(item.id)}
-                  />{" "}
-                  I understand this Action Item comes from an incomplete Debrief and sections are
-                  unavailable.
-                </label>
-              )}
-              <ActionItemRow
-                key={item.id}
-                isNew={newIds.includes(item.id)}
-                item={item}
-                context={index?.context?.[item.id]}
-                dependencies={index?.dependencies?.[item.id]}
-                targetTitle={(actionItemId: string) => {
-                  const target = index?.items.find((entry) => entry.id === actionItemId);
-                  return target ? actionItemProposal(target).title : null;
-                }}
-                today={tasks.today}
-                lists={tasks.lists}
-                profiles={profiles}
-                busy={busy.includes(item.id)}
-                checkDuplicates={tasksApi.checkDuplicates}
-                onResolved={load}
-                onPromote={(values, completed) =>
-                  act(
-                    item.id,
-                    `Created ${completed ? "completed Task" : "Task"}: ${values.title.trim()}.`,
-                    () =>
-                      tasksApi.promoteActionItem(item.id, {
-                        title: values.title,
-                        notes: values.notes,
-                        dueDate: values.dueDate || null,
-                        priority: values.priority,
-                        listId: values.listId,
-                        responsiblePerson: responsibleFromValue(values.responsible),
-                        completed,
-                        ...(item.source.reviewOnly === true
-                          ? { missingContentAcknowledged: acknowledged.includes(item.id) }
-                          : {}),
-                      }),
+            <ActionItemRow
+              key={item.id}
+              leading={
+                /* The acknowledgment lives inside this row's own <li>: a
+                   wrapper between the <ul> and the row breaks the list's
+                   structure and the row's parent relationship (#361). */
+                item.source.reviewOnly === true ? (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={acknowledged.includes(item.id)}
+                      onChange={() => acknowledge(item.id)}
+                    />{" "}
+                    I understand this Action Item comes from an incomplete Debrief and sections are
+                    unavailable.
+                  </label>
+                ) : null
+              }
+              isNew={newIds.includes(item.id)}
+              item={item}
+              context={index?.context?.[item.id]}
+              dependencies={index?.dependencies?.[item.id]}
+              targetTitle={(actionItemId: string) => {
+                const target = index?.items.find((entry) => entry.id === actionItemId);
+                return target ? actionItemProposal(target).title : null;
+              }}
+              today={tasks.today}
+              lists={tasks.lists}
+              profiles={profiles}
+              busy={busy.includes(item.id)}
+              checkDuplicates={tasksApi.checkDuplicates}
+              onResolved={load}
+              onPromote={(values, completed) =>
+                act(
+                  item.id,
+                  `Created ${completed ? "completed Task" : "Task"}: ${values.title.trim()}.`,
+                  () =>
+                    tasksApi.promoteActionItem(item.id, {
+                      title: values.title,
+                      notes: values.notes,
+                      dueDate: values.dueDate || null,
+                      priority: values.priority,
+                      listId: values.listId,
+                      responsiblePerson: responsibleFromValue(values.responsible),
+                      completed,
+                      ...(item.source.reviewOnly === true
+                        ? { missingContentAcknowledged: acknowledged.includes(item.id) }
+                        : {}),
+                    }),
+                )
+              }
+              onDismiss={async () => {
+                if (
+                  await act(item.id, `Dismissed ${actionItemProposal(item).title}.`, () =>
+                    tasksApi.dismissActionItem(item.id),
                   )
-                }
-                onDismiss={async () => {
-                  if (
-                    await act(item.id, `Dismissed ${actionItemProposal(item).title}.`, () =>
-                      tasksApi.dismissActionItem(item.id),
-                    )
-                  )
-                    setDismissed(item);
-                }}
-              />
-            </div>
+                )
+                  setDismissed(item);
+              }}
+            />
           ))}
         </ul>
       )}
