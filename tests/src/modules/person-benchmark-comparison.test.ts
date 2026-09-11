@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { BenchmarkReportSchema } from "@chief-of-staff-demo/shared";
+import { BenchmarkReportSchema, type BenchmarkPersonResult } from "@chief-of-staff-demo/shared";
 import {
   compareReports,
   renderComparison,
@@ -44,12 +44,34 @@ function assessedReport() {
   return report;
 }
 
+/**
+ * Record one checkable recovered judgement beside the credit it earns: the
+ * comparison's recovery audit credits a recovery only when its own judgement
+ * names the reference text and the claim excerpt it was checked against, so a
+ * test meaning "this side recovered one more fact" has to record the
+ * judgement that says so.
+ */
+function creditRecovery(person: BenchmarkPersonResult, factId = "credited-fact"): void {
+  const judgement = person.completeness.judgements[0];
+  person.completeness.judgements[0] = {
+    ...judgement,
+    factId,
+    verdict: "recovered",
+    referenceQuote: "The reference states the fact.",
+    evidenceQuote: "The dossier states the fact.",
+    claimId: "credited-claim",
+    rationale: "The dossier states the same fact with the same dates.",
+    reviewRequired: false,
+  };
+  person.completeness.recovered += 1;
+}
+
 it("compares fully assessed failed research without converting the run to success", () => {
   const baseline = assessedReport();
   const candidate = structuredClone(baseline);
   baseline.people[0].operational.conclusion = "bounded";
   candidate.people[0].operational.conclusion = "completed";
-  candidate.people[0].completeness.recovered += 1;
+  creditRecovery(candidate.people[0]);
   const comparison = compareReports(baseline, candidate);
   expect(comparison.comparable).toBe(true);
   expect(comparison.verdict).toBe("improved");
@@ -71,7 +93,7 @@ it("excludes support-incomplete pairs from the recovery verdict and names the ex
       support: { status: "completed", failure: null, unresolvedFindings: [] },
     };
   const candidate = structuredClone(baseline);
-  for (const person of candidate.people) person.completeness.recovered += 1;
+  for (const person of candidate.people) creditRecovery(person);
   expect(compareReports(baseline, candidate).verdict).toBe("improved");
 
   /* The same research delta with one support phase failed: that pair's
@@ -101,6 +123,189 @@ it("declares a comparison with no measured pair not comparable", () => {
   expect(comparison.comparable).toBe(false);
   expect(comparison.verdict).toBe("not-comparable");
   expect(comparison.conditionChanges.join("\n")).toContain("no pair");
+});
+
+it("compares the reports' labelled groups side by side with each side's denominator", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  /* The grouped comparison reads each report's own aggregation: a group the
+     candidate measured differently keeps its numbers, and a group only one
+     side recorded stays null — never a zero for the side that never
+     measured it. */
+  const finance = candidate.groups.find(
+    (group) => group.dimension === "industry" && group.key === "finance",
+  );
+  if (!finance) throw new Error("fixture lost its industry group");
+  finance.recovered += 2;
+  candidate.groups.push({
+    dimension: "language",
+    key: "fr",
+    people: 1,
+    referenceFacts: 4,
+    recovered: 1,
+    ambiguous: 0,
+    criticalFindings: 0,
+    overclaims: 0,
+  });
+  const comparison = compareReports(baseline, candidate);
+  const financeRow = comparison.groups?.find(
+    (group) => group.dimension === "industry" && group.key === "finance",
+  );
+  expect(financeRow?.baseline).toMatchObject({ people: 1, referenceFacts: 11, recovered: 0 });
+  expect(financeRow?.candidate).toMatchObject({ people: 1, referenceFacts: 11, recovered: 2 });
+  const french = comparison.groups?.find(
+    (group) => group.dimension === "language" && group.key === "fr",
+  );
+  expect(french).toMatchObject({ baseline: null, candidate: { people: 1, recovered: 1 } });
+  const rendered = renderComparison(comparison);
+  expect(rendered).toContain("## Grouped comparison");
+  expect(rendered).toContain("| industry | finance |");
+  expect(rendered).toContain("| language | fr | unmeasured");
+});
+
+it("carries each side's coverage gaps and failure breakdown into the comparison", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  /* Only the baseline recorded open-coverage totals; the candidate side
+     predates the fields, so it stays null rather than a zero. */
+  baseline.coverageGaps = { areas: 9, areasWithOpenGaps: 4, areaGaps: 6, explicitGaps: 3 };
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.coverageGaps).toEqual({
+    baseline: { areas: 9, areasWithOpenGaps: 4, areaGaps: 6, explicitGaps: 3 },
+    candidate: null,
+  });
+  /* Both fixture people failed research; the breakdown names each one beside
+     the attempt codes their operations recorded. */
+  expect(comparison.failures?.baseline.assessmentFailures).toEqual([
+    { slug: "achim-steiner", reason: "Research interrupted before the operation completed." },
+    { slug: "ana-botin", reason: "Research interrupted before the operation completed." },
+  ]);
+  expect(comparison.failures?.baseline.researchCodes).toEqual([
+    { code: "model-boundary-failed", attempts: 2 },
+    { code: "identity-unmatched", attempts: 1 },
+  ]);
+  const rendered = renderComparison(comparison);
+  expect(rendered).toContain("## Coverage gaps");
+  expect(rendered).toContain("| baseline | 9 | 4 | 6 | 3 |");
+  expect(rendered).toContain("| candidate | unmeasured | unmeasured | unmeasured | unmeasured |");
+  expect(rendered).toContain("## Failures");
+  expect(rendered).toContain(
+    "| baseline | achim-steiner | Research interrupted before the operation completed. |",
+  );
+  expect(rendered).toContain("| baseline | identity-unmatched | 1 |");
+});
+
+it("rejects a credited recovery its record cannot check against reference and claim text", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  const judgement = candidate.people[0].completeness.judgements[0];
+  /* A credit with no claim behind it was never checked against claim text:
+     it cannot count toward the improvement the comparison asks about. */
+  judgement.verdict = "recovered";
+  judgement.claimId = null;
+  judgement.evidenceQuote = null;
+  candidate.people[0].completeness.recovered = 1;
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.comparable).toBe(true);
+  expect(comparison.recoveryAudit?.candidate).toEqual({
+    recorded: 1,
+    credited: 0,
+    rejected: [
+      {
+        slug: "achim-steiner",
+        factId: judgement.factId,
+        reason: "no-claim-identity",
+      },
+      /* The recorded credit outran its checkable judgements too, so the
+         unattributable remainder is rejected as well. */
+      {
+        slug: "achim-steiner",
+        factId: "",
+        reason: "credit-exceeds-checkable-judgements",
+      },
+    ],
+  });
+  expect(comparison.recoveryAudit?.baseline).toMatchObject({
+    recorded: 0,
+    credited: 0,
+    rejected: [],
+  });
+  expect(comparison.verdict).toBe("unchanged");
+  expect(comparison.conditionChanges.join("\n")).toContain("recovery audit");
+  const rendered = renderComparison(comparison);
+  expect(rendered).toContain("Recovery audit");
+  expect(rendered).toContain(
+    "| candidate | 1 | 0 | achim-steiner / undp-tenure (no-claim-identity); achim-steiner / unattributed (credit-exceeds-checkable-judgements) |",
+  );
+});
+
+it("rejects a credited recovery whose own rationale records a withheld verdict", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  const judgement = candidate.people[0].completeness.judgements[0];
+  judgement.verdict = "recovered";
+  judgement.claimId = "generated-claim";
+  judgement.evidenceQuote = "a verbatim dossier excerpt";
+  judgement.referenceQuote = "a reference statement";
+  judgement.rationale =
+    "Original semantic verdict: recovered; downgraded to ambiguous because support/usefulness assessment did not complete. ";
+  candidate.people[0].completeness.recovered = 1;
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.recoveryAudit?.candidate.rejected).toEqual([
+    { slug: "achim-steiner", factId: judgement.factId, reason: "withheld-in-rationale" },
+    { slug: "achim-steiner", factId: "", reason: "credit-exceeds-checkable-judgements" },
+  ]);
+  expect(comparison.perPerson[0].candidateRecovered).toBe(0);
+  expect(comparison.totals.candidateRecovered).toBe(0);
+  expect(comparison.verdict).toBe("unchanged");
+});
+
+it("rejects the recorded contradiction: a rationale saying the reference's date is absent", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  const judgement = candidate.people[0].completeness.judgements[0];
+  /* The recorded instance (Ana Botín's `santander-chair` in the older `.7`
+     reassessment): credited recovered while the rationale said the dossier
+     did not mention the September 2014 start date. */
+  judgement.verdict = "recovered";
+  judgement.claimId = "ab1fc7493656359bbaa35ceb8a952d56";
+  judgement.evidenceQuote = "Ana Botín is Chair of the Board of Grupo Financiero Santander.";
+  judgement.referenceQuote =
+    "is a Spanish banker who has been the executive chairman of Santander Group since 2014";
+  judgement.rationale =
+    "The dossier states she chairs Grupo Financiero Santander but does not mention the September 2014 start date or that she is the fourth generation of her family in the role.";
+  candidate.people[0].completeness.recovered = 1;
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.recoveryAudit?.candidate).toMatchObject({ recorded: 1, credited: 0 });
+  expect(comparison.recoveryAudit?.candidate.rejected[0]).toEqual({
+    slug: "achim-steiner",
+    factId: judgement.factId,
+    reason: "rationale-contradicts-verdict",
+  });
+  expect(comparison.verdict).toBe("unchanged");
+});
+
+it("keeps a credit whose rationale declines a source name rather than a dated part", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  const judgement = candidate.people[0].completeness.judgements[0];
+  /* The live pair's own near miss: the negation names a source, not the
+     reference's dated content, so the credit stands. */
+  judgement.verdict = "recovered";
+  judgement.claimId = "credited-claim";
+  judgement.evidenceQuote =
+    "In 2012, she was one of the co-founders of the Rappler online news website.";
+  judgement.referenceQuote = "In 2012, she was one of the co-founders of Rappler.";
+  judgement.rationale =
+    "The dossier states the same substantive fact — Ressa as one of Rappler's co-founders in 2012 — with matching subject and date, though it does not name the Nobel biography as the identifying source.";
+  candidate.people[0].completeness.recovered = 1;
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.recoveryAudit?.candidate).toMatchObject({
+    recorded: 1,
+    credited: 1,
+    rejected: [],
+  });
+  expect(comparison.verdict).toBe("improved");
 });
 
 it("notes research-setting differences as condition changes without flipping comparability", () => {
@@ -223,7 +428,7 @@ it("renders every markdown table with rows of one cell count", () => {
   expect(rendered).toContain("\\|");
   assertTablesWellFormed(rendered);
   const candidate = structuredClone(report);
-  candidate.people[0].completeness.recovered += 1;
+  creditRecovery(candidate.people[0]);
   assertTablesWellFormed(renderReport(candidate, people));
   assertTablesWellFormed(renderComparison(compareReports(report, candidate)));
 });
@@ -317,6 +522,9 @@ it("renders withheld recovery as unmeasured rather than a proven zero", () => {
     },
   ];
   delete candidate.people[1].assessment;
+  /* The baseline's one family-credited recovery is a real credit: stamp the
+     judgement the recovery audit checks it against. */
+  creditRecovery(baseline.people[1], "fact-1");
   const comparison = compareReports(baseline, candidate);
   expect(comparison.perPerson[1]).toMatchObject({
     baselineAssessed: true,
@@ -325,7 +533,7 @@ it("renders withheld recovery as unmeasured rather than a proven zero", () => {
   const rendered = renderComparison(comparison);
   const rowOf = (slug: string) =>
     rendered.split("\n").find((line) => line.startsWith(`| ${slug} `));
-  expect(rowOf(comparison.perPerson[1].slug)).toContain("| 0 | unmeasured |");
+  expect(rowOf(comparison.perPerson[1].slug)).toContain("| 1 | unmeasured |");
   expect(rowOf(comparison.perPerson[0].slug)).not.toContain("unmeasured");
   /* The family table inherits the same withholding: the candidate side holds
      an unassessed person, so its recovered column is unmeasured while the
@@ -364,7 +572,7 @@ it.each(["critical", "wrong-person"])(
       ];
     }
     const candidate = structuredClone(baseline);
-    candidate.people[0].completeness.recovered += 1;
+    creditRecovery(candidate.people[0]);
     const changed = candidate.people[0].factualReliability;
     if (kind === "critical") {
       changed.criticalFindingKeys = ["b".repeat(64)];
@@ -454,7 +662,7 @@ it("reports operational regressions separately from improved reference recovery"
   const candidate = structuredClone(baseline);
   baseline.people[0].operational.conclusion = "completed";
   candidate.people[0].operational.conclusion = "interrupted";
-  candidate.people[0].completeness.recovered += 1;
+  creditRecovery(candidate.people[0]);
   const comparison = compareReports(baseline, candidate);
   expect(comparison.verdict).toBe("improved");
   expect(comparison.operational.regressedPeople).toEqual([candidate.people[0].slug]);

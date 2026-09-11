@@ -440,6 +440,67 @@ const SourceContributionTotalsSchema = z.object({
 });
 
 /**
+ * One side of a grouped comparison: the same denominators the report carries,
+ * never merged across sides. A slice one arm recorded and the other did not
+ * stays null rather than reading as a zero.
+ */
+const ComparisonGroupSideSchema = z.object({
+  people: z.number().int().nonnegative(),
+  referenceFacts: z.number().int().nonnegative(),
+  recovered: z.number().int().nonnegative(),
+  ambiguous: z.number().int().nonnegative(),
+  criticalFindings: z.number().int().nonnegative(),
+  overclaims: z.number().int().nonnegative(),
+});
+
+/** One side's open-coverage totals, as the report recorded them. */
+const ComparisonCoverageGapsSchema = z.object({
+  areas: z.number().int().nonnegative(),
+  areasWithOpenGaps: z.number().int().nonnegative(),
+  areaGaps: z.number().int().nonnegative(),
+  explicitGaps: z.number().int().nonnegative(),
+});
+
+/** One side's failure breakdown: assessment failures by person, research
+ *  attempt failures by recorded code. */
+const ComparisonFailuresSchema = z.object({
+  assessmentFailures: z
+    .array(z.object({ slug: z.string().max(80), reason: z.string().max(2000) }))
+    .max(200),
+  researchCodes: z
+    .array(z.object({ code: z.string().max(60), attempts: z.number().int().nonnegative() }))
+    .max(60),
+});
+
+/**
+ * The #259 recovery audit: a positive recovery is credited only when its own
+ * judgement carries the reference text and the claim excerpt it was checked
+ * against — the judge's exact-claim guard verifies the excerpt against the
+ * named claim at assessment time — and its rationale records no withheld
+ * verdict. Rejected credits are named, never silently discounted.
+ */
+const RecoveryAuditSideSchema = z.object({
+  recorded: z.number().int().nonnegative(),
+  credited: z.number().int().nonnegative(),
+  rejected: z
+    .array(
+      z.object({
+        slug: z.string().max(80),
+        factId: z.string().max(80),
+        reason: z.enum([
+          "no-reference-quote",
+          "no-claim-quote",
+          "no-claim-identity",
+          "withheld-in-rationale",
+          "rationale-contradicts-verdict",
+          "credit-exceeds-checkable-judgements",
+        ]),
+      }),
+    )
+    .max(200),
+});
+
+/**
  * The four measured families, kept separate on purpose: there is no overall
  * score, so a large but unreliable dossier cannot average its way to a pass.
  */
@@ -838,6 +899,48 @@ export const BenchmarkComparisonSchema = z.object({
   /** The acceptance question: more recovery, no new critical failures. */
   verdict: z.enum(["improved", "regressed", "unchanged", "not-comparable"]),
   verdictDetail: z.string().max(2000),
+  /**
+   * The reports' labelled slices, joined on (dimension, key) rather than
+   * merged: each side keeps its own denominator, and a group only one arm
+   * recorded stays null on the other side. Absent in comparisons written
+   * before the field existed.
+   */
+  groups: z
+    .array(
+      z.object({
+        dimension: BenchmarkGroupSummarySchema.shape.dimension,
+        key: z.string().max(120),
+        baseline: ComparisonGroupSideSchema.nullable(),
+        candidate: ComparisonGroupSideSchema.nullable(),
+      }),
+    )
+    .max(400)
+    .optional(),
+  /** The open-coverage totals each report recorded; a side stays null when
+   *  its report predates the fields or assembled no research operations. */
+  coverageGaps: z
+    .object({
+      baseline: ComparisonCoverageGapsSchema.nullable(),
+      candidate: ComparisonCoverageGapsSchema.nullable(),
+    })
+    .optional(),
+  /** How each side's failures break down: assessment failures by person,
+   *  research attempt failures by recorded code. */
+  failures: z
+    .object({
+      baseline: ComparisonFailuresSchema,
+      candidate: ComparisonFailuresSchema,
+    })
+    .optional(),
+  /** #259: what the recovery audit checked on each side — the credits it
+   *  verified against their own reference and claim text, and the credits it
+   *  rejected. Absent in comparisons written before the audit existed. */
+  recoveryAudit: z
+    .object({
+      baseline: RecoveryAuditSideSchema,
+      candidate: RecoveryAuditSideSchema,
+    })
+    .optional(),
 });
 export type BenchmarkComparison = z.infer<typeof BenchmarkComparisonSchema>;
 
