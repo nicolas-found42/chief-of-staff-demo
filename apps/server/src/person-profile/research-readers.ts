@@ -5,6 +5,12 @@ import { isProbablyReaderable, Readability } from "@mozilla/readability";
 import type { PersonSourceFamily, PersonSourceRights } from "@chief-of-staff-demo/shared";
 import { convertToText, SourceError } from "../text/convert.js";
 import {
+  extractPresentationSegments,
+  isPresentationFileName,
+  presentationExtensionOf,
+  renderPresentationSegments,
+} from "../text/presentations.js";
+import {
   detectSystemTesseract,
   extractPdfSegments,
   renderPdfSegments,
@@ -34,6 +40,25 @@ import { creativeNonRecordBody, renderCreativeRecord } from "./creative-records.
 const MAX_TEXT = 500_000;
 
 /**
+ * How many document links one page may report as attachment candidates
+ * (issue #248). The harvest is bounded so a page of a hundred PDF links
+ * cannot become a hundred leads; the operation applies its own, smaller
+ * follow bound on top and records what it did with each candidate.
+ */
+const MAX_PAGE_ATTACHMENT_CANDIDATES = 8;
+
+/**
+ * A document address a read page linked, in the order the page presented it.
+ * The reader reports the page's offer; whether the attachment is followed is
+ * the operation's decision, and its reason is recorded there (issue #248).
+ */
+export interface SourceAttachment {
+  url: string;
+  /** The link's own text, or its file name when the anchor carried none. */
+  title: string;
+}
+
+/**
  * A citation anchor suited to the format: a PDF page, a caption timestamp, or
  * a document section. Stored beside the text so a claim can point at where in
  * a 90-minute talk or a 40-page filing its passage came from.
@@ -56,6 +81,15 @@ export interface SourceReadResult {
   completeness: "full" | "partial" | "snippet" | "unavailable";
   access: "retrieved" | "blocked" | "failed" | "unsupported";
   outboundUrls: string[];
+  /**
+   * Documents this page linked, in the order the page presents them (issue
+   * #248). The reader reports what the page offered; the operation decides
+   * which candidates become leads and records why the rest were or were not
+   * followed. Undefined for reads with no page whose links could be
+   * harvested — a document read links nothing, and the record routes
+   * deliberately keep their linked material out of the lead machinery.
+   */
+  attachments?: SourceAttachment[];
   family: PersonSourceFamily;
   /** Which reader produced the text; part of the source's acquisition record. */
   route: string;
@@ -722,6 +756,9 @@ async function readRetrieved(
 ): Promise<SourceReadResult> {
   const type = response.contentType?.toLowerCase() ?? "";
   if (type.includes("pdf")) return readDocument(url, family, context);
+  /* A deck served from an extension-less address is still a deck; the
+     publisher's content type routes it to the byte reader (#248). */
+  if (presentationContentTypeExtension(type) !== null) return readDocument(url, family, context);
   if (isFeed(type, response.body)) return readFeed(url, response, family, context);
   if (type.includes("json")) return renderJson(url, response, family, context, "documents");
   if (type.includes("html") || type.includes("xml") || type === "")
@@ -885,19 +922,60 @@ async function readHtml(
        consumes into a detached container, so harvesting after it drops
        in-article links. This stays behind the gate — gate-negative pages skip
        JSDOM, harvest, and parse entirely — and gate-positive pages keep
-       today's exact outbound URLs. */
-    const outboundUrls = [
-      ...new Set(
-        [...document.querySelectorAll("a[href]")].flatMap((link) => {
-          try {
-            const parsed = new URL(link.getAttribute("href")!, response.url);
-            return ["https:", "http:"].includes(parsed.protocol) ? [parsed.toString()] : [];
-          } catch {
-            return [];
-          }
-        }),
-      ),
-    ].slice(0, 200);
+       today's exact outbound URLs. Every anchor is resolved once: the
+       compatibility list and the attachment candidates below are two readings
+       of the same resolved addresses, not two traversals. */
+    const anchors = [...document.querySelectorAll("a[href]")].flatMap((link) => {
+      try {
+        const parsed = new URL(link.getAttribute("href")!, response.url);
+        return ["https:", "http:"].includes(parsed.protocol)
+          ? [{ link, parsed, url: parsed.toString() }]
+          : [];
+      } catch {
+        return [];
+      }
+    });
+    const outboundUrls = [...new Set(anchors.map((anchor) => anchor.url))].slice(0, 200);
+    /* Documents the page itself links, in the order it presents them. This
+       is the other half of the same harvest: the outbound list above is kept
+       for compatibility, while these are the substantive attachments the
+       operation may follow as their own leads. The reader takes no view on
+       which ones matter — it reports what the page offered, bounded here so
+       one link farm cannot flood the read result (issue #248). */
+    const attachments: SourceAttachment[] = [];
+    const seenAttachments = new Set<string>();
+    let omittedAttachments = 0;
+    for (const { link, parsed, url: target } of anchors) {
+      /* The page is not its own attachment, and the same document linked
+         twice is one candidate: following either would duplicate work the
+         read already did. */
+      if (target === response.url || target === url || seenAttachments.has(target)) continue;
+      if (!looksLikeBinaryDocument(target)) continue;
+      seenAttachments.add(target);
+      if (attachments.length >= MAX_PAGE_ATTACHMENT_CANDIDATES) {
+        omittedAttachments += 1;
+        continue;
+      }
+      attachments.push({ url: target, title: attachmentTitle(link, parsed) });
+    }
+    /* A page that links more documents than the reader reports says so: the
+       documents past the bound cannot become leads from this read, and that
+       is a fact about coverage, not a silent truncation (issue #248). */
+    if (omittedAttachments > 0)
+      context.recorder.record({
+        stage: "selection",
+        code: "selection-deferred",
+        outcome: "skipped",
+        recovery: "none",
+        cause: "observed",
+        target: response.url,
+        targetKind: "url",
+        collector: "html-reader",
+        reason: `The page linked more documents than one read reports: the first ${String(MAX_PAGE_ATTACHMENT_CANDIDATES)} became attachment candidates and ${String(omittedAttachments)} were not reported.`,
+        impact: "Those documents cannot become leads from this read.",
+        remediation:
+          "Read the page directly to see the document links the candidate bound omitted.",
+      });
     const meta = (name: string) =>
       document
         .querySelector(`meta[property="${name}"], meta[name="${name}"], meta[itemprop="${name}"]`)
@@ -950,6 +1028,7 @@ async function readHtml(
       completeness: text.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
       outboundUrls,
+      ...(attachments.length > 0 ? { attachments } : {}),
       family,
       route: "html-reader",
       upstreamIndex: hostOf(response.url),
@@ -1095,11 +1174,20 @@ async function readDocument(
   try {
     let text: string;
     let ocrApplied = false;
+    let presentation = false;
     if (name.endsWith(".pdf")) {
       const ocr = context.systemOcr ? await context.systemOcr() : await defaultSystemOcr();
       const extracted = await extractPdfSegments(name, response.bytes, ocr);
       text = renderPdfSegments(extracted.segments);
       ocrApplied = extracted.ocrApplied;
+    } else if (isPresentationFileName(name)) {
+      /* Slides are read like pages: per-slide segments rendered as markers,
+         so a claim built on a deck cites the slide it rests on. A format the
+         extractor does not implement — Keynote, legacy PowerPoint,
+         OpenDocument — throws its own named gap below (issue #248). */
+      const extracted = await extractPresentationSegments(name, response.bytes);
+      text = renderPresentationSegments(extracted.segments);
+      presentation = true;
     } else {
       text = await convertToText(name, response.bytes);
     }
@@ -1108,7 +1196,9 @@ async function readDocument(
       ? ocrApplied
         ? "Text extracted from a PDF document; pages without a text layer were read by system OCR."
         : "Text extracted from a PDF document with a text layer."
-      : `Text extracted from a ${name.split(".").pop() ?? "document"} document.`;
+      : presentation
+        ? "Text extracted from a presentation document, one slide at a time; slide numbers follow the deck's own order."
+        : `Text extracted from a ${name.split(".").pop() ?? "document"} document.`;
     return {
       text: text.slice(0, MAX_TEXT),
       capturedAt: null,
@@ -1147,9 +1237,17 @@ async function readDocument(
         },
         impact: "A retrieved document contributed no text to the dossier.",
         remediation:
-          "Install system pdftoppm (poppler) and tesseract on PATH, or inject an OCR engine, to read scanned PDFs.",
+          error.diagnostic.format === "pdf"
+            ? "Install system pdftoppm (poppler) and tesseract on PATH, or inject an OCR engine, to read scanned PDFs."
+            : "Re-save the document in a format the reader implements (PPTX, PDF, DOCX, TXT, Markdown or JSON) and read it again.",
       });
-      return unavailable(family, "document-reader", "unsupported", context.snippet, response.url);
+      /* The lead's own resolution names the format too: a deck the reader
+         cannot open must not resolve as a generic unreadable document when
+         the gap is exactly known (issue #248). */
+      return {
+        ...unavailable(family, "document-reader", "unsupported", context.snippet, response.url),
+        failureReason: error.message,
+      };
     }
     context.recorder.record({
       stage: "document-parsing",
@@ -3014,13 +3112,47 @@ async function request(
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function looksLikeBinaryDocument(url: string): boolean {
-  return /\.(pdf|docx)(\?|#|$)/i.test(url);
+  return /\.(pdf|docx)(\?|#|$)/i.test(url) || presentationExtensionOf(url) !== null;
+}
+
+/**
+ * The presentation extension a response's content type names, or null. An
+ * address without an extension still routes to the byte reader when the
+ * publisher says what the bytes are, exactly as a PDF does.
+ */
+function presentationContentTypeExtension(contentType: string | null): string | null {
+  const type = contentType?.toLowerCase() ?? "";
+  if (type.includes("presentationml.presentation")) return "pptx";
+  if (type.includes("ms-powerpoint")) return "ppt";
+  if (type.includes("opendocument.presentation")) return "odp";
+  if (type.includes("iwork-keynote")) return "key";
+  return null;
+}
+
+/**
+ * A document link's label for the lead record: its own text when it has any,
+ * else the file name it addresses. Never the whole URL — a lead's title is
+ * what scoring reads for relevance, and a host name spends it on nothing.
+ */
+function attachmentTitle(anchor: { textContent: string | null }, parsed: URL): string {
+  const text = (anchor.textContent ?? "").replace(/\s+/g, " ").trim();
+  const raw = parsed.pathname.split("/").pop() ?? "";
+  let name = raw;
+  try {
+    name = decodeURIComponent(raw);
+  } catch {
+    /* A malformed percent sequence is not a reason to lose the label. */
+  }
+  return (text || name || parsed.hostname).slice(0, 200);
 }
 
 function documentFileName(url: string, contentType: string | null): string {
   if (/\.pdf(\?|#|$)/i.test(url) || contentType?.includes("pdf")) return "source.pdf";
   if (/\.docx(\?|#|$)/i.test(url) || contentType?.includes("wordprocessingml"))
     return "source.docx";
+  const presentation =
+    presentationExtensionOf(url) ?? presentationContentTypeExtension(contentType);
+  if (presentation) return `source.${presentation}`;
   return "source.txt";
 }
 
@@ -3031,7 +3163,9 @@ function isFeed(contentType: string, body: string): boolean {
 
 function pageAnchors(text: string): SourceAnchor[] {
   const anchors: SourceAnchor[] = [];
-  for (const match of text.matchAll(/\n\[page (\d+)\]\n/g))
+  /* A slide is the page of a deck: both markers locate a passage in a paged
+     document the same way, and both become the same page-kind anchor (#248). */
+  for (const match of text.matchAll(/\n\[(?:page|slide) (\d+)\]\n/g))
     anchors.push({ kind: "page", value: match[1]!, offset: match.index });
   return anchors.slice(0, 500);
 }

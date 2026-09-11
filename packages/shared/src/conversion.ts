@@ -14,6 +14,7 @@ export const CONVERSION_STEPS = [
   "validate_transcript",
   "extract_pdf",
   "extract_docx",
+  "extract_pptx",
 ] as const;
 export type ConversionStep = (typeof CONVERSION_STEPS)[number];
 

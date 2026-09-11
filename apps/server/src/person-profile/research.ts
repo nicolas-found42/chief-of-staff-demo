@@ -46,7 +46,11 @@ import {
   planNextLeads,
   seedQueries,
 } from "./research-plan.js";
-import { readPersonSource, type SourceReadResult } from "./research-readers.js";
+import {
+  readPersonSource,
+  type SourceAttachment,
+  type SourceReadResult,
+} from "./research-readers.js";
 import { isPublicationRecordRead } from "./publication-records.js";
 import { isIdentityAnchorRead } from "./identity-anchors.js";
 import { isInstitutionalRecordRead } from "./institutional-records.js";
@@ -108,6 +112,18 @@ export const EXTRACTION_PREFERRED_MIN_THROUGHPUT = 50;
  * trails its batch by well under a point and stays pending work.
  */
 const SELECTION_RETIREMENT_MARGIN = 2;
+
+/**
+ * How many document attachments one read page may contribute as leads
+ * (issue #248).
+ *
+ * A page links what it links; this is the bound that keeps its offer from
+ * becoming the queue. The page-order prefix is followed because the page
+ * presented those documents as its own material, and every candidate past
+ * the bound is recorded as a decision — with the bound and the reason — so
+ * "why was that deck never read" never has silence for an answer.
+ */
+const MAX_PAGE_ATTACHMENT_LEADS = 3;
 
 /**
  * The bounds one continuous research operation runs inside.
@@ -682,6 +698,32 @@ export class PersonResearch {
         return { pending, read, privateDocument, readMilliseconds: Date.now() - readStarted };
       };
 
+      /**
+       * An attachment candidate that was not followed is still a decision,
+       * and this is where its reason is recorded: the page offered the
+       * document, the operation declined, and the record says which bound or
+       * duplication produced the decline (issue #248).
+       */
+      const recordAttachmentNotFollowed = (
+        attachment: SourceAttachment,
+        code: "selection-deferred" | "duplicate-suppressed",
+        reason: string,
+      ): void => {
+        recorder.record({
+          stage: "selection",
+          code,
+          outcome: "skipped",
+          recovery: "none",
+          cause: "observed",
+          target: attachment.url,
+          targetKind: "document",
+          collector: "selection",
+          reason: `Attachment not followed: ${reason}`,
+          impact: "The linked document contributed nothing to the dossier by this operation.",
+          remediation: "Fetch the document URL directly to read it outside the run.",
+        });
+      };
+
       const processRead = async (entry: Awaited<ReturnType<typeof readOne>>) => {
         if (!entry || !active()) return;
         const { pending, read, privateDocument } = entry;
@@ -1125,6 +1167,39 @@ export class PersonResearch {
             if (added)
               leadContext.set(added.id, { title: "Publisher feed link", snippet: "", rank: 1 });
           }
+
+        /* Substantive attachments the page itself linked are followed as
+           their own leads: they earn reading because the page that referenced
+           them was read, not because every link is worth fetching. The
+           page-order prefix bounds the traversal, `leads.add` refuses a
+           document already read or already queued (kind `url` shares the
+           canonical target whatever discovered it), and a candidate the
+           bound or the dedupe declined is recorded with its reason instead
+           of disappearing (issue #248). */
+        const attachments = privateDocument ? [] : (read.attachments ?? []);
+        for (const [position, attachment] of attachments.entries()) {
+          if (position >= MAX_PAGE_ATTACHMENT_LEADS) {
+            recordAttachmentNotFollowed(
+              attachment,
+              "selection-deferred",
+              `the page's attachment bound (${String(MAX_PAGE_ATTACHMENT_LEADS)}) was reached; the links the page presented first were preferred.`,
+            );
+            continue;
+          }
+          const added = leads.add({
+            kind: "url",
+            target: attachment.url,
+            origin: "document-link",
+            discoveryUrl: read.finalUrl,
+          });
+          if (added) leadContext.set(added.id, { title: attachment.title, snippet: "", rank: 0 });
+          else
+            recordAttachmentNotFollowed(
+              attachment,
+              "duplicate-suppressed",
+              "the document is already queued or was already read in this operation.",
+            );
+        }
 
         /* Work this source attributed to the person, reached through its own
            page, is anchored evidence rather than a search result. */
