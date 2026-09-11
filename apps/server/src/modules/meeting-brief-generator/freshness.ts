@@ -99,7 +99,7 @@ export function claimIdFor(
  * Parse the kind back out of a `claimId`. `null` means the id does not declare
  * a known kind — a legacy or fixture section — and the source decides instead.
  */
-export function claimKindOf(claimId: string): MeetingBriefClaimKind | null {
+function claimKindOf(claimId: string): MeetingBriefClaimKind | null {
   const kind = claimId.slice(0, claimId.indexOf(":"));
   if (
     kind === "current-role" ||

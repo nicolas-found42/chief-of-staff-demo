@@ -134,6 +134,10 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   // Missing-evidence warnings
   await expect(currentBriefs.getByText(/Missing evidence/)).toBeVisible();
   await expect(currentBriefs.getByText(/Drive Docs for Acme/)).toBeVisible();
+  // Context freshness (issue #362): fixture evidence carries no dated
+  // provenance, and the surface says so instead of implying currency.
+  await expect(currentBriefs.getByRole("heading", { name: "Context freshness" })).toBeVisible();
+  await expect(currentBriefs.getByText(/freshness is unknown/)).toBeVisible();
   // Delivery state pending/sent/superseded/failed with Gmail identity
   await expect(currentBriefs.getByText(/Delivery:/)).toBeVisible();
   await expect(currentBriefs.getByText("Sent", { exact: true })).toBeVisible();
