@@ -73,3 +73,15 @@ Mercury, and that comparison's results should be read with that in mind.
   unaddressed.** Rejected: every budgeted Person Profile call would fail
   immediately with `UnknownModelPriceEvidenceError` the first time it
   resolved to the new default — not a smaller change, a broken one.
+
+## Relationship to ADR-0091
+
+ADR-0091 governs a different question — which model *string* may be issued
+and recorded once Mercury is the chosen model — and its own Considered
+Options explicitly rejected changing `DEFAULT_MODELS.openrouter` to the
+verbatim id, calling that "a non-sequitur" against the string-spelling
+decision it was making at the time. This ADR does not reinterpret that
+rejection; it records a distinct, later owner decision — to make Mercury
+the default model, not merely the correctly-spelled one when chosen — that
+supersedes it. The two ADRs describe a sequence of two separate choices,
+not a contradiction.
