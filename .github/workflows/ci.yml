@@ -28,10 +28,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run typecheck
-      - run: pnpm run lint
-      - run: pnpm run format:check
-      - run: pnpm run knip
+      - run: pnpm run check:static
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
