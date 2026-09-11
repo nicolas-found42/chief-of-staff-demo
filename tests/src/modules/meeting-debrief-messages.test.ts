@@ -33,6 +33,7 @@ function makeRecord(overrides: Partial<TranscriptRecord> = {}): TranscriptRecord
     speakerIdentityMappings: [],
     roster: [],
     meetingId: null,
+    association: null,
     ...overrides,
   };
 }
@@ -50,6 +51,23 @@ describe("meeting debrief trusted context", () => {
     expect(messages.user).toContain("meeting day Tue 2026-09-01");
     expect(messages.user).toContain("Thu 2026-09-03");
     expect(messages.user).toContain("Sat 2026-09-05");
+  });
+
+  it("anchors the meeting date and date reference from timeAnchor when present", () => {
+    const messages = buildDebriefMessages(
+      makeRecord({
+        meetingDate: null,
+        timeAnchor: {
+          date: "2026-10-15",
+          timeZone: "America/New_York",
+          basis: "calendar-occurrence",
+        },
+      }),
+      EMPTY_IDENTITY,
+    );
+    expect(messages.user).toContain("Meeting date: 2026-10-15 (Thursday)");
+    expect(messages.user).toContain("meeting day Thu 2026-10-15");
+    expect(messages.user).toContain("Fri 2026-10-16");
   });
 
   it("omits the date reference when the record has no parseable date", () => {
@@ -134,6 +152,21 @@ describe("clampDueDates", () => {
   it("leaves the extraction untouched when the record has no meeting date", () => {
     const clamped = clampDueDates(withDueDates(["2026-07-28"]), makeRecord({ meetingDate: null }));
     expect(clamped.actionItems[0]?.dueDate).toBe("2026-07-28");
+  });
+
+  it("clamps due dates against the evidenced timeAnchor", () => {
+    const clamped = clampDueDates(
+      withDueDates(["2026-10-16", "2026-12-01"]),
+      makeRecord({
+        meetingDate: null,
+        timeAnchor: {
+          date: "2026-10-15",
+          timeZone: "America/New_York",
+          basis: "calendar-occurrence",
+        },
+      }),
+    );
+    expect(clamped.actionItems.map((item) => item.dueDate)).toEqual(["2026-10-16", null]);
   });
 });
 

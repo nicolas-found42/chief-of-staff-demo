@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { writeFileVerifiedSync } from "../engine/commit.js";
 import { join } from "node:path";
 import type {
@@ -7,6 +7,7 @@ import type {
   TranscriptDeletionTombstone,
   TranscriptLedgerEntry,
   TranscriptRecord,
+  TranscriptDeletionLedgerEntry,
 } from "@chief-of-staff-demo/shared";
 import { recordingKey } from "../text/meetingFileName.js";
 
@@ -224,6 +225,41 @@ export class TranscriptCatalogStore {
     return this.read(
       join(this.receiptsDir, `${transcriptId}.json`),
     ) as TranscriptDeletionReceipt | null;
+  }
+
+  private get deletionLedgerPath(): string {
+    return join(this.root, "deletion-ledger.jsonl");
+  }
+
+  /** Monotonic append-only record of every deletion and repermission event (#341, #356). */
+  appendDeletionLedgerEntry(
+    entry: Omit<TranscriptDeletionLedgerEntry, "sequence">,
+  ): TranscriptDeletionLedgerEntry {
+    const existing = this.listDeletionLedger();
+    const last = existing[existing.length - 1];
+    const nextSequence = last ? last.sequence + 1 : 1;
+    const recorded: TranscriptDeletionLedgerEntry = {
+      ...entry,
+      sequence: nextSequence,
+    };
+    mkdirSync(this.root, { recursive: true });
+    appendFileSync(this.deletionLedgerPath, `${JSON.stringify(recorded)}\n`, "utf8");
+    return recorded;
+  }
+
+  listDeletionLedger(): TranscriptDeletionLedgerEntry[] {
+    if (!existsSync(this.deletionLedgerPath)) return [];
+    try {
+      const content = readFileSync(this.deletionLedgerPath, "utf8");
+      return content
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line) as TranscriptDeletionLedgerEntry)
+        .sort((a, b) => a.sequence - b.sequence);
+    } catch {
+      return [];
+    }
   }
 
   private tombstonePath(externalFileId: string): string {

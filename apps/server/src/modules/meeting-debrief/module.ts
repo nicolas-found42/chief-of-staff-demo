@@ -2,6 +2,7 @@ import type {
   MeetingDebriefExtraction,
   MeetingDebriefRunResult,
   MeetingDebriefReviewState,
+  ExtractionContextSnapshot,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -255,6 +256,37 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     useCheckpoints = true,
   ): Promise<CheckedExtraction> => {
     const identity = deps.identity.reviewFor(record.id);
+    const snapshot: ExtractionContextSnapshot = {
+      version: 1,
+      capturedAt: (deps.now?.() ?? new Date()).toISOString(),
+      source: {
+        transcriptId: record.id,
+        sourceSystem: record.source.sourceSystem,
+        externalFileId: record.source.externalFileId,
+        fileName: record.source.fileName,
+        checksum: record.source.checksum,
+        observedRevision: record.source.observedRevision,
+        extractorVersion: record.extractorVersion,
+      },
+      association: record.association,
+      meetingId: record.meetingId,
+      occurrence: record.occurrence,
+      timeAnchor: record.timeAnchor ?? null,
+      roster: record.roster,
+      speakers: record.speakers,
+      speakerIdentityMappings: record.speakerIdentityMappings,
+      identityReview: {
+        mentionCount: identity.mentions.length,
+        decisionCount: identity.decisions.length,
+        organizationCount: identity.organizations.length,
+      },
+    };
+    ctx.writeFile("context-snapshot.json", `${JSON.stringify(snapshot, null, 2)}\n`);
+    ctx.event("debrief_context_captured", {
+      transcriptId: record.id,
+      meetingId: record.meetingId,
+      timeAnchor: snapshot.timeAnchor?.date ?? null,
+    });
     const checked = deps.extract
       ? { extraction: await deps.extract({ record, identity }), checkedAliases: [] }
       : await extractWithModel(ctx, record, identity, deps, useCheckpoints);

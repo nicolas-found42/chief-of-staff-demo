@@ -44,6 +44,7 @@ function makeRecord(overrides: Partial<TranscriptRecord> = {}): TranscriptRecord
     speakerIdentityMappings: [],
     roster: [],
     meetingId: null,
+    association: null,
     ...overrides,
   };
 }
@@ -256,6 +257,32 @@ describe("Meeting Debrief consumes the immutable Catalog artifact (#139)", () =>
     expect(h.extractInputs[0]?.identity.mentions.map((m) => m.id)).toEqual(["m1", "m2"]);
     expect(h.extractInputs[0]?.identity.decisions).toHaveLength(1);
   });
+
+  it("persists an immutable versioned context snapshot before extraction (#342, #356, MWR-043)", async () => {
+    const record = makeRecord({
+      timeAnchor: {
+        date: "2026-08-31",
+        timeZone: "America/New_York",
+        basis: "calendar-occurrence",
+      },
+    });
+    h.catalog.set(record.id, record);
+    await h.host.process(record);
+    await h.host.idle();
+
+    const runs = h.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs;
+    expect(runs).toHaveLength(1);
+    const raw = h.runs.open(runs[0].id)!.readArtifact("context-snapshot.json");
+    expect(raw).not.toBeNull();
+    const snapshot = JSON.parse(raw!);
+    expect(snapshot.version).toBe(1);
+    expect(snapshot.source.transcriptId).toBe(record.id);
+    expect(snapshot.timeAnchor).toEqual({
+      date: "2026-08-31",
+      timeZone: "America/New_York",
+      basis: "calendar-occurrence",
+    });
+  });
 });
 
 describe("Meeting Debrief extraction and review state (#139)", () => {
@@ -464,7 +491,7 @@ describe("Meeting Debrief writes nothing outward (#139)", () => {
           "version",
         ]);
       }
-      expect(detail?.files).toEqual(["result.json", "review.json"]);
+      expect(detail?.files).toEqual(["context-snapshot.json", "result.json", "review.json"]);
     }
   });
 });

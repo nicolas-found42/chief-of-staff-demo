@@ -587,8 +587,8 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   const meetingJoin = new WorkspaceMeetingJoin({
     meetings,
     listTranscripts: () => transcriptCatalogStore.listTranscripts(),
-    attachMeeting: (transcriptId, matched) =>
-      transcriptCatalogRuntime.catalog.attachMeeting(transcriptId, matched),
+    attachMeeting: (transcriptId, matched, association) =>
+      transcriptCatalogRuntime.catalog.attachMeeting(transcriptId, matched, association),
     /* Naming a transcript-owned Meeting: deterministic first, and the model
        only for names the file name and the transcript's own heading leave
        file-shaped. */

@@ -215,6 +215,64 @@ export interface TranscriptOccurrenceAssociation {
   roster: TranscriptRosterPerson[];
 }
 
+/**
+ * What was observed when a Transcript was placed on a Meeting (#356,
+ * ADR-0082). A signal is evidence that something lined up; on its own it is
+ * never a decision, which is the whole point of recording it separately from
+ * the association it did or did not establish.
+ */
+export type TranscriptAssociationSignal =
+  | "trusted-occurrence"
+  | "owner-confirmed"
+  | "file-name-title"
+  | "file-name-time"
+  | "roster-speaker"
+  | "file-modified-time";
+
+/**
+ * How a Transcript came to sit on the Meeting it sits on.
+ *
+ * - `trusted-occurrence`: the source supplied the Calendar occurrence. This is
+ *   the only automatic link to a Calendar Meeting.
+ * - `owner-confirmed`: a person said so, here or on an earlier revision of the
+ *   same source file.
+ * - `transcript-owned`: nothing trusted placed it, so it holds a Meeting of
+ *   its own and the signals below are offered as review candidates.
+ * - `legacy-unknown`: placed before provenance was recorded. It stays unknown:
+ *   nothing may read current Calendar facts back onto it as confirmation.
+ */
+export type TranscriptAssociationBasis =
+  "trusted-occurrence" | "owner-confirmed" | "transcript-owned" | "legacy-unknown";
+
+/** The recorded provenance of one Transcript's Meeting association. */
+export interface TranscriptAssociation {
+  basis: TranscriptAssociationBasis;
+  /** Everything observed, decisive or not. Uniqueness alone is not confidence. */
+  signals: TranscriptAssociationSignal[];
+  /**
+   * Calendar Meetings the signals point at without establishing. Present even
+   * when exactly one qualifies: a lone weak match is a question, not an answer.
+   */
+  candidateMeetingIds: string[];
+  recordedAt: string;
+}
+
+export interface TranscriptTimeAnchor {
+  /** The meeting's civil date, YYYY-MM-DD, in `timeZone`. */
+  date: string;
+  /** IANA zone the date is a date in. */
+  timeZone: string;
+  basis: "calendar-occurrence";
+}
+
+export interface TranscriptDeletionLedgerEntry {
+  sequence: number;
+  kind: "deletion" | "repermission";
+  externalFileId: string;
+  transcriptId: string | null;
+  recordedAt: string;
+}
+
 /** One immutable normalized transcript per source revision. */
 export interface TranscriptRecord {
   id: string;
@@ -237,6 +295,17 @@ export interface TranscriptRecord {
    * immutable while this is corrected by a better match.
    */
   meetingId: string | null;
+  /**
+   * How that placement came about (#356). Null only for a Transcript nothing
+   * has placed yet; a record placed before provenance existed reads as
+   * `legacy-unknown` rather than being credited to current Calendar facts.
+   */
+  association: TranscriptAssociation | null;
+  /**
+   * The evidenced day and recorded timezone for relative date interpretation (#356, ADR-0082).
+   * Null when the Meeting has no Calendar occurrence or no recorded timezone.
+   */
+  timeAnchor?: TranscriptTimeAnchor | null;
 }
 
 export type TranscriptLedgerState = "pending" | "failed" | "skipped" | "processed";

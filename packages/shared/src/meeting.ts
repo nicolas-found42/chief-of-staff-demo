@@ -42,6 +42,13 @@ export interface Meeting {
   occurrenceId: string | null;
   title: string;
   startAt: string;
+  /**
+   * The IANA zone the occurrence was scheduled in, when Calendar recorded one
+   * (#356). Null means unknown, and unknown is never filled in from the
+   * machine the Workspace runs on: relative timing needs the zone the meeting
+   * was actually in.
+   */
+  timeZone?: string | null;
   endAt: string;
   /** Whether only the recorded calendar date is known; absent on legacy records. */
   dateOnly?: boolean;

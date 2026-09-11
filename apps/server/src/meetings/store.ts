@@ -95,6 +95,8 @@ export class WorkspaceMeetings {
     title: string;
     startAt: string;
     endAt: string;
+    /** Calendar's own zone for the occurrence; null when it recorded none. */
+    timeZone?: string | null;
     participants: MeetingParticipant[];
     cancelled: boolean;
     ineligibleReason: Meeting["ineligibleReason"];
@@ -110,6 +112,7 @@ export class WorkspaceMeetings {
       title: input.title,
       startAt: input.startAt,
       endAt: input.endAt,
+      timeZone: input.timeZone ?? null,
       dateOnly: false,
       participants: input.participants,
       cancelled: input.cancelled,
@@ -161,6 +164,10 @@ export class WorkspaceMeetings {
       title: input.title,
       startAt,
       endAt: startAt,
+      /* A Meeting a Transcript owns has no scheduled occurrence and therefore
+         no zone anyone recorded. Naming one here would invent the evidence
+         the anchor exists to require. */
+      timeZone: null,
       dateOnly: !input.nameTimestamp && !(input.meetingDate && input.meetingDate.includes("T")),
       participants,
       cancelled: false,

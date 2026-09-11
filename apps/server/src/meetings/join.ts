@@ -1,7 +1,9 @@
-import type { Meeting, TranscriptRecord } from "@chief-of-staff-demo/shared";
+import type { Meeting, TranscriptAssociation, TranscriptRecord } from "@chief-of-staff-demo/shared";
 import { meetingFileNameMeta } from "../text/meetingFileName.js";
-import { findMatchingMeeting, findNearMatches, rosterOf, type MatchedMeeting } from "./matching.js";
+import { findNearMatches, rosterOf, type MatchedMeeting } from "./matching.js";
+import { decideAssociation } from "./association.js";
 import { resolveMeetingTitle, type MeetingTitleCleanerDeps } from "./title.js";
+import { meetingTimeAnchor } from "./timeAnchor.js";
 import type { WorkspaceMeetings } from "./store.js";
 
 /**
@@ -38,14 +40,24 @@ export class MeetingJoinError extends Error {
 export interface MeetingJoinDeps {
   meetings: WorkspaceMeetings;
   listTranscripts: () => TranscriptRecord[];
-  attachMeeting: (transcriptId: string, matched: MatchedMeeting) => Promise<unknown>;
+  attachMeeting: (
+    transcriptId: string,
+    matched: MatchedMeeting,
+    association: TranscriptAssociation,
+  ) => Promise<unknown>;
   /** Naming for transcript-owned Meetings; deterministic when absent. */
   title?: MeetingTitleCleanerDeps;
+  /** The Workspace clock, so a recorded association carries a real time. */
+  now?: () => Date;
   log?: (message: string) => void;
 }
 
 export class WorkspaceMeetingJoin {
   constructor(private readonly deps: MeetingJoinDeps) {}
+
+  private now(): Date {
+    return this.deps.now?.() ?? new Date();
+  }
 
   /**
    * The standing pass joining the Transcript Catalog to the Workspace's
@@ -74,18 +86,27 @@ export class WorkspaceMeetingJoin {
         await this.carryRosterAcross(transcript, held);
         continue;
       }
-      const meeting = findMatchingMeeting(transcript, meetings);
-      if (meeting !== null) {
-        await this.attachRecord(transcript, meeting);
+      const decision = decideAssociation(transcript, meetings, this.now().toISOString());
+      if (decision.kind === "attach") {
+        await this.attachRecord(transcript, decision.meeting, decision.association);
         /* The shell it came off is forgotten once nothing is left on it, the
            same way a merge forgets one — otherwise the Meeting Wizard lists an
            empty duplicate of the meeting the Transcript just joined. */
         if (held !== null) this.forgetEmptyShell(held.id);
         linked += 1;
-        this.deps.log?.(`transcript ${transcript.id} matched Meeting ${meeting.id}`);
+        this.deps.log?.(`transcript ${transcript.id} matched Meeting ${decision.meeting.id}`);
         continue;
       }
-      if (held !== null) continue;
+      /* Placed by something that outranks a fresh look — a person, or the
+         source's own occurrence — so nothing here reconsiders it. */
+      if (decision.kind === "settled") continue;
+      if (held !== null) {
+        /* It keeps the Meeting it owns, and the candidates are re-recorded:
+           Calendar arrives late, so the Meetings worth reviewing against
+           change even though the placement does not. */
+        await this.recordCandidates(transcript, held, decision.association);
+        continue;
+      }
       /* Every catalogued Transcript earns a Meeting. A meeting that only a
          transcript attests to still happened, and the Meeting Wizard is where
          the workspace looks for it — so an unparseable file name names the
@@ -100,12 +121,16 @@ export class WorkspaceMeetingJoin {
         nameTimestamp: meta.timestamp,
       });
       meetings.push(created);
-      await this.attachRecord(transcript, {
-        id: created.id,
-        occurrenceKey: created.occurrenceKey,
-        calendarEventId: created.calendarEventId,
-        roster: rosterOf(created),
-      });
+      await this.attachRecord(
+        transcript,
+        {
+          id: created.id,
+          occurrenceKey: created.occurrenceKey,
+          calendarEventId: created.calendarEventId,
+          roster: rosterOf(created),
+        },
+        decision.association,
+      );
       linked += 1;
       this.deps.log?.(`transcript ${transcript.id} created Meeting ${created.id}`);
     }
@@ -122,12 +147,24 @@ export class WorkspaceMeetingJoin {
     if (transcript.roster.length > 0) return;
     const roster = rosterOf(held);
     if (roster.length === 0) return;
-    await this.deps.attachMeeting(transcript.id, {
-      id: held.id,
-      occurrenceKey: held.occurrenceKey,
-      calendarEventId: held.calendarEventId,
-      roster,
-    });
+    await this.deps.attachMeeting(
+      transcript.id,
+      {
+        id: held.id,
+        occurrenceKey: held.occurrenceKey,
+        calendarEventId: held.calendarEventId,
+        timeAnchor: meetingTimeAnchor(held),
+        roster,
+      },
+      /* The placement is not being decided again; whatever recorded it stands,
+         and a Transcript placed before provenance existed stays unknown. */
+      transcript.association ?? {
+        basis: "legacy-unknown",
+        signals: [],
+        candidateMeetingIds: [],
+        recordedAt: transcript.ingestedAt,
+      },
+    );
     this.deps.log?.(`transcript ${transcript.id} took the roster of Meeting ${held.id}`);
   }
 
@@ -145,8 +182,10 @@ export class WorkspaceMeetingJoin {
   }
 
   /**
-   * Attach one Transcript to its Meeting. Idempotent: a Transcript already
-   * carrying this Meeting is left alone and reports no write.
+   * Attach one Transcript to its Meeting because a person said so. Idempotent:
+   * a Transcript already carrying this Meeting is left alone and reports no
+   * write. This is the confirmation the standing pass will not make on its
+   * own, so the association it records outranks any later signal (#356).
    */
   async attachTranscript(
     transcriptId: string,
@@ -154,7 +193,12 @@ export class WorkspaceMeetingJoin {
   ): Promise<{ attached: boolean }> {
     const record = this.deps.listTranscripts().find((candidate) => candidate.id === transcriptId);
     if (!record) throw new MeetingJoinError("unknown-transcript");
-    return this.attachRecord(record, matched);
+    return this.attachRecord(record, matched, {
+      basis: "owner-confirmed",
+      signals: ["owner-confirmed"],
+      candidateMeetingIds: [],
+      recordedAt: this.now().toISOString(),
+    });
   }
 
   /** The catalogued Transcripts of one Meeting, for its page. */
@@ -201,6 +245,7 @@ export class WorkspaceMeetingJoin {
       id: target.id,
       occurrenceKey: target.occurrenceKey,
       calendarEventId: target.calendarEventId,
+      timeAnchor: meetingTimeAnchor(target),
       roster: rosterOf(target),
     };
     for (const transcript of this.transcriptsForMeeting(source.id)) {
@@ -213,9 +258,42 @@ export class WorkspaceMeetingJoin {
   private async attachRecord(
     transcript: TranscriptRecord,
     matched: MatchedMeeting,
+    association: TranscriptAssociation,
   ): Promise<{ attached: boolean }> {
     if (transcript.meetingId === matched.id) return { attached: false };
-    await this.deps.attachMeeting(transcript.id, matched);
+    await this.deps.attachMeeting(transcript.id, matched, association);
     return { attached: true };
+  }
+
+  /**
+   * Re-record what a Transcript that holds its own Meeting could be reviewed
+   * against, without moving it. Writes nothing when the candidates and the
+   * signals are the ones already recorded, so the standing pass over an
+   * unchanged Workspace stays a read.
+   */
+  private async recordCandidates(
+    transcript: TranscriptRecord,
+    held: Meeting,
+    association: TranscriptAssociation,
+  ): Promise<void> {
+    const current = transcript.association;
+    if (
+      current !== null &&
+      current.basis === association.basis &&
+      current.candidateMeetingIds.join() === association.candidateMeetingIds.join() &&
+      current.signals.join() === association.signals.join()
+    )
+      return;
+    await this.deps.attachMeeting(
+      transcript.id,
+      {
+        id: held.id,
+        occurrenceKey: held.occurrenceKey,
+        calendarEventId: held.calendarEventId,
+        timeAnchor: meetingTimeAnchor(held),
+        roster: rosterOf(held),
+      },
+      association,
+    );
   }
 }

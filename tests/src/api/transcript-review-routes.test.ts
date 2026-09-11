@@ -45,6 +45,7 @@ function record(
     speakerIdentityMappings: [],
     roster: [],
     meetingId: null,
+    association: null,
   };
 }
 

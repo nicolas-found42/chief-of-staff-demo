@@ -66,6 +66,7 @@ function record(overrides: Partial<TranscriptRecord> = {}): TranscriptRecord {
     speakerIdentityMappings: [],
     roster: [],
     meetingId: "meeting_1",
+    association: null,
     ...overrides,
   };
 }

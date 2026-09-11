@@ -397,13 +397,19 @@ describe("the five product areas and the Task runtimes compose in production (#2
         speakerIdentityMappings: [],
         roster: [],
         meetingId: null,
+        association: null,
       });
       const attach = () =>
-        shell.workspace.transcriptCatalog.catalog.attachMeeting("drive_entry_r1", {
-          id: "meeting-entry",
-          occurrenceKey: null,
-          calendarEventId: null,
-        });
+        shell.workspace.transcriptCatalog.catalog.attachMeeting(
+          "drive_entry_r1",
+          { id: "meeting-entry", occurrenceKey: null, calendarEventId: null },
+          {
+            basis: "owner-confirmed",
+            signals: ["owner-confirmed"],
+            candidateMeetingIds: [],
+            recordedAt: "2026-09-04T09:00:00.000Z",
+          },
+        );
       await attach();
       await attach();
       const transcript = shell.workspace.profiles

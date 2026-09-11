@@ -65,6 +65,7 @@ export function registerMeetingReadTestRoutes(
       const transcript: TranscriptRecord = {
         id: transcriptId,
         meetingId: meeting.id,
+        association: null,
         source: {
           sourceSystem: "drive",
           externalFileId: transcriptId,

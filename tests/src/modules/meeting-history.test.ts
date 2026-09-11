@@ -285,9 +285,11 @@ describe("the transcript bound (issue #152)", () => {
       speakerIdentityMappings: [],
       roster: [],
       meetingId: null,
+      association: null,
     });
     store.saveTranscript({
       meetingId: null,
+      association: null,
       id: "drive_b_r1",
       source: {
         sourceSystem: "drive",

@@ -13,6 +13,7 @@ import {
   MODEL_STREAM_MAX_ANSWER_CHARS,
   MODEL_STREAM_SILENT_TIMEOUT_MS,
   RESULT_SHAPE_BINDINGS,
+  type TranscriptRoutePolicy,
 } from "@chief-of-staff-demo/shared";
 import {
   isUpstreamCapacityRefusal,
@@ -110,6 +111,10 @@ export interface CompletionRequest {
    * justify — extraction asks from the #232 route survey (#233).
    */
   preferredMinThroughput?: number;
+  /**
+   * Route policy governing data retention and approved endpoints (#341, #356, MWR-051).
+   */
+  routePolicy?: TranscriptRoutePolicy;
 }
 
 export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
@@ -1570,6 +1575,18 @@ async function openAiCompatibleComplete(
          fast route without ever refusing the call a home (#233). */
       const resting = restingRoutes(cfg.model);
       const provider: Record<string, unknown> = { sort: "throughput" };
+      if (request.routePolicy?.dataCollection) {
+        provider.data_collection = request.routePolicy.dataCollection;
+      }
+      if (request.routePolicy?.zdrRequired) {
+        provider.zdr = true;
+      }
+      if (
+        request.routePolicy?.allowedEndpoints &&
+        request.routePolicy.allowedEndpoints.length > 0
+      ) {
+        provider.order = request.routePolicy.allowedEndpoints;
+      }
       if (request.preferredMinThroughput !== undefined)
         provider.preferred_min_throughput = request.preferredMinThroughput;
       if (resting.length > 0) provider.ignore = resting;
