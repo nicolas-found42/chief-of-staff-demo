@@ -209,8 +209,39 @@ export function RunDetailPage() {
             {failure.stageOutcome} during {stageLabel(detail.failedStage)}
           </span>
         )}
+        {detail.budget && (
+          <span className="muted" data-testid="run-budget">
+            <span className="visually-hidden">, </span>
+            Budget: ${detail.budget.spentDollars.toFixed(4)} of $
+            {detail.budget.allowedDollars.toFixed(2)}
+            {detail.budget.status === "exhausted" && " (budget exhausted)"}
+            {detail.budget.status === "cancelled" && " (cancelled)"}
+          </span>
+        )}
+        {detail.queueWaitMs !== undefined && detail.queueWaitMs > 0 && (
+          <span className="muted" data-testid="run-queue-wait">
+            <span className="visually-hidden">, </span>
+            Queue delay: {formatDuration(detail.queueWaitMs)}
+          </span>
+        )}
       </div>
 
+      {detail.budget?.status === "exhausted" && (
+        <div className="banner banner-error" role="alert" data-testid="budget-exhausted-banner">
+          <p className="failure-cause">Operation budget exhausted.</p>
+          <p>
+            ${detail.budget.spentDollars.toFixed(2)} spent of $
+            {detail.budget.allowedDollars.toFixed(2)} allowance. An owner extension is required to
+            continue.
+          </p>
+        </div>
+      )}
+      {detail.budget?.status === "cancelled" && (
+        <div className="banner banner-warn" role="status" data-testid="budget-cancelled-banner">
+          <p className="failure-cause">Operation was cancelled.</p>
+          <p>In-flight model calls were aborted and late writes were rejected.</p>
+        </div>
+      )}
       {/* The line the Module wrote when the Run ended. Rendered as given: the
           Shell interprets it nowhere. */}
       {detail.summary && <p className="run-summary">{detail.summary}</p>}

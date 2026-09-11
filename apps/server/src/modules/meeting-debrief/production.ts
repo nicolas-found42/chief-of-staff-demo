@@ -7,6 +7,9 @@ import { MeetingDebriefHost, type MeetingDebriefHostDeps } from "./host.js";
 import { workspaceProfileDirectory } from "./profiles.js";
 import { googleDebriefOutputs } from "./googleOutputs.js";
 import type { GoogleConnection } from "../../google/connection.js";
+import type { ModelBudgetLedger } from "../../llm/budget.js";
+import type { ModelAdmissionService } from "../../llm/admission.js";
+import type { ModelTimelineStore } from "../../llm/timeline.js";
 
 export interface MeetingDebriefProductionRuntimeOptions {
   runs: Runs;
@@ -46,6 +49,9 @@ export interface MeetingDebriefProductionRuntimeOptions {
    * action-item mutation persists. The shell wires it to notifyActionItemsChanged.
    */
   log?: (message: string) => void;
+  budgetLedger?: ModelBudgetLedger | undefined;
+  admission?: ModelAdmissionService | undefined;
+  timelineStore?: ModelTimelineStore | undefined;
 }
 
 export interface MeetingDebriefProductionRuntime {
@@ -85,6 +91,9 @@ export function createMeetingDebriefProductionRuntime(
     ...(options.materializeActionItems
       ? { materializeActionItems: options.materializeActionItems }
       : {}),
+    ...(options.budgetLedger ? { budgetLedger: options.budgetLedger } : {}),
+    ...(options.admission ? { admission: options.admission } : {}),
+    ...(options.timelineStore ? { timelineStore: options.timelineStore } : {}),
     ...(options.log ? { log: options.log } : {}),
   });
   return { host };

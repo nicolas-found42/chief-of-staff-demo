@@ -8,6 +8,7 @@ import type {
   TranscriptSpeakerIdentityMapping,
   TranscriptTimeAnchor,
 } from "./transcript.js";
+import type { OperationBudgetSnapshot } from "./model-admission.js";
 
 export const MEETING_DEBRIEF_MODULE_ID = "meeting-debrief" as const;
 export const MEETING_DEBRIEF_MODULE_VERSION = 2 as const;
@@ -383,6 +384,8 @@ export interface MeetingDebriefDetail {
   reviewReadiness: MeetingDebriefReviewReadiness;
   /** The review workflow's view; null before the Run holds a review record. */
   review: MeetingDebriefReviewView | null;
+  budget?: OperationBudgetSnapshot | null | undefined;
+  interrupted?: boolean | undefined;
 }
 
 /** Email inclusion is independent of canonical Task review. */

@@ -22,6 +22,7 @@ export * from "./person-dossier.js";
 export * from "./person-research.js";
 export * from "./person-benchmark.js";
 export * from "./sourceGrant.js";
+export * from "./model-admission.js";
 
 export type { TaskCutoverPreview, TaskCutoverReceipt } from "./task-cutover.js";
 

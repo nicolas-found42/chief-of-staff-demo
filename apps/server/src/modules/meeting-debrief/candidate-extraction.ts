@@ -7,6 +7,7 @@ import {
   type MeetingDebriefExtraction,
   type TranscriptRecord,
   type ModelAttemptEvent,
+  type SourceLifecycleGrant,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson, CompletionRequest } from "../../llm/providers.js";
 import { parseResultShape } from "../../llm/failure.js";
@@ -136,6 +137,10 @@ export interface CandidateExtractionOptions {
   complete: CompleteJson;
   record: TranscriptRecord;
   identity: DebriefIdentityReview;
+  operationId?: string | undefined;
+  runId?: string | null | undefined;
+  grant?: SourceLifecycleGrant | null | undefined;
+  expectedGeneration?: number | undefined;
   retry?: CompletionRequest["retry"];
   capture?: (name: string, value: unknown) => void;
   /** Exact request checkpoints, scoped to this Run and provider/model. */
@@ -221,6 +226,11 @@ export async function extractDebriefCandidates(
       system,
       user,
       temperature: 0,
+      operationId: options.operationId,
+      runId: options.runId,
+      stage: name,
+      sourceGrant: options.grant,
+      expectedGeneration: options.expectedGeneration,
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(small ? { absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS } : {}),
       ...(options.retry

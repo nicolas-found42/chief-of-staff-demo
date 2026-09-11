@@ -194,7 +194,36 @@ export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: Me
           <p className="muted">
             {detail.meetingDate ?? "Meeting date unavailable"} ·{" "}
             {detail.extraction ? "Debrief ready" : statusLabel(detail.status)}
+            {detail.budget && (
+              <>
+                {" "}
+                · Budget: ${detail.budget.spentDollars.toFixed(4)} of $
+                {detail.budget.allowedDollars.toFixed(2)}
+                {detail.budget.status === "exhausted" && " (budget exhausted)"}
+                {detail.budget.status === "cancelled" && " (cancelled)"}
+              </>
+            )}
           </p>
+          {detail.budget?.status === "exhausted" && (
+            <div
+              className="banner banner-error"
+              role="alert"
+              data-testid="debrief-budget-exhausted"
+            >
+              <p>
+                Operation budget exhausted (${detail.budget.spentDollars.toFixed(2)} of $
+                {detail.budget.allowedDollars.toFixed(2)} spent). Extend budget to resume.
+              </p>
+            </div>
+          )}
+          {detail.interrupted && !detail.extraction && (
+            <div className="banner banner-warn" role="status" data-testid="debrief-interrupted">
+              <p>
+                Debrief preparation was interrupted. In-flight calls were stopped without stale
+                writes.
+              </p>
+            </div>
+          )}
           {/* The Meeting is where this retrospective belongs, and the Debrief
               already knows which one — the page just never said so. */}
           {detail.meetingId && (
