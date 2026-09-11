@@ -165,11 +165,24 @@ Two architectural approaches can alleviate the single-worker serialization bottl
   - While all coverage floors passed, V8 coverage instrumentation inside multiple VM realms incurs significant serialization overhead.
 - **Verdict:** `vmThreads` is a valuable candidate for fast local test iteration, but **`pool: "threads"` remains the standard default** for full suite and CI coverage runs.
 
+### 1.4 Post-Implementation Measurements & Observed Suite Spread
+
+Following the in-process CLI refactor and CI static check parallelization:
+- `person-benchmark-cli.test.ts` dropped from **29.04s isolated to 2.06s** (a **93% reduction**).
+- Full `vitest run` across multiple consecutive post-optimization runs on Apple M5:
+  - Run A: **33.23s** (wall: 33.89s, import CPU time: 142.44s)
+  - Run B: **36.06s** (wall: 37.92s, import CPU time: 159.21s)
+  - Run C: **60.96s** (wall: 61.52s, import CPU time: 294.12s)
+  - Run D: **69.40s** (wall: 71.27s, import CPU time: 313.41s)
+- **Observed spread**: **33.23s – 69.40s** (best 33.23s vs pre-optimization baseline of 66.61s – 68.58s).
+- **Diagnosis of spread**:
+  - Node's worker threads under `pool: "threads"` experience significant variance in module evaluation time (ranging from 142s to 313s CPU time) depending on thread scheduling and file cache contention.
+  - When remaining child-process tests (`person-benchmark-comparison.test.ts` taking ~6.2s, `person-benchmark-reassess.test.ts` taking ~6.8s, `workspace-backup-command.test.ts` taking ~4.8s, and the thin OS-boundary smoke test taking ~6.4s) happen to run concurrently on saturated CPU cores, worker thread imports slow down, inflating duration to ~60–69s.
+  - On quiet runs where workers do not experience CPU starvation, the suite completes in **~33s–38s**.
+
 ---
 
 ## Part 2: Real CI Measurements (GitHub Actions)
-
-Timings observed directly from GitHub Actions run **34550168145** (commit `b45959a`, 2026-09-11):
 
 ### 2.1 Observed CI Job Durations
 
@@ -236,13 +249,16 @@ several candidate tools. It is critical not to re-propose tools already vetted a
   2. In `tests/src/modules/person-benchmark-cli.test.ts`:
      - Retain a thin `spawnSync` test verifying that `pnpm exec tsx scripts/person-research-benchmark.mts --help` executes cleanly at the OS process boundary.
      - Migrate the remaining 19 test scenarios to `await runBenchmarkCli(args)` directly (imported via `.mjs`, which TypeScript's `moduleResolution: bundler` resolves to `.mts`).
-- **Measured Delta:** Drops test file duration from **29.04s to 2.06s**, cutting **~29s off full `pnpm run check` wall-clock time** (37.92s vs 69.02s).
+- **Measured Delta:** Drops test file duration from **29.04s to 2.06s**; post-refactor full suite duration achieves **33.23s–37.92s on quiet runs** (down from ~69s, with an observed spread of **33.2s–69.4s** depending on thread contention).
+
 ### Recommendation 2: Fix Cross-Realm Assertion in `source-http-dispatcher.test.ts`
 - **Problem:** `expect(outcome).toBeInstanceOf(Error)` fails under VM contexts because Node's internal `DOMException` does not inherit from the VM realm's `Error.prototype`.
 - **Implementation:**
   ```ts
-  expect((outcome as Error).name).toBe("AbortError");
-  expect((outcome as Error).message).toBe("This operation was aborted");
+  expect(outcome).toMatchObject({
+    name: "AbortError",
+    message: "This operation was aborted",
+  });
   ```
 - **Benefit:** Preserves exact error verification while enabling cross-realm test runners and `vmThreads`.
 

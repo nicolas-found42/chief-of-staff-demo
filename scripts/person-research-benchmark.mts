@@ -372,7 +372,7 @@ export async function runBenchmarkCli(
           ? { timelineMinutes: arg("timeline-minutes")!.split(",").map(Number) }
           : {}),
         onTimeline: (slug, points, provenance) => {
-          const out = arg("out") ?? "artifacts/person-benchmark";
+          const out = resolvePath(arg("out") ?? "artifacts/person-benchmark");
           mkdirSync(out, { recursive: true });
           writeFileSync(
             join(out, `timeline-${Date.now()}-${slug}.json`),
@@ -387,14 +387,14 @@ export async function runBenchmarkCli(
             { flag: "wx" },
           );
         },
-        ...(arg("lineage-root") ? { lineageRoot: arg("lineage-root")! } : {}),
-        outputDirectory: resolve(arg("out") ?? "artifacts/person-benchmark"),
+        ...(arg("lineage-root") ? { lineageRoot: resolvePath(arg("lineage-root")!) } : {}),
+        outputDirectory: resolvePath(arg("out") ?? "artifacts/person-benchmark"),
         corpus,
         judgeProvider: judging.provider,
         judgeModel: judging.model,
         onPerson: (artifact, operation) => {
           const stem = `${artifact.result.mode}-${artifact.pipeline}-reassessed-${artifact.runId}`;
-          const out = arg("out") ?? "artifacts/person-benchmark";
+          const out = resolvePath(arg("out") ?? "artifacts/person-benchmark");
           persistPersonArtifact(artifact, stem, out);
           writeFileSync(
             join(out, `${stem}-${artifact.result.slug}.operation.json`),
@@ -412,7 +412,7 @@ export async function runBenchmarkCli(
           join(tmpdir(), "person-benchmark-mock.json"),
         ),
       });
-      const out = arg("out") ?? "artifacts/person-benchmark";
+      const out = resolvePath(arg("out") ?? "artifacts/person-benchmark");
       mkdirSync(out, { recursive: true });
       const stem = `${report.mode}-${report.provenance.pipeline}-reassessed-${report.runId}`;
       writeFileSync(join(out, `${stem}.json`), `${JSON.stringify(report)}\n`, { flag: "wx" });
