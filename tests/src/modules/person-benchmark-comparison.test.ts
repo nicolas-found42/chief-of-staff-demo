@@ -260,6 +260,54 @@ it("rejects a credited recovery whose own rationale records a withheld verdict",
   expect(comparison.verdict).toBe("unchanged");
 });
 
+it("rejects the recorded contradiction: a rationale saying the reference's date is absent", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  const judgement = candidate.people[0].completeness.judgements[0];
+  /* The recorded instance (Ana Botín's `santander-chair` in the older `.7`
+     reassessment): credited recovered while the rationale said the dossier
+     did not mention the September 2014 start date. */
+  judgement.verdict = "recovered";
+  judgement.claimId = "ab1fc7493656359bbaa35ceb8a952d56";
+  judgement.evidenceQuote = "Ana Botín is Chair of the Board of Grupo Financiero Santander.";
+  judgement.referenceQuote =
+    "is a Spanish banker who has been the executive chairman of Santander Group since 2014";
+  judgement.rationale =
+    "The dossier states she chairs Grupo Financiero Santander but does not mention the September 2014 start date or that she is the fourth generation of her family in the role.";
+  candidate.people[0].completeness.recovered = 1;
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.recoveryAudit?.candidate).toMatchObject({ recorded: 1, credited: 0 });
+  expect(comparison.recoveryAudit?.candidate.rejected[0]).toEqual({
+    slug: "achim-steiner",
+    factId: judgement.factId,
+    reason: "rationale-contradicts-verdict",
+  });
+  expect(comparison.verdict).toBe("unchanged");
+});
+
+it("keeps a credit whose rationale declines a source name rather than a dated part", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  const judgement = candidate.people[0].completeness.judgements[0];
+  /* The live pair's own near miss: the negation names a source, not the
+     reference's dated content, so the credit stands. */
+  judgement.verdict = "recovered";
+  judgement.claimId = "credited-claim";
+  judgement.evidenceQuote =
+    "In 2012, she was one of the co-founders of the Rappler online news website.";
+  judgement.referenceQuote = "In 2012, she was one of the co-founders of Rappler.";
+  judgement.rationale =
+    "The dossier states the same substantive fact — Ressa as one of Rappler's co-founders in 2012 — with matching subject and date, though it does not name the Nobel biography as the identifying source.";
+  candidate.people[0].completeness.recovered = 1;
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.recoveryAudit?.candidate).toMatchObject({
+    recorded: 1,
+    credited: 1,
+    rejected: [],
+  });
+  expect(comparison.verdict).toBe("improved");
+});
+
 it("notes research-setting differences as condition changes without flipping comparability", () => {
   const baseline = assessedReport();
   const candidate = structuredClone(baseline);

@@ -492,6 +492,7 @@ const RecoveryAuditSideSchema = z.object({
           "no-claim-quote",
           "no-claim-identity",
           "withheld-in-rationale",
+          "rationale-contradicts-verdict",
           "credit-exceeds-checkable-judgements",
         ]),
       }),

@@ -136,8 +136,9 @@ reference facts with zero new critical integrity findings — but the candidate 
 wrong-person attributions the incumbent does not (all newly introduced identities; three of them on
 `hilary-cottam` from this recovery run), so no improvement verdict is established either. The
 per-person, grouped (85 labelled slices), coverage-gap and failure-breakdown comparisons, and the
-recovery audit that re-checks every credited recovery against its own reference and claim text, are
-in `comparison.json` / `comparison.md`. Remaining misses stay per person in both reports (candidate
+recovery audit that re-checks every credited recovery against its own reference and claim text —
+and rejects one whose rationale says the reference's dated content is absent — are in
+`comparison.json` / `comparison.md`. Remaining misses stay per person in both reports (candidate
 251: 207 app-supported, 44 beyond current coverage) as the follow-up acceptance targets. See
 [the validation record](../../docs/research/person-benchmark-validation-2026-09-11.md).
 

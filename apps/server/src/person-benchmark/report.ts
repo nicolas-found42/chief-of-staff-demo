@@ -358,6 +358,52 @@ function failureBreakdown(
   };
 }
 
+/** The literal judge.ts appends when the exact-claim guard withholds a
+ *  verdict; evaluate.ts's own prefix is EVALUATOR_DOWNGRADE_PREFIX. */
+const JUDGE_DOWNGRADE_MARKER = "(Downgraded: ";
+
+/**
+ * The recorded contradiction (#259): `santander-chair` was credited as
+ * recovered while the judge's own rationale said the dossier "does not
+ * mention the September 2014 start date". The judge's vocabulary defines a
+ * fact stated without the reference's dates as `partial`, so a rationale
+ * naming a dated part of the reference as absent cannot also credit a
+ * recovery. The rule matches the judge's own negation vocabulary and only
+ * when the negated object carries a date-like token, so a rationale that
+ * declines to name a source ("does not name the Nobel biography ...") keeps
+ * its credit.
+ */
+const RATIONALE_NEGATIONS = [
+  "does not",
+  "did not",
+  "doesn't",
+  "do not",
+  "no dossier",
+  "without the",
+  "lacks",
+  "fails to",
+];
+const DATE_LIKE_TOKEN =
+  /\b(?:19|20)\d{2}\b|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\b/i;
+
+function rationaleContradictsRecovery(rationale: string): boolean {
+  const lower = rationale.toLowerCase();
+  for (const negation of RATIONALE_NEGATIONS) {
+    for (
+      let index = lower.indexOf(negation);
+      index !== -1;
+      index = lower.indexOf(negation, index + 1)
+    ) {
+      /* The negated object is the clause right after the marker: a date-like
+         token there is the reference's dated content being declared absent. */
+      const rest = rationale.slice(index + negation.length, index + negation.length + 60);
+      const clause = rest.split(".")[0] ?? rest;
+      if (DATE_LIKE_TOKEN.test(clause)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * #259: the comparison credits a positive recovery only when the report's own
  * judgement carries the reference text and the claim excerpt it was checked
@@ -377,6 +423,7 @@ interface RecoveryAudit {
       | "no-claim-quote"
       | "no-claim-identity"
       | "withheld-in-rationale"
+      | "rationale-contradicts-verdict"
       | "credit-exceeds-checkable-judgements";
   }[];
   /** The verified fact ids per person: the only recoveries the comparison credits. */
@@ -395,16 +442,18 @@ function auditRecoveries(report: BenchmarkReport): RecoveryAudit {
       if (judgement.verdict !== "recovered") continue;
       const withheld =
         judgement.rationale.startsWith(EVALUATOR_DOWNGRADE_PREFIX) ||
-        judgement.rationale.includes("(Downgraded");
+        judgement.rationale.includes(JUDGE_DOWNGRADE_MARKER);
       const reason: RecoveryAudit["rejected"][number]["reason"] | null = withheld
         ? "withheld-in-rationale"
-        : judgement.referenceQuote.trim().length === 0
-          ? "no-reference-quote"
-          : judgement.claimId === null
-            ? "no-claim-identity"
-            : (judgement.evidenceQuote ?? "").trim().length === 0
-              ? "no-claim-quote"
-              : null;
+        : rationaleContradictsRecovery(judgement.rationale)
+          ? "rationale-contradicts-verdict"
+          : judgement.referenceQuote.trim().length === 0
+            ? "no-reference-quote"
+            : judgement.claimId === null
+              ? "no-claim-identity"
+              : (judgement.evidenceQuote ?? "").trim().length === 0
+                ? "no-claim-quote"
+                : null;
       if (reason === null) creditedFacts.add(judgement.factId);
       else rejected.push({ slug: person.slug, factId: judgement.factId, reason });
     }

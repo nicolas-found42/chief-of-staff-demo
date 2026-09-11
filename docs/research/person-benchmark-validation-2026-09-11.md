@@ -52,10 +52,13 @@ short, and the comparison refuses a population delta it could not fully assess.
 
 What is measured, across the 29 of 30 pairs whose recovery credit is not withheld:
 
-- Reference recovery rises from **3 to 26 of 277** facts (incumbent: `achim-steiner/undp-tenure`,
-  `arvind-krishna/ceo-date`, `devi-shetty/founder-chairman`; the candidate adds 23 across 12 more
-  people — `jane-fraser` 3, `irene-tracey`/`maria-ressa`/`minouche-shafik`/`rodolphe-saade`/
-  `sally-kornbluth` 2 each, and one each for seven others).
+- Reference recovery rises from **3 to 26 of 277** facts across the assessed pairs: the incumbent
+  credits `achim-steiner/undp-tenure`, `arvind-krishna/ceo-date`, `devi-shetty/founder-chairman`;
+  the candidate gains 24 credits on 13 people (`jane-fraser` 3, `bong-joon-ho`,
+  `chimamanda-ngozi-adichie`, `cristiano-amon`, `irene-tracey`, `laurent-freixe`, `maria-ressa`,
+  `minouche-shafik`, `rodolphe-saade`, `sally-kornbluth` 2 each, and `mia-mottley`,
+  `sebastien-bazin`, `tedros-adhanom-ghebreyesus` 1 each) and loses one the incumbent credited
+  (`achim-steiner/undp-tenure` 1 → 0): net **+23**.
 - New critical integrity findings: **0** on both sides.
 - Overclaims: 21 baseline vs 123 candidate; of the candidate's, **28 are wrong-person
   attributions** the incumbent does not record (tedros-adhanom-ghebreyesus 10, arvind-krishna 6,
@@ -75,10 +78,16 @@ report's own judgement, the reference text (`referenceQuote`), the claim it judg
 the verbatim dossier excerpt (`evidenceQuote`) the judge's exact-claim guard verified against that
 claim at assessment time — a verdict naming no claim, or quoting text absent from the named claim's
 statement, was already parked as `ambiguous` by `judgePerson` and can never be credited. A credit
-whose rationale records the verdict was withheld (`Original semantic verdict:` / `(Downgraded`)
-is rejected, and a recorded count above its checkable judgements is rejected rather than silently
-discounted. Rejected credits are named in `recoveryAudit` and in the conditions list; the
-per-person, total and source-family recovery numbers read only the audited credits.
+whose rationale records the verdict was withheld (`Original semantic verdict:` / `(Downgraded:`) is
+rejected, a rationale that names a dated part of the reference as absent contradicts its own
+recovered verdict and is rejected (the recorded `santander-chair` instance — credited recovered
+while the rationale said the dossier "does not mention the September 2014 start date" — is the test
+this rule ships with), and a recorded count above its checkable judgements is rejected rather than
+silently discounted. The negation rule reads the judge's own vocabulary and only when the negated
+object carries a date-like token, so a rationale that declines a source name ("does not name the
+Nobel biography ...") keeps its credit. Rejected credits are named in `recoveryAudit` and in the
+conditions list; the per-person, total and source-family recovery numbers read only the audited
+credits.
 
 On this pair the audit verifies everything: baseline **3/3**, candidate **26/26** credited, zero
 rejections. Every credited recovery can be checked against its own reference and claim text in the
@@ -97,8 +106,9 @@ two reports, and the audit is what makes that a checked property rather than a c
   open gaps / 493 area gaps / 607 explicit gaps; the candidate run's own five retained operations:
   85 / 66 / 131 / 135 — a resumed run's totals cover what it re-ran, which the rendering states).
 - **Failure breakdowns**: the people each side records a failure against, beside the research
-  attempt codes behind them (baseline 3 people; candidate 5, including all five withheld
-  assessments from #258).
+  attempt codes behind them (baseline 3 people; candidate 3 — `bong-joon-ho` and `hilary-cottam`
+  bounded, `doug-mcmillon`'s assessment failed. `chimamanda-ngozi-adichie` and `laurent-freixe`
+  cleared their failures in the recovery run).
 
 ## Remaining misses are the acceptance targets (AC4)
 
@@ -124,7 +134,7 @@ and routes that failed a probe stay in the record as explicit gaps.
 ## Verification gates (AC7)
 
 - `pnpm --filter @chief-of-staff-demo/tests exec vitest run tests/src/modules/person-benchmark-comparison.test.ts tests/src/unit/benchmark-report-compatibility.test.ts` — green while working (42 tests), covering the grouped/coverage/failure fields, the recovery-audit rejection paths, and the loadability of every committed artifact including the regenerated `comparison.json`.
-- `pnpm run check` — green on the pushed head (recorded in the pull request).
+- `pnpm run check` — green before the push: typecheck (build/web/tests/scripts), oxlint with its policy probes, Prettier, knip and the workflow check all pass, and the suite runs 245 test files / 2772 tests green.
 
 ## What passed and what did not (AC6)
 
