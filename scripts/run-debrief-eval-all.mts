@@ -7,10 +7,15 @@
  * Usage: tsx scripts/run-debrief-eval-all.mts [--models m1,m2] [--outdir /tmp/debrief-gate] [--glob <pattern>] [--concurrency N] [--score] [--help]
  */
 import { spawnSync } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { extractDebriefCandidates } from "../apps/server/src/modules/meeting-debrief/candidate-extraction.js";
+import { writeTerminalRunOutcome } from "../apps/server/src/validation/artifacts.js";
+import {
+  extractionShapeCounts,
+  renderExtractionSummary,
+} from "../apps/server/src/validation/progress.js";
 import type { MeetingDebriefExtraction } from "../packages/shared/src/meeting-debrief.js";
 import { makeCompleteJson, type CompleteJson } from "../apps/server/src/llm/providers.js";
 import { modelDiagnosticEventDetail } from "../apps/server/src/llm/failure.js";
@@ -193,40 +198,44 @@ async function runOne(
     console.log(`${tag} diagnostic: ${JSON.stringify(lastDiagnostic)}`);
   }
   if (failure) {
-    await writeErrorFile(errFile, outFile, failure);
+    writeErrorFile(errFile, outFile, failure);
     return "error";
   }
   const ms = Date.now() - started;
   try {
     if (extraction === null) throw new Error("Candidate extraction did not return a result");
     const parsed = { success: true as const, data: extraction };
-    await writeFile(
+    /* One terminal file per slot: the success write removes the error record,
+       and a failure to serialize the output still lands an error record
+       instead of leaving the slot with neither. */
+    writeTerminalRunOutcome({
       outFile,
-      JSON.stringify(
-        {
-          model,
-          ms,
-          valid: parsed.success,
-          /* Normalized output plus the deterministic pre-normalization assembly.
-             Individual model replies are retained in candidate artifacts. */
-          raw: parsed.data,
-          modelRaw: raw,
-          strategy: "candidate-accounting-v12",
-        },
-        null,
-        2,
-      ),
-    );
-    await discard(errFile);
-    const d = parsed.data;
-    console.log(
-      `${tag} OK ${ms}ms summary=${d.summary.length}ch decisions=${d.decisions.length} actions=${d.actionItems.length} questions=${d.openQuestions.length} recipients=${d.suggestedRecipients.length}`,
-    );
-    for (const a of d.actionItems)
-      console.log(`${tag}   - [${a.owner ?? "?"}] ${a.title} due=${a.dueDate ?? "-"}`);
+      errFile,
+      kind: "success",
+      body: {
+        model,
+        ms,
+        valid: parsed.success,
+        /* Normalized output plus the deterministic pre-normalization assembly.
+           Individual model replies are retained in candidate artifacts. */
+        raw: parsed.data,
+        modelRaw: raw,
+        strategy: "candidate-accounting-v12",
+      },
+    });
+    console.log(renderExtractionSummary(tag, ms, extractionShapeCounts(parsed.data)));
     return "ok";
   } catch (error) {
-    console.log(`${tag} ERROR after ${Date.now() - started}ms: ${errorMessage(error)}`);
+    const detail = errorMessage(error);
+    writeErrorFile(errFile, outFile, {
+      model,
+      transcript: name,
+      attempts,
+      ms: Date.now() - started,
+      error: detail,
+      diagnostic: lastDiagnostic,
+    });
+    console.log(`${tag} ERROR after ${Date.now() - started}ms: ${detail}`);
     return "error";
   }
 }
@@ -246,23 +255,12 @@ type ErrorFile = {
   diagnostic: unknown;
 };
 
-async function writeErrorFile(errFile: string, outFile: string, failure: ErrorFile): Promise<void> {
-  await discard(outFile);
+/** One slot's error record; the helper removes the success file first. */
+function writeErrorFile(errFile: string, outFile: string, failure: ErrorFile): void {
   try {
-    await writeFile(errFile, JSON.stringify(failure, null, 2));
+    writeTerminalRunOutcome({ outFile, errFile, kind: "failure", body: failure });
   } catch (error) {
     console.log(`could not write ${errFile}: ${errorMessage(error)}`);
-  }
-}
-
-/* A run owns its transcript's slot in the model dir: the file the other outcome
-   would have written goes, or the scorer pairs the golden with a result from a
-   previous run and reports it as this one's. */
-async function discard(path: string): Promise<void> {
-  try {
-    await rm(path, { force: true });
-  } catch (error) {
-    console.log(`could not remove ${path}: ${errorMessage(error)}`);
   }
 }
 
@@ -339,7 +337,7 @@ await forEachOfLimit(tasks, options.concurrency, async (task) => {
   } catch (error) {
     console.log(`${tag} crashed: ${errorMessage(error)}`);
     outcome = "error";
-    await writeErrorFile(join(dir, `${name}.error.json`), join(dir, `${name}.debrief.json`), {
+    writeErrorFile(join(dir, `${name}.error.json`), join(dir, `${name}.debrief.json`), {
       model: task.model,
       transcript: name,
       attempts: 0,

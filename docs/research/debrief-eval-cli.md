@@ -290,3 +290,64 @@ speaker labels. Exact source selections preserve turn metadata during binding
 checks; inferred roles remain labelled inferred. The follow-up regression and live
 results are recorded in `extraction-findings-follow-up-2026-09-10.md`. Earlier v5
 results remain historical and do not describe this implementation.
+
+## Private validation campaigns — 2026-09-11
+
+`scripts/run-validation-campaign.mts` (issue #363) wraps the same extraction
+path — `extractDebriefCandidates`, with `makeCompleteJson` carrying admission,
+the budget ledger and the timeline store — in a private campaign record. Nothing
+about the gate changed; the campaign is how a complete measurement is kept.
+
+- **The plan is frozen before dispatch.** `--protocol`, the corpus directory, an
+  incidents directory, the model list and the budget allowances become a
+  manifest written with exclusive create under `--out` (default
+  `<tmp>/debrief-campaign/<campaign-id>`). It records the code revision and diff
+  hash, image identity, source-context hash, prompt and schema fingerprints, the
+  extractor strategy label, each model's route/binding/grant identity, the
+  frozen corpus revision and the cold root. Slot counts derive from that
+  revision and the protocol's dimensions: a baseline over 20 active Goldens and
+  3 incidents on the three development models is 69 slots, and a revision with
+  21 active Goldens plans 72 — the number is arithmetic, never a constant.
+- **Every planned slot ends with exactly one outcome.** `outcomes.jsonl` is
+  append-only and rejects a second record for a slot, so a manual retry cannot
+  replace a failed cold slot. Charged attempts and spend come from the
+  `ModelBudgetLedger`, queue delay, duration and estimated/unverified flags from
+  the `ModelTimelineStore`. A run that ended early leaves the untouched slots
+  open; `--close` records them as `missing` with a reason instead of dropping
+  them from the denominator.
+- **Cold means cold.** Each slot owns a fresh root under the campaign's `slots/`
+  directory, refuses a non-empty root, and passes no request checkpoints, so it
+  can neither replay an earlier attempt's accepted artifacts nor be mistaken for
+  a resumed run.
+- **The report measures the plan.** Nearest-rank p95 (`ceil(0.95·n)`) over
+  successful processing durations; cost over all outcomes divided by successful
+  completions, undefined at zero successes; estimated and unverified spend
+  labeled; each semantic category with its own denominator and not-applicable at
+  zero; Golden scores and blind human judgments retained as separate
+  collections. `--report <dir>` rebuilds it from a frozen campaign for free.
+- **Ordinary output carries no source.** Slot lines name position, model, arm,
+  status, attempts, time and cost; the plan line names counts and model ids. Case
+  ids and produced content live in the private manifest, artifacts and report.
+
+A zero-spend dry run needs no credentials:
+
+```sh
+pnpm run eval:campaign -- --provider mock --mock-result tests/fixtures/mock-result.json \
+  --corpus <goldens> --incidents <incident-transcripts> --out /tmp/campaign-mock --models mock
+pnpm run eval:campaign -- --plan-only --provider mock   # freeze and print the plan only
+```
+
+Live dispatch is an explicit act: `--allow-live` plus `--grant <file>` (an owner
+source-lifecycle grant for `validation-campaign` use) and the provider's
+credentials. The USD 100 campaign allowance and USD 2 per-Debrief allowance are
+the ledger defaults; point `--budget-root` at durable private state so a new
+session cannot reset what was spent. The live baseline, comparison, final and
+Brief protocols, route/account authorization and human adjudication are external
+prerequisites — the harness records them, it does not perform them.
+
+Two CLI defects were repaired alongside the harness. `run-debrief-eval-all.mts`
+no longer prints per-action owner/title/due lines: its success line reports the
+answer's shape (summary characters and bucket counts), and both runners now
+route every terminal write through one helper, so a slot always ends with
+exactly one file — the debrief output or the error record — including when the
+final serialization itself fails.
