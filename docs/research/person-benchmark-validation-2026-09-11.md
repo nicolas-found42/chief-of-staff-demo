@@ -149,3 +149,82 @@ recovery's improvement is **not established as an acceptance pass** because the 
 introduces 28 wrong-person attributions. The owner decides the closing framing: either the pair
 stays open with `doug-mcmillon`'s withheld assessment as the single recovery target, or the
 identity findings become the next ticket's subject.
+
+## The owner's verbatim model id (#259)
+
+The owner's instruction after the merge: every live model call this work makes uses
+`inception/mercury-2.5` **verbatim** — no `-preview` — for research, planning and judging alike.
+
+### The deviation on the record
+
+The merged recovery run `8ebc59982210a118` recorded `researchModel` and `planningModel` as
+`inception/mercury-2.5-preview` and issued its research and planning calls under that string; its
+judge was the frozen `z-ai/glm-5.3-flash` at `2026-09-06.10`. Its five re-run operations record 286
+model calls in total, 15 of them judgement attempts. Nothing in the merged record is relabelled:
+the pair, its comparison and the sections above stay as they are, because they describe what ran.
+
+OpenRouter currently normalizes the `-preview` alias to the same catalogue entry as the verbatim
+id (provider Inception, 260000-token context, version label `inception/mercury-2.5-20260908`).
+That is context for [ADR-0091](../adr/0091-mercury-2-5-verbatim-is-the-only-permitted-model-string.md),
+not a licence to substitute the alias.
+
+### The verbatim run
+
+`live-discovery-expanded-4c03326082a59064` (`4c03326082a59064`), 2026-09-11T18:19:50Z–18:29:54Z at
+gitSha `bfba3d10907a9242d1210b83a9e6b341990ef3c6` — a **fresh standalone** live `live-discovery`
+run over the five withheld people (no `--retry`, no `--reassess`, nothing carried), `--pipeline
+expanded`, `--people
+bong-joon-ho,chimamanda-ngozi-adichie,doug-mcmillon,hilary-cottam,laurent-freixe`, `--concurrency
+4`, `--no-cache`, `--max-cost 2`, and no `--limit`/`--profile-calls`/`--profile-ms`/
+`--read-concurrency`/`--render` override — the recovery run's own allowances (180 calls / 900000 ms
+per operation), read concurrency 4 and no anonymous rendering route. It carries no resume record:
+nothing was carried into it from any other arm.
+
+Provenance pins, verbatim: research `openrouter inception/mercury-2.5`, planner `openrouter
+inception/mercury-2.5`, judge `openrouter inception/mercury-2.5`, `JUDGE_VERSION` `2026-09-06.10`,
+prompt `2026-09-06.4`, corpus `14bca86ee0b97d28`, network `live`. The report's `researchSettings`
+object differs from the recovery run's in exactly one of its 39 fields — `gitSha` — so "the same
+conditions with different model bindings" is checkable by diffing the two report files rather than
+taken on trust.
+
+Every mercury call is recorded under the verbatim string: the judgement phase's `modelAttempts`
+record 13 attempts across the five people, each naming `inception/mercury-2.5` and each
+`succeeded`, and a scan of the run's twelve files finds no `mercury-2.5-preview` string and no
+model field containing "preview" — the word appears only inside source URLs, page titles and an
+HTML meta tag.
+
+| Person | Research | Judgement | Credited recovery |
+| --- | --- | --- | --- |
+| bong-joon-ho | completed | completed | 2/7 |
+| chimamanda-ngozi-adichie | completed | completed | 3/8 |
+| doug-mcmillon | completed | completed | 3/8 |
+| hilary-cottam | completed | completed | 2/5 |
+| laurent-freixe | completed | completed | 6/9 |
+
+Spend **$0.178268** against the $2 cap: 316 model calls and 1362 source requests across the five
+operations, 2,677,946 in / 590,120 out provider-observed tokens (5,710,874 input / 1,241,196
+output characters). The run's top-level status is **completed** — every selected person was
+evaluated and assessed. No call was refused for the model id: nothing matches a provider's
+model-rejection vocabulary (`is not a valid model`, `model_not_found`, `No endpoints found`,
+`unsupported model`, `invalid model`, `does not exist`), and all 13 judgement calls succeeded on
+their first attempt.
+
+### These five are unpairable with the incumbent
+
+`comparison.json` / `comparison.md` are **not** regenerated from this run and the frozen pair's
+merged record is untouched. The evaluator requires equal judge model, judge version, corpus
+version, mode and evaluated population; here the judge model differs (mercury against the frozen
+`z-ai/glm-5.3-flash`), the research and planning models differ, and the population is the five
+withheld people against the incumbent's thirty. A `--compare` of the incumbent against this run
+refuses and exits 1 — observed, not assumed. Until the repair on this branch, that refusal
+surfaced as a schema error (`conditionChanges` over its 40-entry bound) rather than a rendered
+not-comparable report; the data-derived bound and the verdict-detail elision are repaired in
+`packages/shared/src/person-benchmark.ts` and `apps/server/src/person-benchmark/report.ts`, and
+pinned by `tests/src/modules/person-benchmark-comparison.test.ts`.
+
+The credited figures above are therefore observational, not a delta — they read against a
+different judge and a different subset of research conditions. A **pairable** mercury comparison
+would require both halves re-judged — at minimum — under one mercury judge with the same
+population and reference versions, which for the incumbent means a re-run or full re-judge of the
+thirty-person baseline. That is an owner decision about spend and scope, and it was not
+attempted.
