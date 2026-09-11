@@ -37,3 +37,9 @@ container changes add a Docker boot check. Test commands go through `pnpm --filt
 Before any stored-format change, quiesce the app and capture a checksum-inventoried
 baseline with an isolated restoration: `scripts/workspace-backup.mts`, documented in
 `docs/agents/workspace-backup.md`.
+
+### Session handoffs
+
+Handoff notes go stale as the branch moves: claims in a handoff carry the SHA or CI run ID
+they were measured at, and the next agent re-verifies load-bearing premises against current
+HEAD before sizing work. See `docs/agents/handoff.md`.
