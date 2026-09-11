@@ -955,55 +955,57 @@ export class PersonResearch {
           let partUsage: ModelAttemptEvent["usage"];
           let raw: unknown;
           try {
-            raw = await models.complete({
-              schema: Extraction,
-              preferredBinding: "forced_tool_call",
-              absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
-              retry: {
-                canRetry: () =>
-                  Date.now() - started < allowance.maxMilliseconds &&
-                  active() &&
-                  (!privateDocument || privateDocument.active()),
-                onAttempt: (event) => {
-                  if (event.outcome === "failed") boundaryObservation.failureRecorded = true;
-                  if (event.outcome === "succeeded" && event.usage) partUsage = event.usage;
-                  recordModelWireAttempt(recorder, {
-                    stage: "extraction",
-                    collector: "extraction",
-                    target: pending.url,
-                    attemptOf: extractionAttemptOf,
-                    event,
-                    successReason:
-                      "The model boundary returned JSON; dossier validation and publication follow.",
-                    successImpact: "A model response is available for evidence validation.",
-                    remediation:
-                      "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
-                    configuration: {
-                      preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
-                      extractionPart: `${partIndex + 1}/${partTexts.length}`,
-                    },
-                  });
+            raw = await this.modelWork.run(() =>
+              models.complete({
+                schema: Extraction,
+                preferredBinding: "forced_tool_call",
+                absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
+                retry: {
+                  canRetry: () =>
+                    Date.now() - started < allowance.maxMilliseconds &&
+                    active() &&
+                    (!privateDocument || privateDocument.active()),
+                  onAttempt: (event) => {
+                    if (event.outcome === "failed") boundaryObservation.failureRecorded = true;
+                    if (event.outcome === "succeeded" && event.usage) partUsage = event.usage;
+                    recordModelWireAttempt(recorder, {
+                      stage: "extraction",
+                      collector: "extraction",
+                      target: pending.url,
+                      attemptOf: extractionAttemptOf,
+                      event,
+                      successReason:
+                        "The model boundary returned JSON; dossier validation and publication follow.",
+                      successImpact: "A model response is available for evidence validation.",
+                      remediation:
+                        "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+                      configuration: {
+                        preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
+                        extractionPart: `${partIndex + 1}/${partTexts.length}`,
+                      },
+                    });
+                  },
                 },
-              },
-              /* Steer the first attempt onto a fast route: the routes that lose
-                 an operation generate at 24-28 tok/s against 66-75 on the ones
-                 that complete it (#232). A routing preference, never a model
-                 change — provider and model stay exactly as configured. */
-              preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
-              temperature: 0,
-              /* A dossier repeats its field names once per claim, and they were
-                 a quarter to a third of every answer. Abbreviating them on the
-                 wire cut output tokens 21% and wall time 15% without touching
-                 this schema, which is still what the answer is validated
-                 against (#232). */
-              compactWireNames: true,
-              system: EXTRACTION_SYSTEM,
-              user: partUser,
-              /* Measurement attribution (#381): the timeline tells this
-                 dossier extraction (E1) from a claim extraction on the same
-                 purpose only because the call says which it is. */
-              trace: { operationId, callSite: EXTRACTION_CALL_SITE },
-            });
+                /* Steer the first attempt onto a fast route: the routes that lose
+                   an operation generate at 24-28 tok/s against 66-75 on the ones
+                   that complete it (#232). A routing preference, never a model
+                   change — provider and model stay exactly as configured. */
+                preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
+                temperature: 0,
+                /* A dossier repeats its field names once per claim, and they were
+                   a quarter to a third of every answer. Abbreviating them on the
+                   wire cut output tokens 21% and wall time 15% without touching
+                   this schema, which is still what the answer is validated
+                   against (#232). */
+                compactWireNames: true,
+                system: EXTRACTION_SYSTEM,
+                user: partUser,
+                /* Measurement attribution (#381): the timeline tells this
+                   dossier extraction (E1) from a claim extraction on the same
+                   purpose only because the call says which it is. */
+                trace: { operationId, callSite: EXTRACTION_CALL_SITE },
+              }),
+            );
             recorder.record({
               stage: "extraction",
               code: "model-call-metrics",
@@ -1395,25 +1397,27 @@ export class PersonResearch {
             checkpoint();
             return;
           }
-          const succeeded = await this.modelWork.run(async () => {
-            const extractionStarted = Date.now();
-            await processRead(entry);
-            const host = hostOf(entry.read.finalUrl) ?? hostOf(pending.url);
-            if (host) {
-              const previous = sourcePerformance.get(host) ?? {
-                reads: 0,
-                useful: 0,
-                milliseconds: 0,
-              };
-              sourcePerformance.set(host, {
-                reads: previous.reads + 1,
-                useful: previous.useful + (leads.get(pending.leadId)?.yieldedEvidence ? 1 : 0),
-                milliseconds:
-                  previous.milliseconds + entry.readMilliseconds + Date.now() - extractionStarted,
-              });
-            }
-            return leads.get(pending.leadId)?.disposition === "investigated";
-          });
+          const extractionStarted = Date.now();
+          /* Only the model call itself spends a model-work permit (#381, R2):
+             retaining, publication and checkpointing are not model work, and
+             must never hold one of the four composition-wide permits idle
+             while another person's extraction is ready and waiting for it. */
+          await processRead(entry);
+          const host = hostOf(entry.read.finalUrl) ?? hostOf(pending.url);
+          if (host) {
+            const previous = sourcePerformance.get(host) ?? {
+              reads: 0,
+              useful: 0,
+              milliseconds: 0,
+            };
+            sourcePerformance.set(host, {
+              reads: previous.reads + 1,
+              useful: previous.useful + (leads.get(pending.leadId)?.yieldedEvidence ? 1 : 0),
+              milliseconds:
+                previous.milliseconds + entry.readMilliseconds + Date.now() - extractionStarted,
+            });
+          }
+          const succeeded = leads.get(pending.leadId)?.disposition === "investigated";
           if (succeeded) extractedVersions.add(key);
         });
       });

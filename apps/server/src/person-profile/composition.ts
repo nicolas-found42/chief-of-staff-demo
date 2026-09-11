@@ -103,6 +103,13 @@ export interface PersonProfilesCompositionDeps {
   /** Model access, read per call so a Settings edit lands without a restart. */
   complete: () => CompleteJson;
   /**
+   * Claim extraction's (C1) own Settings purpose (issue #381, R5). Absent
+   * falls back to `complete`, which is the no-op mapping every Workspace
+   * starts on: the split changes no resolved request until this purpose
+   * carries its own override.
+   */
+  completeClaims?: () => CompleteJson;
+  /**
    * The research planner's model access, on its own Settings purpose. Absent
    * means the operation expands from collected evidence only.
    */
@@ -328,7 +335,7 @@ export function composePersonProfiles(
       createPublicWebPersonProfileSource({
         search: deps.search,
         discoverFeeds: createFeedDiscoverer(),
-        extractClaims: createPersonClaimExtractor(deps.complete),
+        extractClaims: createPersonClaimExtractor(deps.completeClaims ?? deps.complete),
       }),
     ],
   });

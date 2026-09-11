@@ -400,3 +400,46 @@ it("lets another host run while one host has exhausted its slots", async () => {
   gate.resolve();
   await Promise.all(jobs);
 });
+
+it("retains every read before spending a model call, so the four-permit model-work queue never blocks checkpointing a fifth", async () => {
+  const { dossiers, person } = fixture();
+  const model = deferred();
+  const started: string[] = [];
+  const names = ["a", "b", "c", "d", "e"];
+  let checkpoint: PersonResearchCheckpoint | undefined;
+  const research = new PersonResearch({
+    dossiers,
+    seeds: () => ["Maya"],
+    search: async () =>
+      names.map((name) => ({
+        url: `https://${name}.example.com/page`,
+        title: name,
+        snippet: "maya@example.com",
+      })),
+    readSource: async (url) => read(url),
+    complete: async ({ user }) => {
+      started.push(user);
+      await model.promise;
+      return empty;
+    },
+  });
+  const running = research.run(
+    person,
+    researchAllowance({
+      readConcurrency: 5,
+      maxModelCalls: 20,
+      saveCheckpoint: (value) => {
+        checkpoint = value;
+      },
+    }),
+  );
+  // Every source is retained (and checkpointed as pending) as soon as it is
+  // read, whether or not a model permit is free — retaining spends no model
+  // call. With only four composition-wide model-work permits (#381, R2), a
+  // retain gated behind one would plateau at four while every model call
+  // stays open on `model.promise`.
+  await vi.waitFor(() => expect(checkpoint?.pendingSourceIds).toHaveLength(5));
+  model.resolve();
+  await running;
+  expect(started).toHaveLength(5);
+});
