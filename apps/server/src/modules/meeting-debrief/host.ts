@@ -1225,8 +1225,12 @@ export class MeetingDebriefHost implements HostedModule {
         reply.code(404).send({ error: "unknown-run" });
         return;
       }
+      /* Nothing checked, nothing to expose: a Run that failed before its core
+         was committed has no early review to offer. A Run that already holds
+         a publication is the other case — the request is then the retry that
+         finishes its missing sections. */
       const hasCore = run.artifactNames().some((name) => /^core-r\d+\.json$/.test(name));
-      if (!hasCore) {
+      if (!hasCore && this.availabilityOf(run) === null) {
         reply.code(409).send({
           error: "no-checked-core",
           message: "This Run has no checked action core to expose yet.",

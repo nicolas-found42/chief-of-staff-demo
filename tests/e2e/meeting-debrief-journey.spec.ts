@@ -553,6 +553,9 @@ test("meeting debrief journey — an incomplete Debrief is review-only and says 
   await page.goto(`/meeting-debrief/${encodeURIComponent(seeded.runId)}`);
   await expect(page.getByText(/Debrief incomplete · review only/).first()).toBeVisible();
   await expect(page.getByLabel("Incomplete Debrief")).toContainText("Coaching advice");
+  /* Inside its own section, the failure is named rather than shown as an
+     empty coaching result. */
+  await page.getByText("Meeting effectiveness and coaching").click();
   await expect(page.getByText(/the coaching provider refused/).first()).toBeVisible();
   /* Nothing outward: an incomplete revision grants no email authorization. */
   const email = await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}/email`);
