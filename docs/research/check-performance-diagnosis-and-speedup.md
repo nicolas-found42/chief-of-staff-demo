@@ -284,6 +284,80 @@ several candidate tools. It is critical not to re-propose tools already vetted a
 - **Decision:** Deferred until an isolated `docker-compose.ci.yml` pattern is introduced to reduce runner compute credits without risking CI gate failures or complicating local developer workflows.
 ---
 
+## Part 5: CI Critical-Path Sharding — Implemented 2026-09-10
+
+The recommendations above reduced runner compute minutes, but total PR turnaround
+latency stayed bounded by `e2e` (4m 25s). This section documents the implemented
+fixes that target the critical path directly. All three prior bottlenecks are
+now addressed in `.github/workflows/ci.yml`.
+
+### 5.1 `e2e`: Sharded Across 4 Matrix Runners (was 4m 25s)
+
+- `e2e-shard` runs the suite four times in parallel with `--shard=N/4` (each
+  shard keeps the config's 2 workers, so 8 test lanes in total).
+- Each shard uploads a Playwright **blob report** (`tests/blob-report`, enabled
+  in `tests/playwright.config.ts` via a CI-only `["blob"]` reporter) on failure.
+- The `e2e` **rollup job** (`needs: [e2e-shard]`, `if: always()`) downloads the
+  blobs with `actions/download-artifact` (`merge-multiple: true`), runs
+  `playwright merge-reports --reporter html`, fails explicitly when any shard
+  did not succeed, and uploads the merged HTML report.
+- **Branch protection contract preserved:** the required check name `e2e` is
+  the rollup job; the matrix shards are new, unrequired jobs.
+- Projected: slowest shard ~90s + ~20s setup → **e2e job ≈ 1m 50s** (from 4m 25s).
+
+### 5.2 `test`: Vitest Coverage Sharded Across 3 Runners (was 3m 00s)
+
+- `test-shard` runs `vitest run --shard=N/3 --coverage --reporter=blob` with
+  per-shard coverage thresholds zeroed via `--coverage.thresholds.*=0` (each
+  shard only sees a third of the suite, so real floors would fail spuriously).
+- Verified against the installed Vitest 5 source: the blob reporter embeds the
+  run's coverage data (`blob.coverage` → `coverageProvider.mergeReports`), so
+  **no separate coverage-final.json artifacts are needed** — the blob file is
+  the only upload.
+- The `test` rollup job downloads the blobs into `tests/.vitest/blob` (the
+  merge resolves that directory relative to the process CWD, while the blob
+  reporter writes relative to the config root — hence the differing upload and
+  download paths) and runs `vitest run --coverage --merge-reports`, which
+  merges results and coverage and enforces the real coverage floors. The
+  `coverage/coverage-summary.txt` gate and job-summary step are unchanged.
+- Locally verified: shard 1/3 run + merge round trip reproduces merged
+  coverage (55–58% with one shard, as expected) and threshold enforcement
+  fails/succeeds on the merged data.
+- Projected: slowest shard ~75–90s + setup → **test job ≈ 1m 40s** (from 3m 00s).
+
+### 5.3 `image`: Buildx GHA Layer Caching (was 2m 40s)
+
+This resolves the deferred §Part 2/Recommendation 4 candidate — it left the
+deferred state because `docker-container` driver images don't reach the daemon;
+the implementation keeps that property intact:
+
+- `docker/setup-buildx-action@v3` + `docker/build-push-action@v6` with
+  `load: true` builds both images with `cache-from/to: type=gha` (scopes `app`
+  and `relay`, `mode=max`) **and exports them into the runner's Docker
+  daemon**, so the compose canaries and `docker compose up` use them directly.
+- `docker-compose.yml` now pins explicit `image: chief-of-staff-demo-app` /
+  `chief-of-staff-demo-relay` names (compose defaults for this directory, so
+  local `docker compose up --build` behavior is unchanged); the canary and
+  `up` steps add `--no-build` to fail fast instead of rebuilding.
+- KitBuildKit's gha cache falls back to the default-branch scope, so PR runs
+  hit `main`'s cache without extra configuration. No
+  `docker-compose.ci.yml` override is needed.
+- Projected: warm-cache build ~40–60s → **image job ≈ 1m 00–1m 30s** (from 2m 40s).
+
+### 5.4 Projected Critical Path After This Change
+
+```text
+check  ~1m (unchanged)
+test   ≈ 1m 40s (sharded x3)
+image  ≈ 1m 00–1m 30s (Buildx cache)
+e2e    ≈ 1m 50s (sharded x4)
+Total PR turnaround: bounded by e2e at ≈ 1m 50s (from 4m 29s), target < 2m met
+```
+
+First `main` run after merge populates the gha image caches; PRs after that
+realize the full image speedup. Confirm measured job durations on the first
+CI run of this workflow and record them here.
+
 ## Primary References & Data Sources
 
 1. **Local Benchmarks:** 3-run medians on Apple M5, Node 26.5.0, pnpm 12.3.4.
