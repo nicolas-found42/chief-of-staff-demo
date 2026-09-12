@@ -442,8 +442,8 @@ _Avoid_: eval run, benchmark run, test run, retry
 **Campaign Slot**:
 One planned unit of a Validation Campaign — one case (a Golden transcript or an incident), one
 model, one arm, one repetition — with its own cold root and its own budget operation. Its outcome
-is success, failed, interrupted or missing, with a bounded reason and, under `--no-recovery`, the
-stage and kind of its first failure.
+is success, failed, interrupted or missing, with a bounded reason and, when it failed, the stage
+and kind of its first failure — a slot has no retries and no repair round.
 _Avoid_: run, attempt (an attempt is one wire call inside a slot)
 
 **Blind Judgment**:

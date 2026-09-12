@@ -325,17 +325,17 @@ about the gate changed; the campaign is how a complete measurement is kept.
   labeled; each semantic category with its own denominator and not-applicable at
   zero; Golden scores and blind human judgments retained as separate
   collections. `--report <dir>` rebuilds it from a frozen campaign for free.
-- **`--no-recovery` ends a slot at its first failure, specifically.** The
-  application's recovery — the provider's binding ladder and backoff inside the
-  ceiling, and the one repair round a validator rejection earns — blurs the
-  reason a cheap model failed behind minutes of retries. Under `--no-recovery`
-  the first failed call or rejected answer is terminal: the outcome carries a
-  `failure` record (stage, kind `model`/`validator`/`shape`, classification,
-  HTTP status, count of invalid items), the progress line prints it, and the
-  slot's private error file holds the specific complaint — the validator's own
-  listing of the rejected items, or the model boundary diagnostic. This is the
-  setting to iterate prompts and code under; it is not the application's
-  behaviour and it is not the baseline protocol's.
+- **A slot ends at its first failure, specifically.** The application's
+  recovery — the provider's binding ladder and backoff inside the ceiling, and
+  the one repair round a validator rejection earns — blurs the reason a cheap
+  model failed behind minutes of retries. In a campaign the first failed call or
+  rejected answer is terminal: the outcome carries a `failure` record (stage,
+  kind `model`/`validator`/`shape`, classification, HTTP status, count of
+  invalid items), the progress line prints it, and the slot's private error
+  file holds the specific complaint — the validator's own listing of the
+  rejected items, or the model boundary diagnostic. There is no flag for the
+  other behaviour: a campaign measures the pipeline's first failure per slot,
+  not the application's completion rate under recovery.
 - **Ordinary output carries no source.** Slot lines name position, model, arm,
   status, attempts, time and cost; the plan line names counts and model ids. Case
   ids and produced content live in the private manifest, artifacts and report.

@@ -18,7 +18,7 @@ supported way to run the app.
 | App behavior | `pnpm run check:all` | The whole-tree gate plus the Playwright suite |
 | Prompt eval | `pnpm exec tsx scripts/run-debrief-eval-all.mts --models upstage/solar-pro4 --score` | Solar-pro4 debrief extractions on the frozen Golden corpus score clean against hand-written goldens |
 | Validation campaign (zero-spend) | `pnpm run eval:campaign -- --plan-only --provider mock` | On a checkout holding the private corpus: freezes a campaign manifest from its revision and prints derived slot counts; no provider call, no spend |
-| Validation campaign (live) | `pnpm run eval:campaign -- --allow-live --grant <file> --campaign-allowance <usd> --models <one model> [--no-recovery]` | Owner-authorized only: the grant and the USD ceiling are the owner's; one model per run unless the owner asks otherwise; `--no-recovery` for prompt/code iteration (first failure per slot, specific reason) — not for the baseline completion claim. See `docs/research/debrief-eval-cli.md` |
+| Validation campaign (live) | `pnpm run eval:campaign -- --allow-live --grant <file> --campaign-allowance <usd> --models <one model>` | Owner-authorized only: the grant and the USD ceiling are the owner's; one model per run unless the owner asks otherwise; every slot ends at its first failure with a specific reason (no retries, no repair round). See `docs/research/debrief-eval-cli.md` |
 | Production image | `docker compose build`, boot, then `GET /api/health` | The pruned runtime image contains a working server and web bundle |
 | Clean checkout | GitHub Actions on pull requests and pushes to `main` | Clean installs, the gates above, coverage, and the production image boot |
 

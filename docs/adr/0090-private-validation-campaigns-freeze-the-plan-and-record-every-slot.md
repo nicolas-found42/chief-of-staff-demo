@@ -109,13 +109,13 @@ Two additions from the first live campaigns under #363
   refuses to freeze or dispatch without it. An existing ledger keeps the allowance it was created
   with, so a second campaign on the same `--budget-root` shares one cumulative ceiling. At a zero
   allowance the ledger admits only free models. ADR-0087 carries the same note.
-- **`--no-recovery` is a diagnostic mode, not the baseline protocol.** The application's recovery —
+- **A slot ends at its first failure; the campaign has no recovery.** The application's recovery —
   the provider's binding ladder and backoff inside the ceiling, and the one repair round a validator
-  rejection earns — blurs *why* a cheap model failed behind minutes of retries. Under `--no-recovery`
-  the first failed call or rejected answer is terminal; the outcome carries a content-free `failure`
+  rejection earns — blurs *why* a cheap model failed behind minutes of retries. In a campaign the
+  first failed call or rejected answer is terminal; the outcome carries a content-free `failure`
   record (stage, kind `model`/`validator`/`shape`, classification, HTTP status, invalid-item count),
-  and the slot's private error file holds the specific complaint. A campaign run this way measures
-  the pipeline's first failure per slot, which is the right signal for iterating prompts and code
-  and the wrong one for claiming the application's completion rate; the manifest's code revision and
-  the flag together say which was measured.
+  and the slot's private error file holds the specific complaint. A campaign therefore measures the
+  pipeline's first failure per slot — the signal for iterating prompts and code — and not the
+  application's completion rate under recovery. This was briefly a `--no-recovery` flag; the owner
+  removed the flag so that no campaign can run the other way.
 
