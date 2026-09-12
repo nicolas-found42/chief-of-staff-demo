@@ -145,6 +145,29 @@ it.each([
   },
 );
 
+it("hands the status stage each candidate's displayed source line instead of character offsets (#402)", async () => {
+  let rows: Record<string, unknown>[] = [];
+  const model = accountedHandoffModel({ ...overview, actionItems: [] });
+  await extract(async (request) => {
+    if (request.system.startsWith("DISCOVER CANDIDATES"))
+      return { candidates: [{ ...candidate, quote: "@line:1" }] };
+    if (request.system.startsWith("CLASSIFY SOURCE STATUS")) {
+      rows = JSON.parse(
+        request.user.split("<untrusted-candidates>\n")[1].split("\n</untrusted-candidates>")[0],
+      );
+      // mistral-nemo copied sourceStart (14000) as a line id: the row carries
+      // the displayed identifier it should copy, and no offset it could mistake.
+      expect(request.system).toContain("its source is the displayed @line:N");
+      return sourceStatusFixture(request);
+    }
+    return model(request);
+  });
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ source: "@line:1", quote: candidate.quote });
+  expect(rows[0]).not.toHaveProperty("sourceStart");
+  expect(rows[0]).not.toHaveProperty("sourceEnd");
+});
+
 it("shows every evidence-bearing stage the accepted reference form by example (#402)", async () => {
   const systems = new Map<string, string>();
   const model = accountedHandoffModel({ ...overview, actionItems: [] });

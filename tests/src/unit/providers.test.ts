@@ -1285,12 +1285,15 @@ describe("providers", () => {
     });
     /* The grant the ledger verified is the grant the router is told about:
        a ZDR-only, no-collection grant cannot be honoured by a request that
-       leaves routing free to pick any endpoint. */
+       leaves routing free to pick any endpoint — and an allowed-endpoint list
+       is a fence, not a preference: no fallback onto a route the grant did
+       not name (#402). */
     expect(calls[0]?.body.provider).toEqual({
       sort: "throughput",
       data_collection: "deny",
       zdr: true,
       order: ["Parasail", "DeepInfra"],
+      allow_fallbacks: false,
     });
   });
 

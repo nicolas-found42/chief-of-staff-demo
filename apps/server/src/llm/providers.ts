@@ -1657,6 +1657,7 @@ async function openAiCompatibleComplete(
       }
       if (routePolicy?.allowedEndpoints && routePolicy.allowedEndpoints.length > 0) {
         provider.order = routePolicy.allowedEndpoints;
+        provider.allow_fallbacks = false;
       }
       if (request.preferredMinThroughput !== undefined)
         provider.preferred_min_throughput = request.preferredMinThroughput;
