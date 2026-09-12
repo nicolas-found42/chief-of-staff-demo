@@ -21,10 +21,13 @@ import { ModelTimelineStore } from "../../../apps/server/src/llm/timeline";
 import { makeCompleteJson } from "../../../apps/server/src/llm/providers";
 import { createSourceLifecycleGrant } from "../../../apps/server/src/llm/grants";
 import { parseResultShape } from "../../../apps/server/src/llm/failure";
-import type {
-  CandidateExtractionOptions,
-  DebriefExtractionRun,
+import {
+  DebriefStageFailure,
+  extractDebriefCandidates,
+  type CandidateExtractionOptions,
+  type DebriefExtractionRun,
 } from "../../../apps/server/src/modules/meeting-debrief/candidate-extraction";
+import { syntheticTranscriptRecord } from "../../../apps/server/src/validation/run";
 import { validatedDebriefSections } from "@chief-of-staff-demo/shared";
 import {
   loadCampaignCorpus,
@@ -908,6 +911,84 @@ describe("campaign runner and extraction executor", () => {
     expect(report.complete).toBe(true);
     expect(report.statusCounts.failed).toBe(1);
     expect(report.missing).toHaveLength(0);
+  });
+
+  it("records where and why a slot failed when the extraction names its stage (#363)", async () => {
+    const corpus = writeCorpus({ goldens: 1 });
+    const { manifest } = buildPlan({ goldens: 1, corpus, models: [MODELS[0]] });
+    const campaignDir = tempDir("campaign-record-");
+    writeCampaignManifest(campaignDir, manifest);
+    const stateDir = tempDir("campaign-state-");
+    const written = new Map<string, string>();
+    const executor = extractionExecutor(
+      corpus,
+      stateDir,
+      async () => {
+        throw new DebriefStageFailure({
+          stage: "coverage-1",
+          kind: "validator",
+          detail:
+            '<observations-to-repair>\n[{"work":"x","quote":"@line:188 Someone: said","speaker":"Someone"}]\n</observations-to-repair>\nInvalid references: @line:188 Someone: said',
+        });
+      },
+      (path, contents) => {
+        written.set(path, contents);
+      },
+    );
+    const { outcomes } = await runValidationCampaign({ campaignDir, executor, concurrency: 1 });
+    expect(outcomes[0].status).toBe("failed");
+    // The outcome names the stage and the kind without carrying the content.
+    expect(outcomes[0].failure).toEqual({
+      stage: "coverage-1",
+      kind: "validator",
+      classification: null,
+      httpStatus: null,
+      invalidItems: 1,
+    });
+    expect(outcomes[0].reason).toContain("coverage-1");
+    expect(outcomes[0].reason).not.toContain("Someone: said");
+    // The slot's private error file carries the specific complaint.
+    const errorFile = [...written.entries()].find(([path]) => path.endsWith(".error.json"));
+    expect(errorFile).toBeDefined();
+    const body = JSON.parse(errorFile![1]) as { diagnostic: { stage: string; detail: string } };
+    expect(body.diagnostic.stage).toBe("coverage-1");
+    expect(body.diagnostic.detail).toContain("@line:188 Someone: said");
+  });
+
+  it("under no recovery, ends at the first rejected answer with the complaint and asks for no repair (#363)", async () => {
+    const calls: string[] = [];
+    const record = syntheticTranscriptRecord({
+      fileName: "one.md",
+      text: "[00:01–00:05] Alice: After the workshop, I will ask for a reference.\n",
+      ingestedAt: "2026-09-12T00:00:00.000Z",
+    });
+    const attempt = extractDebriefCandidates({
+      record,
+      identity: { mentions: [], decisions: [], organizations: [] },
+      recovery: "none",
+      complete: async (request) => {
+        calls.push(request.stage ?? request.system.split("\n")[0]);
+        if (request.system.startsWith("DISCOVER CANDIDATES")) return { candidates: [] };
+        if (request.system.startsWith("AUDIT SOURCE COVERAGE"))
+          return {
+            candidates: [
+              {
+                work: "Ask for a reference",
+                quote: "@line:1 Alice: After the workshop, I will ask",
+                speaker: "Alice",
+              },
+            ],
+          };
+        return { candidates: [] };
+      },
+    });
+    await expect(attempt).rejects.toBeInstanceOf(DebriefStageFailure);
+    const failure = (await attempt.catch((error: unknown) => error)) as DebriefStageFailure;
+    expect(failure.stage).toBe("coverage-0");
+    expect(failure.kind).toBe("validator");
+    expect(failure.detail).toContain("@line:1 Alice: After the workshop, I will ask");
+    expect(failure.detail).not.toContain("<transcript-section>");
+    expect(calls.some((name) => name.endsWith("-repair"))).toBe(false);
   });
 
   it("runs a cold slot through the budget and timeline seams and resumes without replacing it", async () => {

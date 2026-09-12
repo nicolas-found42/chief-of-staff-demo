@@ -4,9 +4,11 @@ import {
   type CampaignTerminalStatus,
   type ModelTimelineEntry,
   type OperationBudgetSnapshot,
+  type ValidationSlotFailure,
   type ValidationSlotOutcome,
 } from "@chief-of-staff-demo/shared";
-import { modelDiagnosticEventDetail } from "../llm/failure.js";
+import { ModelBoundaryError, modelDiagnosticEventDetail } from "../llm/failure.js";
+import { DebriefStageFailure } from "../modules/meeting-debrief/candidate-extraction.js";
 
 /**
  * Terminal outcomes for planned slots (#363, MWR-020/022/057).
@@ -46,19 +48,36 @@ export function statusForExtractionError(error: unknown): {
   status: Exclude<CampaignTerminalStatus, "success" | "missing">;
   reason: string;
 } {
-  const detail = modelDiagnosticEventDetail(error);
+  /* A stage failure names the stage; its cause is what the classification
+     reads, so an aborted or wrong-shaped call keeps its status (#363). */
+  const cause = error instanceof DebriefStageFailure ? error.cause : error;
+  const detail = modelDiagnosticEventDetail(cause);
   const reason = boundedReason(error);
   if (detail.resultShape !== undefined) return { status: "schema-invalid", reason };
-  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+  if (cause instanceof Error && (cause.name === "AbortError" || cause.name === "TimeoutError")) {
     return { status: "interrupted", reason };
   }
   return { status: "failed", reason };
+}
+
+/** The structured failure an extraction error carries, when it names a stage. */
+export function slotFailureFor(error: unknown): ValidationSlotFailure | null {
+  if (!(error instanceof DebriefStageFailure)) return null;
+  const diagnostic = error.cause instanceof ModelBoundaryError ? error.cause.diagnostic : null;
+  return {
+    stage: error.stage,
+    kind: error.kind,
+    classification: diagnostic?.classification ?? null,
+    httpStatus: diagnostic?.status ?? null,
+    invalidItems: error.invalidItems,
+  };
 }
 
 export interface DeriveSlotOutcomeInput {
   slot: CampaignSlot;
   status: CampaignTerminalStatus;
   reason?: string | null;
+  failure?: ValidationSlotFailure | null | undefined;
   artifactPath?: string | null;
   attempts?: number | undefined;
   processingMs: number;
@@ -88,6 +107,7 @@ export function deriveSlotOutcome(input: DeriveSlotOutcomeInput): ValidationSlot
     slotId: input.slot.slotId,
     status: input.status,
     reason: input.reason ?? null,
+    ...(input.failure ? { failure: input.failure } : {}),
     attempts: input.attempts ?? timeline.length,
     chargedAttempts,
     retries: timeline.filter((entry) => entry.outcome === "failed").length,

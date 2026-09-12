@@ -22,12 +22,15 @@ import {
   type OperationBudgetSnapshot,
   type SourceLifecycleGrant,
   type TranscriptRecord,
+  type ValidationSlotFailure,
   type ValidationSlotOutcome,
 } from "@chief-of-staff-demo/shared";
 import type { ModelBudgetLedger } from "../llm/budget.js";
 import type { ModelTimelineStore } from "../llm/timeline.js";
 import type { CompleteJson } from "../llm/providers.js";
+import { ModelBoundaryError } from "../llm/failure.js";
 import {
+  DebriefStageFailure,
   extractDebriefCandidates,
   type CandidateExtractionOptions,
   type DebriefExtractionRun,
@@ -40,6 +43,7 @@ import {
   decodeOutcomes,
   deriveSlotOutcome,
   finalizeCampaignOutcomes,
+  slotFailureFor,
   statusForExtractionError,
 } from "./outcome.js";
 import { summarizeCampaign } from "./stats.js";
@@ -139,6 +143,7 @@ export function mockModelPriceEvidence(models: readonly string[]): Map<string, M
 interface SlotFacts {
   status: Exclude<CampaignTerminalStatus, "missing">;
   reason: string | null;
+  failure?: ValidationSlotFailure | null | undefined;
   artifactPath: string | null;
   /** Dispatch start to terminal write; the runner adds the slot's own wait. */
   processingMs: number;
@@ -262,6 +267,7 @@ export async function runValidationCampaign(
       slot,
       status: facts.status,
       reason: facts.reason,
+      failure: facts.failure ?? null,
       artifactPath: facts.artifactPath,
       attempts: facts.attempts,
       processingMs: facts.processingMs,
@@ -315,6 +321,12 @@ export interface ExtractionSlotExecutorOptions {
   completeFor: (model: string) => CompleteJson;
   identity: DebriefIdentityReview;
   grantFor?: ((model: string) => SourceLifecycleGrant | null) | undefined;
+  /**
+   * `none` ends a slot at its first failed call or rejected answer with the
+   * stage and the specific complaint recorded, instead of the application's
+   * binding ladder, backoff and repair round (#363).
+   */
+  recovery?: "full" | "none" | undefined;
   strategy: string;
   ledger: ModelBudgetLedger;
   timeline: ModelTimelineStore;
@@ -371,7 +383,11 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
           grant: options.grantFor?.(slot.model) ?? null,
           /* No checkpoint: a cold slot never replays an earlier attempt's
              accepted artifacts, which is what makes its timing a cold run. */
-          retry: { onAttempt: () => {} },
+          retry: {
+            onAttempt: () => {},
+            ...(options.recovery === "none" ? { canRetry: () => false } : {}),
+          },
+          ...(options.recovery ? { recovery: options.recovery } : {}),
           capture: (name: string, value: unknown) => {
             writeTerminalRunOutcome({
               outFile: `${files.outFile}.candidate-${name}.json`,
@@ -408,6 +424,7 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
         return { ...facts("success", null), artifactPath: files.outFile };
       } catch (error) {
         const { status, reason } = statusForExtractionError(error);
+        const failure = slotFailureFor(error);
         const diagnostic =
           error instanceof Error ? `${error.name}: ${error.message}` : String(error);
         try {
@@ -421,7 +438,20 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
               attempts: options.timeline.getOperationTimeline(slot.operationId).length,
               ms: now().getTime() - started,
               error: diagnostic.slice(0, 2000),
-              diagnostic: null,
+              /* The specific complaint, private to the slot: the stage, the
+                 measured facts of a model failure, and the validator's own
+                 listing of what it rejected (#363). */
+              diagnostic:
+                error instanceof DebriefStageFailure
+                  ? {
+                      stage: error.stage,
+                      kind: error.kind,
+                      detail: error.detail,
+                      ...(error.cause instanceof ModelBoundaryError
+                        ? { model: error.cause.diagnostic }
+                        : {}),
+                    }
+                  : null,
             },
             ...fileSeams,
           });
@@ -433,7 +463,7 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
             }`.slice(0, 500),
           };
         }
-        return { ...facts(status, reason), artifactPath: files.errFile };
+        return { ...facts(status, reason), failure, artifactPath: files.errFile };
       }
     },
   };

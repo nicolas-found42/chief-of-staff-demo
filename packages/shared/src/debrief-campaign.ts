@@ -110,11 +110,29 @@ export const CampaignManifestSchema = z.object({
 });
 export type CampaignManifest = z.infer<typeof CampaignManifestSchema>;
 
+/**
+ * Where and how a slot failed, specifically enough to iterate on without
+ * reading artifacts (#363): the stage that ended the extraction, whether the
+ * model call failed or a validator rejected its answer, and the measured
+ * facts of a model failure. The rejected content itself stays in the slot's
+ * private error file.
+ */
+export const ValidationSlotFailureSchema = z.object({
+  stage: z.string().min(1),
+  kind: z.enum(["model", "validator", "shape"]),
+  classification: z.string().nullable(),
+  httpStatus: z.number().int().nullable(),
+  /** How many invalid items the validator listed, when it is a validator failure. */
+  invalidItems: z.number().int().min(0).nullable(),
+});
+export type ValidationSlotFailure = z.infer<typeof ValidationSlotFailureSchema>;
+
 export const ValidationSlotOutcomeSchema = z.object({
   slotId: z.string().min(1),
   status: CampaignTerminalStatusSchema,
   /** Why this outcome is what it is; bounded and never transcript text. */
   reason: z.string().max(2000).nullable(),
+  failure: ValidationSlotFailureSchema.nullable().optional(),
   /** Logical invocations this slot made. */
   attempts: z.number().int().min(0),
   /** Wire attempts charged to the operation, retries and repairs included. */
