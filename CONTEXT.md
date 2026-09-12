@@ -430,6 +430,27 @@ transcript, never by copying a model's answer.
 _Status_: 20, one per fixture transcript. The corpus stays out of git because the transcripts name
 real people and this repo is public; its format and authoring method sit beside it in
 `GOLDEN_FORMAT.md`.
+
+**Validation Campaign**:
+One frozen, private measurement of the Meeting Debrief extractor: a manifest written once before
+the first dispatch — code revision, corpus revision, models and routes, prompts, budgets — plus an
+append-only outcome log with exactly one terminal outcome per planned Campaign Slot. A failed slot
+is never re-run inside the campaign; a later attempt is a new campaign with its own id. The owner
+states its cumulative USD ceiling; nothing defaults it. (ADR-0090)
+_Avoid_: eval run, benchmark run, test run, retry
+
+**Campaign Slot**:
+One planned unit of a Validation Campaign — one case (a Golden transcript or an incident), one
+model, one arm, one repetition — with its own cold root and its own budget operation. Its outcome
+is success, failed, interrupted or missing, with a bounded reason and, under `--no-recovery`, the
+stage and kind of its first failure.
+_Avoid_: run, attempt (an attempt is one wire call inside a slot)
+
+**Blind Judgment**:
+A person's assessment of one Campaign Slot's output without knowing which model or arm produced
+it, retained beside the campaign separately from the deterministic Golden score. A model judgment
+cannot stand in for it where the protocol asks for a human.
+_Avoid_: review, LLM-as-judge score
 _Avoid_: Fixture, expected output, ground truth, snapshot, test case
 
 **Gate Model**:

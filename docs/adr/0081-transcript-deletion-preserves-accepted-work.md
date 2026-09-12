@@ -14,3 +14,14 @@ policy, separate from the models selected for a frozen development campaign. Thi
 ADR-0080's identities and accepted decisions while making removed evidence visibly unavailable.
 These are accepted specifications awaiting implementation and validation, not a cleanup performed
 on the current Workspace or a claim of remote erasure or host/power-loss durability.
+
+**Amended 2026-09-12 ([PR #399](https://github.com/nicolas-found42/chief-of-staff-demo/pull/399), #363):**
+the route policy a source-lifecycle grant carries — `zdrRequired`, `dataCollection`,
+`allowedEndpoints` — was verified by the budget ledger but never reached OpenRouter: nothing set
+`CompletionRequest.routePolicy`. A request that carries a source grant and no explicit policy now
+derives its `provider` block from the grant, so the router enforces the grant (`zdr`,
+`data_collection`, `order`) rather than the app assuming it. Production Debrief requests, whose
+grants require ZDR and deny collection, now say so on the wire; a configured model with no ZDR-listed
+endpoint is refused by routing instead of silently served elsewhere. The default production model
+(`inception/mercury-2.5`, ADR-0094) has a ZDR-listed endpoint.
+
