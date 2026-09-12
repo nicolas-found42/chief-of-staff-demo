@@ -1,4 +1,5 @@
 import { extractionPassages } from "./extraction-passages.js";
+import { claimNamesSubject, declaresOtherSubject } from "./subject-attribution.js";
 import {
   EXTRACTION_PART_REUSE_VERSION,
   ExtractionSchema as Extraction,
@@ -821,6 +822,28 @@ export class PersonResearch {
               "The name match is probably this person, but this run did not establish it.",
           });
 
+        /* One recorder entry per withheld claim, so the operation's
+           diagnostics count them beside its other attribution records. */
+        const attribution = {
+          profile,
+          weakAnchor: identity.anchor === "name",
+          withhold: (claimId: string, reason: string) =>
+            recorder.record({
+              stage: "extraction",
+              code: "off-subject-claim",
+              outcome: "succeeded",
+              recovery: "none",
+              cause: "observed",
+              target: pending.url,
+              targetKind: "url",
+              collector: "extraction",
+              reason,
+              impact: `Claim ${claimId} was withheld from this Profile.`,
+              remediation:
+                "Add a corroborating identity signal to the Profile, or confirm the source manually, so the document can be attributed by more than its name match.",
+            }),
+        };
+
         /* Retain and attribute before spending an extraction call: a later
            model failure or a restart must not discard a retrieved document. */
         const retained = await gate.publish(() => {
@@ -919,7 +942,12 @@ export class PersonResearch {
           ) {
             parts.push(
               prefixExtractionPart(
-                this.parsePartial(checkpointed.result, read, allowance.scope === "current"),
+                this.parsePartial(
+                  checkpointed.result,
+                  read,
+                  allowance.scope === "current",
+                  attribution,
+                ),
                 partIndex,
               ),
             );
@@ -1038,7 +1066,12 @@ export class PersonResearch {
               reason:
                 "The extraction call completed; its size and duration are recorded for call-shape attribution (ADR-0074).",
             });
-            const validated = this.parsePartial(raw, read, allowance.scope === "current");
+            const validated = this.parsePartial(
+              raw,
+              read,
+              allowance.scope === "current",
+              attribution,
+            );
             parts.push(prefixExtractionPart(validated, partIndex));
             answeredParts += 1;
             /* Checkpoint the validated result, never the raw reply, and only
@@ -1715,8 +1748,17 @@ export class PersonResearch {
     url: string,
     linked: Set<string>,
     isPrivate: boolean,
-  ): { decision: "matched" | "probable" | "unmatched"; reason: string } {
-    if (isPrivate) return { decision: "matched", reason: "A confirmed Workspace Transcript." };
+  ): {
+    decision: "matched" | "probable" | "unmatched";
+    reason: string;
+    /* What the decision rests on. `signal` is an occurrence of the Profile's
+       own URL, email or a confirmed Workspace Transcript; `name` is a name
+       match, with or without employer corroboration, and cannot say which
+       parts of the document are about this person (#409). */
+    anchor: "signal" | "name";
+  } {
+    if (isPrivate)
+      return { decision: "matched", reason: "A confirmed Workspace Transcript.", anchor: "signal" };
     const folded = read.text.toLowerCase();
     if (
       [...linked].some((entry) => canonicalSourceUrl(entry) === canonicalSourceUrl(url)) ||
@@ -1725,12 +1767,14 @@ export class PersonResearch {
       return {
         decision: "matched",
         reason: "The Profile names this URL, or a matched source did.",
+        anchor: "signal",
       };
     for (const email of profile.emails)
       if (folded.includes(email.toLowerCase()))
         return {
           decision: "matched",
           reason: "The document contains the Profile's email address.",
+          anchor: "signal",
         };
     /* A registry normalizes a person's name for its own records: repeated
        whitespace collapses and punctuation (a hyphenated given name, an
@@ -1754,7 +1798,11 @@ export class PersonResearch {
         .trim();
     const name = profile.fullName ? foldName(profile.fullName) : null;
     if (!name || !foldName(read.text).includes(name))
-      return { decision: "unmatched", reason: "The document does not name this person." };
+      return {
+        decision: "unmatched",
+        reason: "The document does not name this person.",
+        anchor: "name",
+      };
     const corroborating = [profile.currentEmployer, ...profile.employerHints].filter(
       (value): value is string => !!value,
     );
@@ -1792,12 +1840,14 @@ export class PersonResearch {
         decision: "unmatched",
         reason:
           "The document mentions this name, but none of the individuals it names structurally matches the Profile.",
+        anchor: "name",
       };
     if (matchedIndividuals && !matchedIndividuals.some((entry) => entry.affiliations !== null))
       return {
         decision: "probable",
         reason:
           "This record names the person but its own shape states no affiliation for them, so a same-name match can be neither corroborated nor ruled out.",
+        anchor: "name",
       };
     const ownAffiliations = matchedIndividuals
       ? matchedIndividuals.flatMap((entry) =>
@@ -1813,6 +1863,7 @@ export class PersonResearch {
         return {
           decision: "matched",
           reason: "The document names this person alongside a known employer.",
+          anchor: "name",
         };
     }
     if (
@@ -1824,10 +1875,12 @@ export class PersonResearch {
         decision: "probable",
         reason:
           "The Profile carries no signal beyond the name, so an exact name match is the strongest available anchor. A namesake cannot be ruled out.",
+        anchor: "name",
       };
     return {
       decision: "unmatched",
       reason: "The name appears but none of the Profile's other signals do.",
+      anchor: "name",
     };
   }
 
@@ -1992,6 +2045,13 @@ export class PersonResearch {
     raw: unknown,
     read: SourceReadResult,
     currentOnly: boolean,
+    attribution: {
+      profile: PersonProfile;
+      /* True when the document's identity rests on a name match alone, so it
+         cannot say which of its passages are about this person (#409). */
+      weakAnchor: boolean;
+      withhold: (claimId: string, reason: string) => void;
+    },
   ): z.infer<typeof Extraction> {
     const text = read.text;
     const partial = Extraction.extend({
@@ -2013,6 +2073,20 @@ export class PersonResearch {
           c.status === "unknown" ||
           (c.citations.length > 0 && c.citations.every((p) => text.includes(p.quote))),
       );
+    /* A document that declares a different individual as its own subject
+       carries claims about that individual, grounded and verbatim. Admit one
+       only where its cited sentence names this person; withhold the rest with
+       a reason rather than dropping them silently (#409). */
+    if (attribution.weakAnchor && declaresOtherSubject(text, attribution.profile))
+      claims = claims.filter((c) => {
+        if (c.citations.length === 0 || claimNamesSubject(c, text, attribution.profile))
+          return true;
+        attribution.withhold(
+          c.id,
+          "The document declares a different individual as its subject, and this claim's cited passage does not name this person.",
+        );
+        return false;
+      });
     for (let previous = -1; previous !== claims.length;) {
       previous = claims.length;
       const ids = new Set(claims.map((c) => c.id));

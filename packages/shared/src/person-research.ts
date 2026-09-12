@@ -91,6 +91,8 @@ export const PersonResearchFailureCodeSchema = z.enum([
   // Downstream
   "ambiguous-attribution",
   "identity-unmatched",
+  /** One claim withheld: its document is about a different individual (#409). */
+  "off-subject-claim",
   "invalid-result-shape",
   "model-boundary-failed",
   "model-response-received",
