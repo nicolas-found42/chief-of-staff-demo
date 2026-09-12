@@ -97,3 +97,25 @@ evidence remain external work owned by their tickets; this record defines how
 they are measured, not that they passed. The Scorer keeps owning Golden
 verdicts, the timeline keeps owning per-attempt telemetry, and a campaign adds
 only the immutable plan and the complete outcome ledger.
+
+## Amended 2026-09-12: the owner states the ceiling; a diagnostic mode ends a slot at its first failure
+
+Two additions from the first live campaigns under #363
+([PR #396](https://github.com/nicolas-found42/chief-of-staff-demo/pull/396),
+[PR #400](https://github.com/nicolas-found42/chief-of-staff-demo/pull/400)):
+
+- **The campaign ceiling is the owner's number.** The USD 100 ledger default was an agent
+  recommendation the owner declined; a live campaign now requires `--campaign-allowance <usd>` and
+  refuses to freeze or dispatch without it. An existing ledger keeps the allowance it was created
+  with, so a second campaign on the same `--budget-root` shares one cumulative ceiling. At a zero
+  allowance the ledger admits only free models. ADR-0087 carries the same note.
+- **`--no-recovery` is a diagnostic mode, not the baseline protocol.** The application's recovery —
+  the provider's binding ladder and backoff inside the ceiling, and the one repair round a validator
+  rejection earns — blurs *why* a cheap model failed behind minutes of retries. Under `--no-recovery`
+  the first failed call or rejected answer is terminal; the outcome carries a content-free `failure`
+  record (stage, kind `model`/`validator`/`shape`, classification, HTTP status, invalid-item count),
+  and the slot's private error file holds the specific complaint. A campaign run this way measures
+  the pipeline's first failure per slot, which is the right signal for iterating prompts and code
+  and the wrong one for claiming the application's completion rate; the manifest's code revision and
+  the flag together say which was measured.
+
