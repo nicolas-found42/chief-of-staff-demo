@@ -25,3 +25,10 @@ grants require ZDR and deny collection, now say so on the wire; a configured mod
 endpoint is refused by routing instead of silently served elsewhere. The default production model
 (`inception/mercury-2.5`, ADR-0094) has a ZDR-listed endpoint.
 
+**Amended 2026-09-12 (#402):** an `allowedEndpoints` list is a fence, not a preference. It rode on
+the wire as `order` alone, which OpenRouter treats as a ranking it may fall out of, so a campaign
+that named its endpoints was still served by an unnamed one — in the 2026-09-12 nemo campaign, by
+a route that does not accept the structured-output binding at all. The `provider` block now carries
+`allow_fallbacks: false` beside `order`, so routing either serves a named endpoint or refuses the
+call.
+
