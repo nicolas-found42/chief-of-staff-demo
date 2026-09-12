@@ -1257,6 +1257,43 @@ describe("providers", () => {
     expect(calls[0]?.body.provider).toEqual({ sort: "throughput", preferred_min_throughput: 50 });
   });
 
+  it("openrouter: puts the source grant's route policy on the wire (#363, #341)", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/zdr", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: z.object({ isTranscript: z.boolean() }).passthrough(),
+      preferredBinding: "forced_tool_call",
+      sourceGrant: {
+        id: "grant_1",
+        sourceId: "transcript_1",
+        purpose: "validation-campaign",
+        grantedBy: "owner",
+        grantedAt: "2026-09-12T00:00:00.000Z",
+        revokedAt: null,
+        routePolicy: {
+          zdrRequired: true,
+          dataCollection: "deny",
+          allowedEndpoints: ["Parasail", "DeepInfra"],
+        },
+      },
+    });
+    /* The grant the ledger verified is the grant the router is told about:
+       a ZDR-only, no-collection grant cannot be honoured by a request that
+       leaves routing free to pick any endpoint. */
+    expect(calls[0]?.body.provider).toEqual({
+      sort: "throughput",
+      data_collection: "deny",
+      zdr: true,
+      order: ["Parasail", "DeepInfra"],
+    });
+  });
+
   it("openrouter: keeps a requested throughput floor beside a rested route", async () => {
     declarations.push(declaring("temperature"));
     responses.push({
