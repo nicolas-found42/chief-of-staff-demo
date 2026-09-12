@@ -321,12 +321,6 @@ export interface ExtractionSlotExecutorOptions {
   completeFor: (model: string) => CompleteJson;
   identity: DebriefIdentityReview;
   grantFor?: ((model: string) => SourceLifecycleGrant | null) | undefined;
-  /**
-   * `none` ends a slot at its first failed call or rejected answer with the
-   * stage and the specific complaint recorded, instead of the application's
-   * binding ladder, backoff and repair round (#363).
-   */
-  recovery?: "full" | "none" | undefined;
   strategy: string;
   ledger: ModelBudgetLedger;
   timeline: ModelTimelineStore;
@@ -383,11 +377,11 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
           grant: options.grantFor?.(slot.model) ?? null,
           /* No checkpoint: a cold slot never replays an earlier attempt's
              accepted artifacts, which is what makes its timing a cold run. */
-          retry: {
-            onAttempt: () => {},
-            ...(options.recovery === "none" ? { canRetry: () => false } : {}),
-          },
-          ...(options.recovery ? { recovery: options.recovery } : {}),
+          /* A slot ends at its first failed call or rejected answer with the
+             stage and the specific complaint recorded: no binding ladder, no
+             backoff, no repair round (#363). */
+          retry: { onAttempt: () => {}, canRetry: () => false },
+          recovery: "none",
           capture: (name: string, value: unknown) => {
             writeTerminalRunOutcome({
               outFile: `${files.outFile}.candidate-${name}.json`,

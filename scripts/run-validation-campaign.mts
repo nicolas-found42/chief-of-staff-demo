@@ -119,10 +119,6 @@ Options
                           own allowance. A mock run defaults to 0.
   --concurrency <n>       Slots in flight (default: 4).
   --allow-live            Required before a non-mock provider may dispatch.
-  --no-recovery           End a slot at its first failed call or rejected
-                          answer: no binding ladder, no backoff, no repair
-                          round. The outcome names the stage and the slot's
-                          error file carries the specific complaint.
   --plan-only             Freeze the manifest and print the plan; no dispatch.
   --report <dir>          Rebuild and print one campaign's report; no dispatch.
   --close                 Close the campaign: unrecorded slots become missing with a reason.
@@ -342,7 +338,6 @@ export async function runValidationCampaignCli(
       ]),
     );
     const executor = createExtractionSlotExecutor({
-      ...(flag("no-recovery") ? { recovery: "none" as const } : {}),
       transcriptFor: (caseId) => {
         const entry = cases.get(caseId);
         if (entry === undefined) throw new Error(`Unknown case ${caseId} in the frozen plan.`);
