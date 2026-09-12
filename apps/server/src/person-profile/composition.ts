@@ -6,7 +6,7 @@ import type {
   PersonResearchOperationOutcome,
   PersonSourceDocument,
 } from "@chief-of-staff-demo/shared";
-import type { CompleteJson } from "../llm/providers.js";
+import type { CompleteJson, ModelConfigurationIdentity } from "../llm/providers.js";
 import type { PublicSearch } from "../source-adapters/search.js";
 import { createFeedDiscoverer } from "../source-adapters/feeds.js";
 import { publicHttpFetchBytes, type PublicHttpBytesFetch } from "../source-adapters/http.js";
@@ -102,6 +102,13 @@ export interface PersonProfilesCompositionDeps {
   search: PublicSearch;
   /** Model access, read per call so a Settings edit lands without a restart. */
   complete: () => CompleteJson;
+  /**
+   * Claim extraction's (C1) own Settings purpose (issue #381, R5). Absent
+   * falls back to `complete`, which is the no-op mapping every Workspace
+   * starts on: the split changes no resolved request until this purpose
+   * carries its own override.
+   */
+  completeClaims?: () => CompleteJson;
   /**
    * The research planner's model access, on its own Settings purpose. Absent
    * means the operation expands from collected evidence only.
@@ -220,11 +227,23 @@ export function composePersonProfiles(
     complete: (request) => deps.complete()(request),
     operationModels: () => {
       const plan = deps.researchTestPorts?.plan ?? deps.plan?.();
+      const complete = deps.researchTestPorts?.complete ?? deps.complete();
+      const configuration: ModelConfigurationIdentity | undefined = complete.configuration;
+      /* The resolved provider/model/baseUrl, opaque and stable for as long
+         as the binding is unchanged — the identity validated Extraction Part
+         reuse keys against (#381). A fake seam (tests, researchTestPorts)
+         carries no `configuration`, which is what keeps reuse off under it
+         unless a test supplies its own identity. */
+      const identity = configuration ? JSON.stringify(configuration) : undefined;
       return {
-        complete: deps.researchTestPorts?.complete ?? deps.complete(),
+        complete,
         ...(plan ? { plan } : {}),
+        ...(identity !== undefined ? { identity } : {}),
       };
     },
+    /* Rollback switch for validated Extraction Part reuse (#381, R1):
+       versioned, and off without invalidating anything already stored. */
+    reuseExtractionParts: process.env.PERSON_PROFILE_EXTRACTION_REUSE !== "0",
     /* The planner runs on its own configured purpose, so a Workspace can give
        planning a different model from extraction without either becoming the
        other's fallback. When no planner is configured the operation expands
@@ -316,7 +335,7 @@ export function composePersonProfiles(
       createPublicWebPersonProfileSource({
         search: deps.search,
         discoverFeeds: createFeedDiscoverer(),
-        extractClaims: createPersonClaimExtractor(deps.complete),
+        extractClaims: createPersonClaimExtractor(deps.completeClaims ?? deps.complete),
       }),
     ],
   });

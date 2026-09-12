@@ -298,6 +298,7 @@ const PURPOSE_MODELS: CompositeShape = {
   kind: "object",
   keys: {
     personResearch: SCALAR,
+    personProfileClaims: SCALAR,
     researchPlanning: SCALAR,
     evaluationJudge: SCALAR,
     contentGeneration: SCALAR,

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   PersonEvidenceCandidate,
   PersonEvidenceKind,
@@ -245,6 +246,10 @@ export function createPublicWebPersonProfileSource(input: {
         ).values(),
       ];
       const extractor = input.extractClaims;
+      /* One bootstrap is one measured operation (#381): every claim
+         extraction it fires is attributed to this id in the model timeline,
+         so a bootstrap's calls and charge can be read back as one unit. */
+      const bootstrapId = `person-bootstrap:${randomUUID()}`;
       /* Claims are proposed per result and only for the first few: a model
          call each is worth it for the results a person will actually read,
          and a failed extraction costs the result its claims, never the
@@ -256,6 +261,7 @@ export function createPublicWebPersonProfileSource(input: {
             return await extractor(
               { title: result.title, summary: result.snippet, url: result.url },
               signals,
+              { operationId: bootstrapId },
             );
           } catch {
             return {};

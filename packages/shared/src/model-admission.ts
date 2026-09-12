@@ -120,6 +120,12 @@ export function defaultModelPriceEvidence(): Map<string, ModelPriceEvidence> {
     contextWindowTokens: 1_000_000,
   });
   add({
+    model: "inception/mercury-2.5",
+    inputDollarsPerMillion: 0.04,
+    outputDollarsPerMillion: 0.15,
+    contextWindowTokens: 260_000,
+  });
+  add({
     model: "z-ai/glm-5.3-flash",
     inputDollarsPerMillion: 0.2,
     outputDollarsPerMillion: 0.4,
@@ -279,6 +285,23 @@ export const ModelTimelineEntrySchema = z.object({
   }),
   failureClassification: z.string().nullable().optional(),
   validationOutcome: z.enum(["valid", "repaired", "invalid"]).nullable().optional(),
+  /**
+   * Measurement attribution (issue #381). The purpose the call was resolved
+   * for and the call site that made it: the request shape alone cannot tell
+   * a claim extraction from a dossier extraction, so the caller says.
+   */
+  purpose: z.string().max(80).optional(),
+  callSite: z.string().max(120).optional(),
+  /**
+   * Opaque exact-request fingerprint: a hash over the resolved configuration
+   * and every request dependency, never the request text. Two entries with
+   * one fingerprint asked the configured model the same question.
+   */
+  requestFingerprint: z.string().length(64).optional(),
+  /** Provider wire attempts this logical invocation made, retries included. */
+  wireAttempts: z.number().int().min(0).optional(),
+  /** Prompt tokens the provider reported as served from its input cache. */
+  cachedPromptTokens: z.number().int().min(0).nullable().optional(),
 });
 export type ModelTimelineEntry = z.infer<typeof ModelTimelineEntrySchema>;
 

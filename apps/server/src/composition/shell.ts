@@ -289,10 +289,17 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         admission: modelAdmission,
         budgetLedger: modelBudgetLedger,
         timelineStore: modelTimelineStore,
+        purpose,
       },
     );
   };
   const peopleCompleteJson = () => completeForPurpose("personResearch");
+  /* Claim extraction (C1) is a no-op purpose split from dossier extraction
+     (issue #381, R5): resolving through its own purpose, initially
+     unconfigured so it falls back to the same base model, changes no
+     resolved request today and lets a Settings override tune it alone
+     later. */
+  const peopleClaimsCompleteJson = () => completeForPurpose("personProfileClaims");
   /* One shared PublicSearch instance for every consumer: one home IP shares
      every provider's rate limits, so the query cache and the per-provider
      cooldowns must be app-wide rather than per consumer — three separate
@@ -320,6 +327,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     workspaceDir,
     search: publicSearch,
     complete: peopleCompleteJson,
+    completeClaims: peopleClaimsCompleteJson,
     plan: () => completeForPurpose("researchPlanning"),
     confirmedTranscripts: (profileId) =>
       transcriptIdentityService.confirmedMentions(profileId).flatMap((mention) => {
@@ -634,17 +642,17 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         google: googleConnection,
         getCompleteJson: meetingBriefCompleteJson,
         /* Owner onboarding (issue #123): delivery's outward send waits for the
- confirmed owner reference; eligibility keeps the raw identity. */
+confirmed owner reference; eligibility keeps the raw identity. */
         isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
         personProfiles: peopleProfiles,
         /* An attendee met for the first time is enriched from the public web
- before the Brief pins its revision, so a Calendar shell is not the
- whole of what the Brief knows about a new person. */
+before the Brief pins its revision, so a Calendar shell is not the
+whole of what the Brief knows about a new person. */
         resolveNewAttendee: (email) => peopleResolver.resolve(parsePersonIdentifier(email)),
         /* Confirmed transcript evidence (issue #138): the Brief reads the
- Catalog's confirmed links and its reviewed relevance decisions. */
+Catalog's confirmed links and its reviewed relevance decisions. */
         /* Meeting history (issue #152): the backward read reaches as far as
- the oldest Transcript. */
+the oldest Transcript. */
         oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
         associateTranscripts,
         transcriptRelevance,
@@ -718,8 +726,8 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
             capturedAt: new Date().toISOString(),
             actionItemPolicy: configStore.get().tasks.actionItemPolicy,
             /* The reservation records the release restriction and the owner's
-               explicit enablement alongside the preference (#360), so a later
-               release never reopens this operation. */
+             explicit enablement alongside the preference (#360), so a later
+             release never reopens this operation. */
             authorization: taskProduct.promotion.facts(configStore.get().tasks.actionItemPolicy),
           }),
           log: (message) => console.log(`[meeting-debrief] ${message}`),

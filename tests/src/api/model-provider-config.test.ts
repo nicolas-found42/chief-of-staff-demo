@@ -90,12 +90,12 @@ afterEach(async () => {
 });
 
 describe("GET /api/config — the fresh customer recommendation", () => {
-  it("recommends OpenRouter and prefills the GLM 5.3 Flash model on a fresh Workspace", async () => {
+  it("recommends OpenRouter and prefills the Mercury 2.5 model on a fresh Workspace", async () => {
     const get = await app.inject({ method: "GET", url: "/api/config" });
     expect(get.statusCode).toBe(200);
     const body = get.json<{ config: { provider: string; model: string } }>();
     expect(body.config.provider).toBe("openrouter");
-    expect(body.config.model).toBe("z-ai/glm-5.3-flash");
+    expect(body.config.model).toBe("inception/mercury-2.5");
   });
 });
 
@@ -144,7 +144,7 @@ describe("the BYO key across the credential boundary", () => {
     });
     expect(restarted.getForPurpose("personResearch").model).toBe("research-model");
     expect(restarted.getForPurpose("evaluationJudge").model).toBe("independent-judge");
-    expect(restarted.getForPurpose("meetingBrief").model).toBe("z-ai/glm-5.3-flash");
+    expect(restarted.getForPurpose("meetingBrief").model).toBe("inception/mercury-2.5");
     restarted.update({ provider: "anthropic", model: "another-provider-model" });
     expect(restarted.getForPurpose("evaluationJudge").model).toBe("another-provider-model");
   });

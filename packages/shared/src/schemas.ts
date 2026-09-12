@@ -24,7 +24,7 @@ export const ProviderIdSchema = z.enum(PROVIDERS);
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-5.2",
   anthropic: "claude-sonnet-5",
-  openrouter: "z-ai/glm-5.3-flash",
+  openrouter: "inception/mercury-2.5",
   gemini: "gemini-3.7-flash",
   ollama: "nemotron",
   mock: "",
@@ -35,6 +35,13 @@ export const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 
 export const MODEL_PURPOSES = {
   personResearch: "Person evidence extraction and identity",
+  /* A no-op split from `personResearch` (issue #381, R5): the initial mapping
+     copies the existing configuration, so introducing this purpose alone
+     changes no resolved request. It exists so claim extraction (C1) can
+     later be tuned — a different model, a different route — independently
+     of dossier extraction (E1) without either becoming the other's
+     fallback. */
+  personProfileClaims: "Person profile claim extraction",
   researchPlanning: "Person research planning",
   evaluationJudge: "Research evaluation judge",
   contentGeneration: "Content outlines and drafts",
@@ -46,6 +53,7 @@ export const MODEL_PURPOSES = {
 export type ModelPurpose = keyof typeof MODEL_PURPOSES;
 const PurposeModelsSchema = z.strictObject({
   personResearch: z.string().max(200).optional(),
+  personProfileClaims: z.string().max(200).optional(),
   researchPlanning: z.string().max(200).optional(),
   evaluationJudge: z.string().max(200).optional(),
   contentGeneration: z.string().max(200).optional(),

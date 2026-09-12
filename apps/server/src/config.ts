@@ -109,10 +109,32 @@ function defaultConfig(): AppConfig {
 
 /** Fill in the provider's default model when the stored model is empty. */
 
+/**
+ * Claim extraction's purpose (issue #381, R5) is a no-op split from
+ * `personResearch`: a Workspace that already overrode `personResearch`
+ * before this purpose existed must keep answering claim extraction with
+ * that same model, not silently fall back to the provider default the
+ * moment the split lands. Seeded once, persisted, and never re-seeded once
+ * `personProfileClaims` carries its own value (including one explicitly set
+ * back to empty).
+ */
+function seedClaimsPurpose(models: AppConfig["models"]): AppConfig["models"] {
+  if (!models) return models;
+  const seeded: NonNullable<AppConfig["models"]> = {};
+  for (const [provider, purposes] of Object.entries(models)) {
+    seeded[provider as keyof typeof seeded] =
+      purposes.personResearch && purposes.personProfileClaims === undefined
+        ? { ...purposes, personProfileClaims: purposes.personResearch }
+        : purposes;
+  }
+  return seeded;
+}
+
 function normalize(config: AppConfig): AppConfig {
   return {
     ...config,
     model: config.model === "" ? DEFAULT_MODELS[config.provider] : config.model,
+    ...(config.models ? { models: seedClaimsPurpose(config.models) } : {}),
   };
 }
 

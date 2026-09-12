@@ -11,6 +11,7 @@
         "scripts/person-benchmark-snapshot.mts",
         "scripts/run-debrief-eval-all.mts",
         "scripts/debug/mercury-timeouts.mts",
+        "scripts/debug/mercury-prefix-cache-probe.mts",
         "scripts/debug/extraction-audit.mts",
         "scripts/debug/extraction-live-audit.mts",
         "scripts/run-search-canaries.mjs",
@@ -19,6 +20,10 @@
         "scripts/workspace-backup.mts",
       ],
       "project": ["scripts/**/*.{js,mjs,mts,ts}"],
+      // zod is apps/server's dependency, not the root manifest's: the cache
+      // probe imports it through apps/server's own node_modules to build a
+      // real request schema without duplicating one (#381).
+      "ignoreDependencies": ["zod"],
     },
     "apps/server": {
       "project": ["src/**/*.ts"],

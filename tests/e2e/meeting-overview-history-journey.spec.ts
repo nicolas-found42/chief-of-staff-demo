@@ -256,18 +256,24 @@ test("weekly work keeps accepted Task previews and complete Meeting approval nav
   request,
 }) => {
   await request.post("/api/test/meetings/overview-fixture");
+  /* Due dates relative to the real clock: the server groups Tasks against
+     today, so a fixed date silently crosses from due into overdue. */
+  const dueDateFromToday = (days: number) =>
+    new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+  const overdueDate = dueDateFromToday(-4);
+  const dueDate = dueDateFromToday(1);
   for (let n = 0; n < 7; n++) {
     expect(
       (
         await request.post("/api/tasks", {
-          data: { title: `Weekly overdue ${n}`, dueDate: "2026-09-08" },
+          data: { title: `Weekly overdue ${n}`, dueDate: overdueDate },
         })
       ).ok(),
     ).toBe(true);
     expect(
       (
         await request.post("/api/tasks", {
-          data: { title: `Weekly due ${n}`, dueDate: "2026-09-11" },
+          data: { title: `Weekly due ${n}`, dueDate },
         })
       ).ok(),
     ).toBe(true);

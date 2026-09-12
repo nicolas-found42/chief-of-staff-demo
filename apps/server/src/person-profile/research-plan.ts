@@ -417,12 +417,17 @@ export interface DerivedQuery {
   family?: PersonSourceFamily;
 }
 
+/** The call site every planning call is attributed to in the timeline (P1). */
+export const PLANNING_CALL_SITE = "person-research:planning";
+
 export interface PlanRequest {
   profile: PersonProfile;
   dossier: PersonDossier | null;
   unsatisfied: PersonResearchCoverageArea[];
   investigated: string[];
   round: number;
+  /** The operation this planning call is measured under (#381); attribution only. */
+  operationId?: string;
   /** Observes the planning call's wire attempts, for the operation's record. */
   onAttempt?: (event: ModelAttemptEvent) => void;
   /** The call's size, duration and reported tokens, measured where the payload is built. */
@@ -490,6 +495,9 @@ export async function planNextLeads(
     temperature: 0,
     system,
     user,
+    ...(request.operationId
+      ? { trace: { operationId: request.operationId, callSite: PLANNING_CALL_SITE } }
+      : {}),
   });
   request.onMetrics?.({
     durationMilliseconds: Date.now() - planStartedAt,

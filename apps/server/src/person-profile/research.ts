@@ -1,4 +1,10 @@
 import { extractionPassages } from "./extraction-passages.js";
+import {
+  EXTRACTION_PART_REUSE_VERSION,
+  ExtractionSchema as Extraction,
+  extractionPartKey,
+  replayGrounded,
+} from "./extraction-parts.js";
 import { SourceScheduler } from "./source-scheduler.js";
 import { WorkLimiter } from "./work-limiter.js";
 import { canonicalSourceUrl } from "../source-adapters/source-identity.js";
@@ -66,14 +72,6 @@ import {
   selectReadBatch,
 } from "./research-policy.js";
 
-const Extraction = PersonDossierContentSchema.extend({
-  fullName: z.string().max(200).nullable(),
-  employer: z.string().max(200).nullable(),
-  sourceClass: z.enum(["self-report", "independent-account", "primary-artifact"]),
-  author: z.string().max(1000).nullable(),
-  publishedAt: z.string().max(40).nullable(),
-});
-
 /**
  * How many extraction calls may fail at the model boundary in a row before the
  * operation stops calling it.
@@ -98,6 +96,8 @@ const EXTRACTION_BOUNDARY_FAILURE_TOLERANCE = 3;
  * attributable instead of silently faster (#233).
  */
 export const EXTRACTION_PREFERRED_MIN_THROUGHPUT = 50;
+/** The call site every dossier extraction part is attributed to in the timeline (E1). */
+export const EXTRACTION_CALL_SITE = "person-research:extraction";
 
 /**
  * How far below the round's read batch a deferred lead's score may fall before
@@ -232,8 +232,19 @@ export class PersonResearch {
       fetchBytes?: PublicHttpBytesFetch;
       render?: BrowserRenderer;
       complete: CompleteJson;
-      /** Resolve configured model bindings once so exact reuse cannot cross a model change. */
-      operationModels?: () => { complete: CompleteJson; plan?: CompleteJson };
+      /**
+       * Resolve configured model bindings once so exact reuse cannot cross a
+       * model change. `identity` names the resolved extraction model
+       * opaquely; without it no Extraction Part is ever served from a
+       * checkpoint, because content alone never keys a hit (#381).
+       */
+      operationModels?: () => { complete: CompleteJson; plan?: CompleteJson; identity?: string };
+      /**
+       * Rollback switch for validated Extraction Part reuse (#381, R1). Off
+       * means every part is extracted afresh, exactly as before the change;
+       * checkpoints already stored stay where they are and stay valid.
+       */
+      reuseExtractionParts?: boolean;
       /** The planning model. Absent means deterministic planning only. */
       plan?: CompleteJson;
       /**
@@ -258,10 +269,13 @@ export class PersonResearch {
   ) {}
 
   async run(profile: PersonProfile, allowance: ResearchAllowance): Promise<ResearchOutcome> {
-    const models = this.deps.operationModels?.() ?? {
-      complete: this.deps.complete,
-      plan: this.deps.plan,
-    };
+    const models: { complete: CompleteJson; plan?: CompleteJson; identity?: string } =
+      this.deps.operationModels?.() ?? {
+        complete: this.deps.complete,
+        ...(this.deps.plan ? { plan: this.deps.plan } : {}),
+        /* Without the composition's binding resolution the extraction model
+           has no identity, and reuse stays off. */
+      };
     const now = this.deps.now ?? (() => new Date());
     const operationId = allowance.checkpoint?.operationId ?? randomUUID();
     const recorder = new ResearchAttemptRecorder(operationId, now);
@@ -282,6 +296,17 @@ export class PersonResearch {
     let rounds = allowance.checkpoint?.pass ?? 0;
     const retainedSourceIds = new Set(allowance.checkpoint?.retainedSourceIds ?? []);
     let claimsPublished = 0;
+    /* First wall-clock moment this operation published anything (#381,
+       Step 0's useful-output-vs-cost summary): a cheaper run that simply
+       researches less must not look faster to publish. A holder, not a
+       plain `let`, because it is only ever written from inside an async
+       closure below — a bare `let` narrows to always-`null` at the read
+       site from the checker's point of view. */
+    const firstPublication: { at: string | null } = { at: null };
+    /* Extraction Parts served from validated checkpoints; counted beside
+       model calls, never as them (#381). */
+    let modelCallsReused = 0;
+    const reuseParts = this.deps.reuseExtractionParts !== false && models.identity !== undefined;
     let interruption: {
       code: PersonResearchOperationOutcome["interruption"];
       reason: string;
@@ -817,10 +842,19 @@ export class PersonResearch {
         const passages = extractionPassages(read.text, profile);
         const partTexts = passages.map((passage) => passage.text);
         const parts: z.infer<typeof Extraction>[] = [];
+        /* Parts the provider actually answered in this run. A served hit is
+           not a provider answer: it neither resets nor counts toward the
+           health latch, which keeps a resumed document from masking an
+           outage or manufacturing one (#381). */
+        let answeredParts = 0;
+        const textHash = reuseParts ? createHash("sha256").update(read.text).digest("hex") : null;
         let documentFailed = false;
         let documentInterrupted = false;
         for (const [partIndex, partText] of partTexts.entries()) {
-          if (!budget.takeModelCall()) break;
+          /* A hit never bypasses the operation's activity or clock/ceiling
+             checks any more than a call does; the parts read so far stay
+             resumable (#381). */
+          if (!active() || !budget.within()) break;
           const extractionAttemptOf = randomUUID();
           const boundaryObservation = { failureRecorded: false };
           const partStartedAt = Date.now();
@@ -848,54 +882,130 @@ export class PersonResearch {
               outboundUrls: read.outboundUrls.slice(0, 80),
             },
           });
+          /* Validated exact-request reuse (#381, R1). The key is the complete
+             request identity; a checkpoint under it is the validated answer
+             to exactly this question, served only after it re-proves its
+             grounding against the retained bytes. A hit spends no allowance
+             and re-enters every downstream boundary as a fresh answer would. */
+          const partKey =
+            reuseParts && textHash !== null
+              ? extractionPartKey({
+                  operationId,
+                  profileId: profile.id,
+                  profileRevision: profile.revision,
+                  sourceId: retained.id,
+                  textHash,
+                  partIndex,
+                  partCount: partTexts.length,
+                  offset: passages[partIndex]!.offset,
+                  length: partText.length,
+                  modelIdentity: models.identity!,
+                  system: EXTRACTION_SYSTEM,
+                  user: partUser,
+                  options: {
+                    preferredBinding: "forced_tool_call",
+                    temperature: 0,
+                    compactWireNames: true,
+                    preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
+                  },
+                })
+              : null;
+          const checkpointed = partKey ? this.deps.dossiers.extractionPart(partKey) : null;
+          if (
+            checkpointed &&
+            checkpointed.sourceId === retained.id &&
+            checkpointed.textHash === textHash &&
+            replayGrounded(checkpointed.result, read.text)
+          ) {
+            parts.push(
+              prefixExtractionPart(
+                this.parsePartial(checkpointed.result, read, allowance.scope === "current"),
+                partIndex,
+              ),
+            );
+            modelCallsReused += 1;
+            recorder.record({
+              stage: "extraction",
+              code: "model-call-reused",
+              outcome: "succeeded",
+              recovery: "none",
+              cause: "observed",
+              target: pending.url,
+              targetKind: "model",
+              collector: "extraction",
+              attemptOf: extractionAttemptOf,
+              attempt: 1,
+              configuration: {
+                logicalCall: extractionAttemptOf,
+                extractionPart: `${partIndex + 1}/${partTexts.length}`,
+                reuseKeyVersion: String(EXTRACTION_PART_REUSE_VERSION),
+                checkpointedBy: checkpointed.recordedAt,
+              },
+              observed: {
+                modelCallDurationMilliseconds: Date.now() - partStartedAt,
+                modelInputCharacters: EXTRACTION_SYSTEM.length + partUser.length,
+                modelOutputCharacters: JSON.stringify(checkpointed.result).length,
+              },
+              reason:
+                "This part's validated result was served from its checkpoint; no model call was made (#381).",
+            });
+            continue;
+          }
+          if (!budget.takeModelCall()) break;
           let partUsage: ModelAttemptEvent["usage"];
           let raw: unknown;
           try {
-            raw = await models.complete({
-              schema: Extraction,
-              preferredBinding: "forced_tool_call",
-              absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
-              retry: {
-                canRetry: () =>
-                  Date.now() - started < allowance.maxMilliseconds &&
-                  active() &&
-                  (!privateDocument || privateDocument.active()),
-                onAttempt: (event) => {
-                  if (event.outcome === "failed") boundaryObservation.failureRecorded = true;
-                  if (event.outcome === "succeeded" && event.usage) partUsage = event.usage;
-                  recordModelWireAttempt(recorder, {
-                    stage: "extraction",
-                    collector: "extraction",
-                    target: pending.url,
-                    attemptOf: extractionAttemptOf,
-                    event,
-                    successReason:
-                      "The model boundary returned JSON; dossier validation and publication follow.",
-                    successImpact: "A model response is available for evidence validation.",
-                    remediation:
-                      "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
-                    configuration: {
-                      preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
-                      extractionPart: `${partIndex + 1}/${partTexts.length}`,
-                    },
-                  });
+            raw = await this.modelWork.run(() =>
+              models.complete({
+                schema: Extraction,
+                preferredBinding: "forced_tool_call",
+                absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
+                retry: {
+                  canRetry: () =>
+                    Date.now() - started < allowance.maxMilliseconds &&
+                    active() &&
+                    (!privateDocument || privateDocument.active()),
+                  onAttempt: (event) => {
+                    if (event.outcome === "failed") boundaryObservation.failureRecorded = true;
+                    if (event.outcome === "succeeded" && event.usage) partUsage = event.usage;
+                    recordModelWireAttempt(recorder, {
+                      stage: "extraction",
+                      collector: "extraction",
+                      target: pending.url,
+                      attemptOf: extractionAttemptOf,
+                      event,
+                      successReason:
+                        "The model boundary returned JSON; dossier validation and publication follow.",
+                      successImpact: "A model response is available for evidence validation.",
+                      remediation:
+                        "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+                      configuration: {
+                        preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
+                        extractionPart: `${partIndex + 1}/${partTexts.length}`,
+                      },
+                    });
+                  },
                 },
-              },
-              /* Steer the first attempt onto a fast route: the routes that lose
-                 an operation generate at 24-28 tok/s against 66-75 on the ones
-                 that complete it (#232). A routing preference, never a model
-                 change — provider and model stay exactly as configured. */
-              preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
-              temperature: 0,
-              /* A dossier repeats its field names once per claim, and they were
-                 a quarter to a third of every answer. Abbreviating them on the
-                 wire cut output tokens 21% and wall time 15% without touching
-                 this schema, which is still what the answer is validated
-                 against (#232). */
-              compactWireNames: true,
-              system: EXTRACTION_SYSTEM,
-              user: partUser,
-            });
+                /* Steer the first attempt onto a fast route: the routes that lose
+                   an operation generate at 24-28 tok/s against 66-75 on the ones
+                   that complete it (#232). A routing preference, never a model
+                   change — provider and model stay exactly as configured. */
+                preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
+                temperature: 0,
+                /* A dossier repeats its field names once per claim, and they were
+                   a quarter to a third of every answer. Abbreviating them on the
+                   wire cut output tokens 21% and wall time 15% without touching
+                   this schema, which is still what the answer is validated
+                   against (#232). */
+                compactWireNames: true,
+                system: EXTRACTION_SYSTEM,
+                user: partUser,
+                /* Measurement attribution (#381): the timeline tells this
+                   dossier extraction (E1) from a claim extraction on the same
+                   purpose only because the call says which it is. */
+                trace: { operationId, callSite: EXTRACTION_CALL_SITE },
+              }),
+            );
             recorder.record({
               stage: "extraction",
               code: "model-call-metrics",
@@ -928,12 +1038,22 @@ export class PersonResearch {
               reason:
                 "The extraction call completed; its size and duration are recorded for call-shape attribution (ADR-0074).",
             });
-            parts.push(
-              prefixExtractionPart(
-                this.parsePartial(raw, read, allowance.scope === "current"),
-                partIndex,
-              ),
-            );
+            const validated = this.parsePartial(raw, read, allowance.scope === "current");
+            parts.push(prefixExtractionPart(validated, partIndex));
+            answeredParts += 1;
+            /* Checkpoint the validated result, never the raw reply, and only
+               once every existing check has passed on it. */
+            if (partKey && textHash !== null)
+              this.deps.dossiers.retainExtractionPart({
+                key: partKey,
+                profileId: profile.id,
+                operationId,
+                sourceId: retained.id,
+                textHash,
+                part: `${partIndex + 1}/${partTexts.length}`,
+                ...(privateDocument ? { transcriptId: privateDocument.transcriptId } : {}),
+                result: validated,
+              });
           } catch (error) {
             documentFailed = true;
             const zod = error instanceof z.ZodError;
@@ -1020,8 +1140,8 @@ export class PersonResearch {
         if (documentFailed) {
           /* A part that answered is a provider success: the strike counts the
              document whose extraction failed, and any answered part resets
-             the consecutive run. */
-          if (parts.length > 0) {
+             the consecutive run. A served hit is not an answer. */
+          if (answeredParts > 0) {
             extractionHealth.success();
           }
           return;
@@ -1031,7 +1151,7 @@ export class PersonResearch {
            single-call extraction that never ran. */
         if (parts.length < partTexts.length) return;
         const extracted = combineExtractionParts(parts);
-        extractionHealth.success();
+        if (answeredParts > 0) extractionHealth.success();
         if (!active()) return;
         if (privateDocument && !privateDocument.active()) {
           leads.resolve(
@@ -1093,6 +1213,7 @@ export class PersonResearch {
         const { source, content } = published;
 
         claimsPublished += content.claims.length;
+        firstPublication.at ??= now().toISOString();
         let novelClaims = 0;
         for (const claim of content.claims) {
           if (claim.status !== "supported" || !claim.citations.length) continue;
@@ -1276,25 +1397,27 @@ export class PersonResearch {
             checkpoint();
             return;
           }
-          const succeeded = await this.modelWork.run(async () => {
-            const extractionStarted = Date.now();
-            await processRead(entry);
-            const host = hostOf(entry.read.finalUrl) ?? hostOf(pending.url);
-            if (host) {
-              const previous = sourcePerformance.get(host) ?? {
-                reads: 0,
-                useful: 0,
-                milliseconds: 0,
-              };
-              sourcePerformance.set(host, {
-                reads: previous.reads + 1,
-                useful: previous.useful + (leads.get(pending.leadId)?.yieldedEvidence ? 1 : 0),
-                milliseconds:
-                  previous.milliseconds + entry.readMilliseconds + Date.now() - extractionStarted,
-              });
-            }
-            return leads.get(pending.leadId)?.disposition === "investigated";
-          });
+          const extractionStarted = Date.now();
+          /* Only the model call itself spends a model-work permit (#381, R2):
+             retaining, publication and checkpointing are not model work, and
+             must never hold one of the four composition-wide permits idle
+             while another person's extraction is ready and waiting for it. */
+          await processRead(entry);
+          const host = hostOf(entry.read.finalUrl) ?? hostOf(pending.url);
+          if (host) {
+            const previous = sourcePerformance.get(host) ?? {
+              reads: 0,
+              useful: 0,
+              milliseconds: 0,
+            };
+            sourcePerformance.set(host, {
+              reads: previous.reads + 1,
+              useful: previous.useful + (leads.get(pending.leadId)?.yieldedEvidence ? 1 : 0),
+              milliseconds:
+                previous.milliseconds + entry.readMilliseconds + Date.now() - extractionStarted,
+            });
+          }
+          const succeeded = leads.get(pending.leadId)?.disposition === "investigated";
           if (succeeded) extractedVersions.add(key);
         });
       });
@@ -1352,6 +1475,7 @@ export class PersonResearch {
               unsatisfied: unsatisfiedAreas,
               investigated: leads.investigatedTargets(),
               round: rounds,
+              operationId,
               onAttempt: (event) => {
                 if (event.outcome === "failed") planningFailureRecorded.value = true;
                 recordModelWireAttempt(recorder, {
@@ -1538,10 +1662,12 @@ export class PersonResearch {
       finishedAt: now().toISOString(),
       rounds,
       modelCalls: budget.spentModelCalls,
+      ...(modelCallsReused ? { modelCallsReused } : {}),
       requests: budget.spentRequests,
       sourcesRetained: retainedSourceIds.size,
       retainedSourceIds: [...retainedSourceIds],
       claimsPublished,
+      ...(firstPublication.at ? { firstPublishedAt: firstPublication.at } : {}),
       ...(dossier ? { publishedDossierRevision: dossier.revision } : {}),
       coverage,
       leads: leads.all(),

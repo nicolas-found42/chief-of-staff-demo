@@ -101,6 +101,8 @@ export const PersonResearchFailureCodeSchema = z.enum([
   // Recovery bookkeeping
   "retrieval-recovered",
   "model-call-metrics",
+  /** An Extraction Part served from a validated checkpoint (#381); no call was made. */
+  "model-call-reused",
   "unknown-cause",
 ]);
 export type PersonResearchFailureCode = z.infer<typeof PersonResearchFailureCodeSchema>;
@@ -293,12 +295,24 @@ export const PersonResearchOperationOutcomeSchema = z.object({
   rounds: z.number().int().nonnegative(),
   /** Logical model invocations; opted-in wire attempts are recorded in attempts. */
   modelCalls: z.number().int().nonnegative(),
+  /**
+   * Extraction Parts served from validated checkpoints instead of a model
+   * call (issue #381, R1). Counted apart from `modelCalls`, never inside it:
+   * a hit consumed no allowance and no wire charge.
+   */
+  modelCallsReused: z.number().int().nonnegative().optional(),
   requests: z.number().int().nonnegative(),
   /** Distinct source versions retained or reused by this operation, including unattempted versions. */
   sourcesRetained: z.number().int().nonnegative(),
   /** Absent on legacy outcomes whose exact retained-version identities were not recorded. */
   retainedSourceIds: z.array(z.string().length(64)).max(10000).optional(),
   claimsPublished: z.number().int().nonnegative(),
+  /**
+   * The wall-clock moment this operation first published anything, absent
+   * when it never did. Paired with cost so a cheaper run that researches
+   * less cannot read as a faster one to useful output (issue #381).
+   */
+  firstPublishedAt: z.string().max(40).optional(),
   /** The last dossier revision this operation published. */
   publishedDossierRevision: z.number().int().nonnegative().optional(),
   coverage: z.array(PersonResearchCoverageAreaSchema).max(80),
