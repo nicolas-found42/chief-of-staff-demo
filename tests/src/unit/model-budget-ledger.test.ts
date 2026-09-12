@@ -29,6 +29,45 @@ describe("ModelBudgetLedger", () => {
     rmSync(workspaceDir, { recursive: true, force: true });
   });
 
+  it("creates a ledger with the campaign allowance the owner states, and keeps it (#363)", () => {
+    const ledger = new ModelBudgetLedger(workspaceDir, { campaignAllowanceDollars: 0 });
+    expect(ledger.getCampaignSnapshot()).toMatchObject({ allowedDollars: 0, remainingDollars: 0 });
+    // Any priced reservation is refused under a zero allowance; a free one passes.
+    const free = "nex-agi/nex-n2.5-mini:free";
+    const paid = "deepseek/deepseek-v4.1-flash";
+    ledger.getOrCreateOperationSnapshot("op_free", "run_free", "debrief");
+    expect(() =>
+      ledger.reserve({
+        operationId: "op_free",
+        model: free,
+        system: "system",
+        user: "user",
+        grant: createSourceLifecycleGrant({
+          sourceId: "t",
+          purpose: "validation-campaign",
+          model: free,
+        }),
+      }),
+    ).not.toThrow();
+    ledger.getOrCreateOperationSnapshot("op_paid", "run_paid", "debrief");
+    expect(() =>
+      ledger.reserve({
+        operationId: "op_paid",
+        model: paid,
+        system: "system",
+        user: "user",
+        grant: createSourceLifecycleGrant({
+          sourceId: "t",
+          purpose: "validation-campaign",
+          model: paid,
+        }),
+      }),
+    ).toThrow(BudgetExhaustedError);
+    // Persisted: a later ledger over the same root does not reset it to a default.
+    const reopened = new ModelBudgetLedger(workspaceDir, { campaignAllowanceDollars: 50 });
+    expect(reopened.getCampaignSnapshot().allowedDollars).toBe(0);
+  });
+
   it("initializes with approved default campaign and operation budgets", () => {
     const ledger = new ModelBudgetLedger(workspaceDir);
     const campaign = ledger.getCampaignSnapshot();

@@ -35,7 +35,12 @@ across all providers — enters one Shell-owned admission service:
 
 All attempts under an operation share durable spend and token allowances:
 
-- **Approved ceilings.** Campaign budget defaults to USD 100.00; whole Debrief and Brief
+- **Approved ceilings.** _Amended 2026-09-12 (#363): the USD 100 campaign figure below was the
+  agent's recommendation under a delegated "your rec", and the owner has since declined to
+  approve it. A validation campaign now takes its cumulative ceiling from the owner on the
+  command line (`--campaign-allowance`), with no default; the constant remains only as the
+  production Workspace ledger's seed pending a separate owner decision._ Campaign budget
+  defaults to USD 100.00; whole Debrief and Brief
   operations default to USD 2.00 allowances with 4,000,000 input and 500,000 output token
   safety ceilings. Allowances do not reset across retries, restarts, or model variants.
 - **Conservative preflight reservation.** Before each wire dispatch, conservative token

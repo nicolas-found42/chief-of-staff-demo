@@ -339,9 +339,12 @@ pnpm run eval:campaign -- --plan-only --provider mock   # freeze and print the p
 
 Live dispatch is an explicit act: `--allow-live` plus `--grant <file>` (an owner
 source-lifecycle grant for `validation-campaign` use) and the provider's
-credentials. The USD 100 campaign allowance and USD 2 per-Debrief allowance are
-the ledger defaults; point `--budget-root` at durable private state so a new
-session cannot reset what was spent. The live baseline, comparison, final and
+credentials, and `--campaign-allowance <usd>`: the owner states the campaign's
+cumulative ceiling, nothing defaults it (the former USD 100 default was an agent
+recommendation the owner never approved; see ADR-0087). The USD 2 per-Debrief
+allowance remains the operation default. Point `--budget-root` at durable
+private state so a new session cannot reset what was spent — an existing ledger
+keeps the allowance it was created with. The live baseline, comparison, final and
 Brief protocols, route/account authorization and human adjudication are external
 prerequisites — the harness records them, it does not perform them.
 

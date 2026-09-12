@@ -1167,6 +1167,34 @@ describe("campaign CLI", () => {
     expect(manifestBytes).toContain(caseIds[0]);
   });
 
+  it("refuses a live provider without an owner-stated campaign allowance (#363)", async () => {
+    const { corpusDir, incidentsDir, mockResult } = cliCorpus("ZALLOW");
+    const outDir = tempDir("campaign-out-");
+    const result = await runValidationCampaignCli(
+      [
+        "--campaign-id",
+        "campaign-allowance-test",
+        "--corpus",
+        corpusDir,
+        "--incidents",
+        incidentsDir,
+        "--models",
+        "nex-agi/nex-n2.5-mini:free",
+        "--provider",
+        "openrouter",
+        "--mock-result",
+        mockResult,
+        "--out",
+        outDir,
+        "--plan-only",
+      ],
+      {},
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("--campaign-allowance");
+    expect(existsSync(join(outDir, "manifest.json"))).toBe(false);
+  });
+
   it("freezes the plan without dispatching in plan-only mode", async () => {
     const { corpusDir, incidentsDir, mockResult } = cliCorpus("ZPLAN");
     const outDir = tempDir("campaign-out-");
