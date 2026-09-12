@@ -50,9 +50,29 @@ export interface SlotProgressInput {
   chargedAttempts: number;
   processingMs: number;
   costDollars: number;
+  /** Where a failed slot ended, when the extraction named it (#363). */
+  failure?:
+    | {
+        stage: string;
+        kind: string;
+        classification: string | null;
+        httpStatus: number | null;
+        invalidItems: number | null;
+      }
+    | null
+    | undefined;
 }
 
 /** One slot's line: position, model and outcome shape — never its case id. */
 export function renderSlotProgress(input: SlotProgressInput): string {
-  return `[${input.index + 1}/${input.total}] ${input.kind} ${input.model} ${input.arm} r${input.repetition} — ${input.status} attempts=${input.chargedAttempts} ${input.processingMs}ms $${input.costDollars.toFixed(4)}`;
+  const line = `[${input.index + 1}/${input.total}] ${input.kind} ${input.model} ${input.arm} r${input.repetition} — ${input.status} attempts=${input.chargedAttempts} ${input.processingMs}ms $${input.costDollars.toFixed(4)}`;
+  if (!input.failure) return line;
+  const facts = [
+    `stage=${input.failure.stage}`,
+    input.failure.kind,
+    ...(input.failure.classification ? [input.failure.classification] : []),
+    ...(input.failure.httpStatus !== null ? [`http=${input.failure.httpStatus}`] : []),
+    ...(input.failure.invalidItems !== null ? [`invalid=${input.failure.invalidItems}`] : []),
+  ];
+  return `${line} ${facts.join(" ")}`;
 }

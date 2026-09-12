@@ -205,6 +205,75 @@ export interface CandidateExtractionOptions {
     state: "started" | "completed" | "reused";
     durationMs?: number;
   }) => void;
+  /**
+   * How much the pipeline may do about a failing call (#363). `full` is the
+   * application's behaviour: the provider layer walks its binding ladder and
+   * backs off inside the ceiling, and a validator rejection earns one repair
+   * round. `none` is the diagnostic setting a validation campaign iterates
+   * under: the first failed call and the first validator rejection end the
+   * extraction with a DebriefStageFailure that names the stage and carries
+   * exactly what was rejected, so a person can read the reason without
+   * waiting for recovery that would only blur it.
+   */
+  recovery?: "full" | "none" | undefined;
+}
+
+/**
+ * One stage of the extraction ended it (#363). `stage` is the call name the
+ * pipeline captured artifacts under (`coverage-1`, `status-30`), `kind` says
+ * whether the model call failed or a validator rejected its answer, and
+ * `detail` is the specific complaint: for a validator the repair request's own
+ * listing of the invalid items, for a model call the boundary diagnostic. The
+ * original error rides as `cause` so classification still sees it.
+ */
+export class DebriefStageFailure extends Error {
+  readonly stage: string;
+  readonly kind: "model" | "validator" | "shape";
+  readonly detail: string;
+  /** How many items the validator listed; null unless it is a validator failure. */
+  readonly invalidItems: number | null;
+
+  constructor(input: {
+    stage: string;
+    kind: "model" | "validator" | "shape";
+    detail: string;
+    cause?: unknown;
+  }) {
+    const invalidItems = input.kind === "validator" ? countInvalidItems(input.detail) : null;
+    /* The message is bounded shape, never content: a model failure's own
+       message is already sanitized, and a validator complaint names its
+       rejected quotes, which belong in the private slot record alone. */
+    const summary =
+      input.kind === "model"
+        ? `model call failed: ${input.detail.slice(0, 300)}`
+        : input.kind === "shape"
+          ? `answer had the wrong shape: ${input.detail.slice(0, 300)}`
+          : `answer was rejected by its validator (${invalidItems} invalid item${invalidItems === 1 ? "" : "s"}; the slot's error file lists them)`;
+    super(
+      `Meeting Debrief stage ${input.stage} ${summary}`,
+      input.cause === undefined ? undefined : { cause: input.cause },
+    );
+    this.name = "DebriefStageFailure";
+    this.stage = input.stage;
+    this.kind = input.kind;
+    this.detail = input.detail;
+    this.invalidItems = invalidItems;
+  }
+}
+
+/** The items a repair request lists: one per object in its JSON listings. */
+function countInvalidItems(complaint: string): number {
+  return complaint.match(/\{"/g)?.length ?? 0;
+}
+
+/** The repair request without its transcript sections: the complaint alone. */
+function repairComplaint(user: string): string {
+  return user
+    .replace(/<transcript-section>[\s\S]*?<\/transcript-section>/g, "")
+    .replace(/<transcript>[\s\S]*?<\/transcript>/g, "")
+    .replace(/<context>[\s\S]*?<\/context>/g, "")
+    .trim()
+    .slice(0, 6000);
 }
 
 /** Source-scoped discovery, total candidate accounting and deterministic final assembly. */
@@ -331,6 +400,13 @@ function prepareDebriefExtraction(options: CandidateExtractionOptions) {
     outputSchema?: z.ZodType<T>,
   ): Promise<T> {
     system = `${system}\n${evidenceReferences}`;
+    if (options.recovery === "none" && name.endsWith("-repair")) {
+      throw new DebriefStageFailure({
+        stage: name.slice(0, -"-repair".length),
+        kind: "validator",
+        detail: repairComplaint(user),
+      });
+    }
     const attempts: ModelAttemptEvent[] = [];
     const request = {
       schema: outputSchema ?? schema,
@@ -389,12 +465,34 @@ function prepareDebriefExtraction(options: CandidateExtractionOptions) {
     }
     const started = Date.now();
     options.progress?.({ name, state: "started" });
-    const raw = await complete(request);
+    let raw: unknown;
+    try {
+      raw = await complete(request);
+    } catch (error) {
+      if (options.recovery !== "none") throw error;
+      throw new DebriefStageFailure({
+        stage: name,
+        kind: "model",
+        detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        cause: error,
+      });
+    }
     capture?.(`${name}-raw`, raw);
     // Some providers return the discovery array without its single envelope.
     // Validate every candidate against the same strict schema before accepting it.
     const value = Object.is(schema, Discovery) && Array.isArray(raw) ? { candidates: raw } : raw;
-    const parsed = parseResultShape(`MeetingDebrief-${name}`, schema, value);
+    let parsed: T;
+    try {
+      parsed = parseResultShape(`MeetingDebrief-${name}`, schema, value);
+    } catch (error) {
+      if (options.recovery !== "none") throw error;
+      throw new DebriefStageFailure({
+        stage: name,
+        kind: "shape",
+        detail: error instanceof Error ? error.message : String(error),
+        cause: error,
+      });
+    }
     if (cacheable && (!validate || validate(parsed))) options.checkpoint?.write(key, value);
     options.progress?.({ name, state: "completed", durationMs: Date.now() - started });
     return parsed;
