@@ -760,6 +760,11 @@ describe("providers", () => {
     ["some/listed", { efforts: ["high", "medium", "low"], mandatory: true }],
     ["some/no-efforts", { efforts: null, mandatory: false }],
     ["some/optional", { efforts: ["low"], mandatory: false }],
+    /* nex-agi/nex-n2.5-mini:free as OpenRouter lists it (#363): no "low",
+       provider default "high". Omitting the effort here meant minutes of
+       silent reasoning and a request-ceiling failure on every campaign slot. */
+    ["some/no-low", { efforts: ["high", "medium", "none"], mandatory: false }],
+    ["some/no-low-mandatory", { efforts: ["high", "medium"], mandatory: true }],
   ]);
   it.each([
     ["listed default resolves low", undefined, "some/listed", "low"],
@@ -767,8 +772,18 @@ describe("providers", () => {
     ["optional none sends none", "none", "some/no-efforts", "none"],
     ["unadvertised efforts send the default", undefined, "some/no-efforts", "low"],
     ["unknown model omits", undefined, "some/unknown", undefined],
-    ["mandatory none omits", "none", "some/listed", undefined],
-    ["unlisted value omits", "ultra", "some/listed", undefined],
+    /* An unsupported level resolves to the nearest advertised one, preferring
+       lower, rather than to silence that hands the provider its own default. */
+    ["unsupported low steps down to none when allowed", undefined, "some/no-low", "none"],
+    [
+      "unsupported low steps up to medium when none is refused",
+      undefined,
+      "some/no-low-mandatory",
+      "medium",
+    ],
+    ["mandatory none steps up to the lowest advertised", "none", "some/listed", "low"],
+    ["unsupported high steps down to low", "high", "some/optional", "low"],
+    ["unknown vocabulary omits", "ultra", "some/listed", undefined],
   ] as const)("resolveReasoningEffort %s", (_label, requested, model, expected) => {
     expect(resolveReasoningEffort(requested, resolutionCatalogue, model)).toBe(expected);
   });
