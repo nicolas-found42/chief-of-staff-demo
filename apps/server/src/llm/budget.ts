@@ -204,6 +204,25 @@ export class ModelBudgetLedger {
     return { ...this.document.campaign };
   }
 
+  /**
+   * Re-bases the campaign allowance so that `remainingDollars` equals the
+   * headroom the owner's account-balance floor leaves right now (#405). Spend
+   * and reservations already charged stay charged; the allowance moves.
+   */
+  rebaseCampaignAllowance(headroomDollars: number) {
+    const campaign = this.document.campaign;
+    const remainingDollars = Math.max(0, headroomDollars);
+    const updated = {
+      ...campaign,
+      allowedDollars: campaign.spentDollars + campaign.reservedDollars + remainingDollars,
+      remainingDollars,
+      version: campaign.version + 1,
+      updatedAt: this.now().toISOString(),
+    };
+    this.persist({ ...this.document, campaign: updated });
+    return { ...updated };
+  }
+
   getOperationSnapshot(operationId: string) {
     const op = this.document.operations[operationId];
     return op ? { ...op } : null;

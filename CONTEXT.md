@@ -436,7 +436,8 @@ One frozen, private measurement of the Meeting Debrief extractor: a manifest wri
 the first dispatch — code revision, corpus revision, models and routes, prompts, budgets — plus an
 append-only outcome log with exactly one terminal outcome per planned Campaign Slot. A failed slot
 is never re-run inside the campaign; a later attempt is a new campaign with its own id. The owner
-states its cumulative USD ceiling; nothing defaults it. (ADR-0090)
+states its ceiling as an account-balance floor and a model price cap; nothing defaults either, and
+at the floor only free models dispatch. (ADR-0090)
 _Avoid_: eval run, benchmark run, test run, retry
 
 **Campaign Slot**:

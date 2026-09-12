@@ -74,7 +74,14 @@ export const CampaignFreezeFactsSchema = z.object({
   validatorVersion: z.string().min(1),
   corpus: CampaignCorpusRevisionSchema,
   models: z.array(CampaignModelRouteSchema).min(1),
+  /** The paid headroom the ledger held at freeze; under a floor, re-derived at every launch (#405). */
   campaignBudgetDollars: z.number().min(0),
+  /** The account balance the owner keeps; paid spend stops there (#405). */
+  balanceFloorDollars: z.number().min(0).optional(),
+  /** The dearest price a planned model may carry, per million tokens (#405). */
+  priceCapDollarsPerMillion: z
+    .object({ input: z.number().min(0), output: z.number().min(0) })
+    .optional(),
   operationBudgetDollars: z.number().min(0),
   /** Parent of every slot's cold root; a slot root is never reused. */
   coldRoot: z.string().min(1),

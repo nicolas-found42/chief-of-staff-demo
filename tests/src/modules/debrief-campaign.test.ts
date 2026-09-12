@@ -1248,31 +1248,180 @@ describe("campaign CLI", () => {
     expect(manifestBytes).toContain(caseIds[0]);
   });
 
-  it("refuses a live provider without an owner-stated campaign allowance (#363)", async () => {
+  function liveGrant(): string {
+    const dir = tempDir("campaign-grant-");
+    const path = join(dir, "grant.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        id: "grant-live",
+        sourceId: "source-live",
+        purpose: "validation-campaign",
+        routePolicy: { zdrRequired: false, dataCollection: "allow", allowNonZdrException: true },
+      }),
+    );
+    return path;
+  }
+
+  async function withApiKey<T>(run: () => Promise<T>): Promise<T> {
+    const previous = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "test-key-never-sent";
+    try {
+      return await run();
+    } finally {
+      if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previous;
+    }
+  }
+
+  function liveArgs(options: {
+    campaignId: string;
+    corpusDir: string;
+    incidentsDir: string;
+    mockResult: string;
+    outDir: string;
+    model: string;
+    extra?: string[];
+  }): string[] {
+    return [
+      "--campaign-id",
+      options.campaignId,
+      "--corpus",
+      options.corpusDir,
+      "--incidents",
+      options.incidentsDir,
+      "--models",
+      options.model,
+      "--provider",
+      "openrouter",
+      "--mock-result",
+      options.mockResult,
+      "--out",
+      options.outDir,
+      "--grant",
+      liveGrant(),
+      "--allow-live",
+      "--plan-only",
+      ...(options.extra ?? []),
+    ];
+  }
+
+  it("refuses a live provider without the owner's balance floor and price cap (#405)", async () => {
     const { corpusDir, incidentsDir, mockResult } = cliCorpus("ZALLOW");
     const outDir = tempDir("campaign-out-");
-    const result = await runValidationCampaignCli(
-      [
-        "--campaign-id",
-        "campaign-allowance-test",
-        "--corpus",
-        corpusDir,
-        "--incidents",
-        incidentsDir,
-        "--models",
-        "nex-agi/nex-n2.5-mini:free",
-        "--provider",
-        "openrouter",
-        "--mock-result",
-        mockResult,
-        "--out",
-        outDir,
-        "--plan-only",
-      ],
-      {},
+    const base = { campaignId: "campaign-floor-test", corpusDir, incidentsDir, mockResult, outDir };
+    const noFloor = await withApiKey(() =>
+      runValidationCampaignCli(
+        liveArgs({ ...base, model: "mistralai/mistral-nemo", extra: ["--price-cap", "0.10/0.20"] }),
+        { readAccountBalance: async () => 13.48 },
+      ),
+    );
+    expect(noFloor.status).not.toBe(0);
+    expect(noFloor.stderr).toContain("--balance-floor");
+    const noCap = await withApiKey(() =>
+      runValidationCampaignCli(
+        liveArgs({ ...base, model: "mistralai/mistral-nemo", extra: ["--balance-floor", "10.10"] }),
+        { readAccountBalance: async () => 13.48 },
+      ),
+    );
+    expect(noCap.status).not.toBe(0);
+    expect(noCap.stderr).toContain("--price-cap");
+    expect(existsSync(join(outDir, "manifest.json"))).toBe(false);
+  });
+
+  it("derives the live allowance from the account balance above the floor and re-bases it on resume (#405)", async () => {
+    const { corpusDir, incidentsDir, mockResult } = cliCorpus("ZFLOOR");
+    const outDir = tempDir("campaign-out-");
+    const args = liveArgs({
+      campaignId: "campaign-floor-test",
+      corpusDir,
+      incidentsDir,
+      mockResult,
+      outDir,
+      model: "mistralai/mistral-nemo",
+      extra: ["--balance-floor", "10.10", "--price-cap", "0.10/0.20"],
+    });
+    const first = await withApiKey(() =>
+      runValidationCampaignCli(args, { readAccountBalance: async () => 13.48 }),
+    );
+    expect(first.stderr).toBe("");
+    expect(first.status).toBe(0);
+    expect(first.stdout).toContain("balance 13.48");
+    expect(first.stdout).toContain("headroom 3.38");
+    const manifest = CampaignManifestSchema.parse(
+      JSON.parse(readFileSync(join(outDir, "manifest.json"), "utf8")),
+    );
+    expect(manifest.freeze.campaignBudgetDollars).toBeCloseTo(3.38, 6);
+    expect(manifest.freeze.balanceFloorDollars).toBe(10.1);
+    expect(manifest.freeze.priceCapDollarsPerMillion).toEqual({ input: 0.1, output: 0.2 });
+
+    // A later launch reads the account again: the frozen plan is reused and
+    // the ledger's remaining headroom follows the balance, not the old figure.
+    const second = await withApiKey(() =>
+      runValidationCampaignCli(args, { readAccountBalance: async () => 11.1 }),
+    );
+    expect(second.status).toBe(0);
+    expect(second.stdout).toContain("reusing the frozen manifest");
+    expect(second.stdout).toContain("headroom 1.00");
+    const ledger = JSON.parse(
+      readFileSync(join(outDir, "budget", "model-budget-ledger.json"), "utf8"),
+    ) as { campaign: { remainingDollars: number } };
+    expect(ledger.campaign.remainingDollars).toBeCloseTo(1, 6);
+
+    // At or under the floor the campaign has no paid headroom: it still plans.
+    const dry = await withApiKey(() =>
+      runValidationCampaignCli(args, { readAccountBalance: async () => 9.5 }),
+    );
+    expect(dry.status).toBe(0);
+    expect(dry.stdout).toContain("headroom 0.00");
+  });
+
+  it("refuses a model priced above the owner's cap before freezing anything (#405)", async () => {
+    const { corpusDir, incidentsDir, mockResult } = cliCorpus("ZCAP");
+    const outDir = tempDir("campaign-out-");
+    const result = await withApiKey(() =>
+      runValidationCampaignCli(
+        liveArgs({
+          campaignId: "campaign-cap-test",
+          corpusDir,
+          incidentsDir,
+          mockResult,
+          outDir,
+          model: "openai/gpt-oss-20b",
+          extra: ["--balance-floor", "10.10", "--price-cap", "0.10/0.20"],
+        }),
+        { readAccountBalance: async () => 13.48 },
+      ),
     );
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("--campaign-allowance");
+    expect(result.stderr).toContain("openai/gpt-oss-20b");
+    expect(result.stderr).toContain("0.3");
+    expect(existsSync(join(outDir, "manifest.json"))).toBe(false);
+  });
+
+  it("refuses to dispatch when the account balance cannot be read (#405)", async () => {
+    const { corpusDir, incidentsDir, mockResult } = cliCorpus("ZBAL");
+    const outDir = tempDir("campaign-out-");
+    const result = await withApiKey(() =>
+      runValidationCampaignCli(
+        liveArgs({
+          campaignId: "campaign-balance-test",
+          corpusDir,
+          incidentsDir,
+          mockResult,
+          outDir,
+          model: "mistralai/mistral-nemo",
+          extra: ["--balance-floor", "10.10", "--price-cap", "0.10/0.20"],
+        }),
+        {
+          readAccountBalance: async () => {
+            throw new Error("credits endpoint unavailable");
+          },
+        },
+      ),
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("account balance");
     expect(existsSync(join(outDir, "manifest.json"))).toBe(false);
   });
 

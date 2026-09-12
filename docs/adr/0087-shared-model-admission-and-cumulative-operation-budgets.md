@@ -37,9 +37,12 @@ All attempts under an operation share durable spend and token allowances:
 
 - **Approved ceilings.** _Amended 2026-09-12 (#363): the USD 100 campaign figure below was the
   agent's recommendation under a delegated "your rec", and the owner has since declined to
-  approve it. A validation campaign now takes its cumulative ceiling from the owner on the
-  command line (`--campaign-allowance`), with no default; the constant remains only as the
-  production Workspace ledger's seed pending a separate owner decision._ Campaign budget
+  approve it. A validation campaign now takes its ceiling from the owner on the command line
+  with no default: since #405 that is an account-balance floor (`--balance-floor`, USD 10.10
+  today) the ledger's headroom is re-based to at every launch, and a price cap
+  (`--price-cap`, 0.10 in / 0.20 out per million tokens today) no planned model may exceed;
+  the constant remains only as the production Workspace ledger's seed pending a separate
+  owner decision._ Campaign budget
   defaults to USD 100.00; whole Debrief and Brief
   operations default to USD 2.00 allowances with 4,000,000 input and 500,000 output token
   safety ceilings. Allowances do not reset across retries, restarts, or model variants.

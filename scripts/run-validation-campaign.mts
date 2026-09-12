@@ -25,6 +25,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEBRIEF_OPERATION_BUDGET_DOLLARS_DEFAULT,
+  defaultModelPriceEvidence,
   type CampaignFreezeFacts,
   type CampaignManifest,
   type CampaignModelRoute,
@@ -90,6 +91,32 @@ export interface CampaignCliResult {
 
 export interface CampaignCliOptions {
   forwardOutput?: boolean;
+  /** Reads the provider account's current balance in USD; the default asks OpenRouter. */
+  readAccountBalance?: (() => Promise<number>) | undefined;
+}
+
+/** OpenRouter's credits endpoint: purchased credits less usage. The key stays in the header. */
+async function readOpenRouterBalance(): Promise<number> {
+  const response = await fetch("https://openrouter.ai/api/v1/credits", {
+    headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? ""}` },
+  });
+  if (!response.ok) throw new Error(`credits endpoint answered HTTP ${response.status}`);
+  const body = (await response.json()) as {
+    data?: { total_credits?: unknown; total_usage?: unknown };
+  };
+  const credits = body.data?.total_credits;
+  const usage = body.data?.total_usage;
+  if (typeof credits !== "number" || typeof usage !== "number") {
+    throw new Error("credits endpoint answered without total_credits/total_usage");
+  }
+  return credits - usage;
+}
+
+function parsePriceCap(raw: string): { input: number; output: number } {
+  const match = raw.match(/^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/);
+  if (!match)
+    throw new Error(`--price-cap must be <input>/<output> USD per million tokens, got ${raw}.`);
+  return { input: Number(match[1]), output: Number(match[2]) };
 }
 
 const HELP = `Private Meeting Wizard validation campaign
@@ -112,11 +139,14 @@ Options
   --grant <path>          Frozen source-lifecycle grant; required for a live provider.
   --out <dir>             Private campaign record root (default: <tmp>/debrief-campaign/<id>).
   --budget-root <dir>     Durable ledger/timeline root (default: <out>/budget).
-  --campaign-allowance <usd>
-                          Cumulative USD ceiling the campaign ledger is created
-                          with. Required for a live provider; the owner states
-                          it, nothing defaults it. An existing ledger keeps its
-                          own allowance. A mock run defaults to 0.
+  --balance-floor <usd>   The account balance the owner keeps. Required for a
+                          live provider; the owner states it, nothing defaults
+                          it. Every launch reads the account balance and gives
+                          the ledger the headroom above the floor; at or under
+                          it only free models can dispatch.
+  --price-cap <in>/<out>  The dearest price a planned model may carry, USD per
+                          million tokens. Required for a live provider; a model
+                          above either figure is refused before the freeze.
   --concurrency <n>       Slots in flight (default: 4).
   --allow-live            Required before a non-mock provider may dispatch.
   --plan-only             Freeze the manifest and print the plan; no dispatch.
@@ -206,20 +236,42 @@ export async function runValidationCampaignCli(
       throw new Error(`--concurrency must be a positive integer, got ${arg("concurrency")}.`);
     }
 
-    /* The owner states the campaign ceiling (#363): the former USD 100
-       ledger default was an agent recommendation the owner never approved,
-       so a live campaign refuses to start without an explicit figure. */
-    const allowanceArg = arg("campaign-allowance");
-    if (provider !== "mock" && allowanceArg === undefined) {
+    /* The owner states the ceiling (#363, #405): not a figure per campaign
+       but an account balance to keep, so every launch reads the balance and
+       the ledger's headroom follows it; and a price cap no planned model may
+       exceed. Nothing defaults either. */
+    const floorArg = arg("balance-floor");
+    const capArg = arg("price-cap");
+    if (provider !== "mock" && floorArg === undefined) {
       throw new Error(
-        "A live provider needs --campaign-allowance <usd>, the owner's cumulative ceiling for this campaign.",
+        "A live provider needs --balance-floor <usd>, the account balance the owner keeps.",
       );
     }
-    const campaignAllowanceDollars = Number(allowanceArg ?? "0");
-    if (!Number.isFinite(campaignAllowanceDollars) || campaignAllowanceDollars < 0) {
+    if (provider !== "mock" && capArg === undefined) {
       throw new Error(
-        `--campaign-allowance must be a non-negative USD amount, got ${allowanceArg}.`,
+        "A live provider needs --price-cap <in>/<out>, the dearest USD per million tokens a planned model may carry.",
       );
+    }
+    const balanceFloorDollars = floorArg === undefined ? null : Number(floorArg);
+    if (balanceFloorDollars !== null && !(balanceFloorDollars >= 0)) {
+      throw new Error(`--balance-floor must be a non-negative USD amount, got ${floorArg}.`);
+    }
+    const priceCap = capArg === undefined ? null : parsePriceCap(capArg);
+    if (priceCap !== null) {
+      const evidence = defaultModelPriceEvidence();
+      for (const model of models) {
+        const row = evidence.get(model);
+        if (row === undefined)
+          throw new Error(`No price evidence for ${model}; it cannot be capped.`);
+        if (
+          row.inputDollarsPerMillion > priceCap.input ||
+          row.outputDollarsPerMillion > priceCap.output
+        ) {
+          throw new Error(
+            `${model} is priced ${row.inputDollarsPerMillion} in / ${row.outputDollarsPerMillion} out per million tokens, above the owner's cap ${priceCap.input}/${priceCap.output}.`,
+          );
+        }
+      }
     }
     let grant: SourceLifecycleGrant | null = null;
     if (provider !== "mock") {
@@ -240,15 +292,36 @@ export async function runValidationCampaignCli(
       }
     }
 
+    let headroomDollars = 0;
+    if (balanceFloorDollars !== null) {
+      let balance: number;
+      try {
+        balance = await (options?.readAccountBalance ?? readOpenRouterBalance)();
+      } catch (error) {
+        throw new Error(
+          `The account balance could not be read, so nothing dispatches: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+      headroomDollars = Math.max(0, balance - balanceFloorDollars);
+      writeStdout(
+        `balance ${balance.toFixed(2)} floor ${balanceFloorDollars.toFixed(2)} headroom ${headroomDollars.toFixed(2)}\n`,
+      );
+    }
     mkdirSync(budgetRoot, { recursive: true });
     /* A mock run contacts nothing and is billed nothing: give its models
        zero-cost evidence so the dry run cannot consume the campaign allowance
        the durable ledger tracks. */
     const ledger = new ModelBudgetLedger(budgetRoot, {
-      campaignAllowanceDollars,
+      campaignAllowanceDollars: headroomDollars,
       ...(provider === "mock" ? { priceEvidenceTable: mockModelPriceEvidence(models) } : {}),
     });
-    const campaign = ledger.getCampaignSnapshot();
+    /* The floor is about the account, not this campaign: an existing ledger
+       is re-based to today's headroom rather than keeping yesterday's. */
+    const campaign =
+      balanceFloorDollars === null
+        ? ledger.getCampaignSnapshot()
+        : ledger.rebaseCampaignAllowance(headroomDollars);
     const routeFor = (model: string): CampaignModelRoute =>
       grant === null
         ? { model, route: "mock-local", binding: "model-default", grantId: "mock-local" }
@@ -290,7 +363,9 @@ export async function runValidationCampaignCli(
       validatorVersion: STRATEGY,
       corpus: corpus.revision,
       models: modelRoutes,
-      campaignBudgetDollars: campaign.allowedDollars,
+      campaignBudgetDollars: campaign.remainingDollars,
+      ...(balanceFloorDollars === null ? {} : { balanceFloorDollars }),
+      ...(priceCap === null ? {} : { priceCapDollarsPerMillion: priceCap }),
       operationBudgetDollars: DEBRIEF_OPERATION_BUDGET_DOLLARS_DEFAULT,
       coldRoot,
     };
@@ -299,7 +374,16 @@ export async function runValidationCampaignCli(
     let manifest: CampaignManifest;
     if (existsSync(manifestPath)) {
       manifest = readCampaignManifest(out);
-      assertManifestMatchesPlan(manifest, { protocol, freeze, slots });
+      /* Under a floor the headroom is re-read at every launch; the frozen
+         figure is the one at freeze and is not what a resume must match. */
+      assertManifestMatchesPlan(manifest, {
+        protocol,
+        freeze:
+          balanceFloorDollars === null
+            ? freeze
+            : { ...freeze, campaignBudgetDollars: manifest.freeze.campaignBudgetDollars },
+        slots,
+      });
       writeStdout(`reusing the frozen manifest at ${manifestPath}\n`);
     } else {
       manifest = freezeCampaignManifest({
