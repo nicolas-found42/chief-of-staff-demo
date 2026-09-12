@@ -432,6 +432,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     debrief: MeetingDebriefExtraction,
     transcriptId: string,
     sections?: readonly DebriefSectionAvailability[],
+    aliases?: readonly (string | null)[],
   ): string =>
     `${JSON.stringify(
       {
@@ -442,6 +443,10 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         ...(sections?.some((section) => !debriefSectionResolved(section.state))
           ? { sections: sections.map((section) => ({ ...section })) }
           : {}),
+        /* The candidate accounting rides with the checked bytes (#385), so a
+           revision adopted after an interrupted manifest write still
+           materializes under the aliases its extraction produced. */
+        ...(aliases && aliases.length > 0 ? { candidateAliases: [...aliases] } : {}),
       } satisfies MeetingDebriefRunResult,
       null,
       2,
@@ -602,7 +607,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       });
       return {
         extraction: debrief,
-        text: resultText(debrief, record.id, sections),
+        text: resultText(debrief, record.id, sections, core.record.payload.retainedIds),
         aliases: core.record.payload.retainedIds,
         sections,
         core: { artifact: core.artifact, checksum: core.checksum },
@@ -636,9 +641,6 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     const stream = ioFor(ctx);
     const reservation = reserve(ctx, record);
     const policy = policySnapshot();
-    /* The candidate accounting of the revision being materialized: produced
-       bytes carry their own, and an adopted revision carries the core's. */
-    let aliases: string[] = [];
     const outcome = await reconcileDebrief({
       io: stream,
       names: () => ctx.artifactNames(),
@@ -655,9 +657,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
             `Run ${ctx.runId} has no prepared revision and this path may not start inference`,
           );
         }
-        const revision = await produce();
-        aliases = [...(revision.aliases ?? [])].filter((alias): alias is string => alias !== null);
-        return revision;
+        return produce();
       },
       materialize: (result, revision) =>
         deps.materializeActionItems?.({
@@ -671,7 +671,10 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
              rather than a context re-captured later. */
           ...(contextChecksum(ctx) ? { contextChecksum: contextChecksum(ctx)! } : {}),
           actionItems: result.debrief.actionItems,
-          candidateAliases: aliases,
+          /* Read from the revision bytes rather than from this reconciliation's
+             own model call (#385): an adopted revision made none, and its
+             aliases are the ones its result committed. */
+          candidateAliases: result.candidateAliases ?? [],
           ...(revision.reviewOnly ? { reviewOnly: true } : {}),
           ...(deps.firstExtraction
             ? {
@@ -761,7 +764,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
               request.field,
             );
             return {
-              text: resultText(regenerated, transcriptId, sections),
+              text: resultText(regenerated, transcriptId, sections, produced.aliases),
               /* A regenerated Action Item list is this Run's own checked
                  output, so it carries this Run's candidate accounting. Entries
                  the regeneration kept unchanged still materialize under their
