@@ -145,6 +145,20 @@ export function defaultModelPriceEvidence(): Map<string, ModelPriceEvidence> {
     outputDollarsPerMillion: 0.4,
     contextWindowTokens: 1_000_000,
   });
+  /* The owner's paid baseline-campaign set (#363, 2026-09-12): priced at the
+     dearest OpenRouter endpoint observed so a reservation never undercounts. */
+  add({
+    model: "mistralai/mistral-nemo",
+    inputDollarsPerMillion: 0.044,
+    outputDollarsPerMillion: 0.17,
+    contextWindowTokens: 128_000,
+  });
+  add({
+    model: "openai/gpt-oss-20b",
+    inputDollarsPerMillion: 0.075,
+    outputDollarsPerMillion: 0.3,
+    contextWindowTokens: 131_072,
+  });
   add({
     model: "inception/mercury-2.5",
     inputDollarsPerMillion: 0.04,

@@ -87,6 +87,9 @@ describe("model admission and budget schemas", () => {
     expect(known.has("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free")).toBe(true);
     expect(known.has("poolside/laguna-xs-2.1:free")).toBe(true);
     expect(known.has("nvidia/nemotron-3-super-120b-a12b:free")).toBe(true);
+    expect(known.has("mistralai/mistral-nemo")).toBe(true);
+    expect(known.has("openai/gpt-oss-20b")).toBe(true);
+    expect(known.has("inception/mercury-2.5")).toBe(true);
     expect(known.has("upstage/solar-pro4")).toBe(true);
     expect(known.has("mock")).toBe(true);
 

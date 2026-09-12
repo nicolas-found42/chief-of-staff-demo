@@ -1644,17 +1644,19 @@ async function openAiCompatibleComplete(
          fast route without ever refusing the call a home (#233). */
       const resting = restingRoutes(cfg.model);
       const provider: Record<string, unknown> = { sort: "throughput" };
-      if (request.routePolicy?.dataCollection) {
-        provider.data_collection = request.routePolicy.dataCollection;
+      /* The route policy the grant was verified under is the one routing is
+         told about (#341, #356): a request carrying a source grant and no
+         explicit policy inherits the grant's, so a ZDR-only or no-collection
+         grant is enforced by the router rather than assumed. */
+      const routePolicy = request.routePolicy ?? request.sourceGrant?.routePolicy;
+      if (routePolicy?.dataCollection) {
+        provider.data_collection = routePolicy.dataCollection;
       }
-      if (request.routePolicy?.zdrRequired) {
+      if (routePolicy?.zdrRequired) {
         provider.zdr = true;
       }
-      if (
-        request.routePolicy?.allowedEndpoints &&
-        request.routePolicy.allowedEndpoints.length > 0
-      ) {
-        provider.order = request.routePolicy.allowedEndpoints;
+      if (routePolicy?.allowedEndpoints && routePolicy.allowedEndpoints.length > 0) {
+        provider.order = routePolicy.allowedEndpoints;
       }
       if (request.preferredMinThroughput !== undefined)
         provider.preferred_min_throughput = request.preferredMinThroughput;
