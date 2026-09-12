@@ -38,6 +38,7 @@ describe("source lifecycle grants and route authorization", () => {
     "thinkingmachines/inkling-small:free",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "poolside/laguna-xs-2.1:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
   ])("treats the free campaign model %s as a non-ZDR exception (#363)", (model) => {
     expect(defaultRoutePolicyForModel(model)).toEqual({
       zdrRequired: false,

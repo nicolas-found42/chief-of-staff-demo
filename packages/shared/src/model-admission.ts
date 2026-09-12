@@ -111,6 +111,12 @@ export function defaultModelPriceEvidence(): Map<string, ModelPriceEvidence> {
     outputDollarsPerMillion: 0.0,
     contextWindowTokens: 262_144,
   });
+  add({
+    model: "nvidia/nemotron-3-super-120b-a12b:free",
+    inputDollarsPerMillion: 0.0,
+    outputDollarsPerMillion: 0.0,
+    contextWindowTokens: 262_144,
+  });
 
   // Solar eval gate model
   add({
