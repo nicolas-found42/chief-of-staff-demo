@@ -1444,3 +1444,165 @@ describe("Incomplete exposure and independent section retry (MWR-035/036/038)", 
     await h.app.close();
   });
 });
+
+/**
+ * Candidate aliases survive the result-before-manifest window (#385). The
+ * revision result is the one artifact an interruption is guaranteed to leave
+ * behind, so the extraction's candidate accounting travels inside it: an
+ * adopted revision materializes under the same aliases the model run
+ * produced, and a result written before aliases were carried still adopts as
+ * the alias-less legacy it is.
+ */
+describe("Adopted revisions keep their candidate aliases (#385)", () => {
+  const quote = "Bob: I will own the follow-up.";
+  const action = {
+    title: "Own the follow-up",
+    evidence: quote,
+    owner: "Bob",
+    handoff: operationalHandoff({
+      timing: { kind: "unspecified", stated: "no date stated", referenceDate: null, reasoning: "" },
+      evidence: [{ quote, speaker: "Bob", timestamp: null }],
+    }),
+  };
+
+  function harness() {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "debrief-aliases-"));
+    const runs = openRuns(workspaceDir);
+    const record = makeRecord({ id: "drive_pubK_r1" });
+    const handovers: Handover[] = [];
+    let modelCalls = 0;
+    let refuseNext = false;
+    const model = accountedHandoffModel({
+      version: 1,
+      summary: "Weekly sync review",
+      decisions: [],
+      openQuestions: [],
+      effectivenessEvidence: "",
+      coachingAdvice: "",
+      suggestedRecipients: [],
+      actionItems: [action],
+    });
+    const host = new MeetingDebriefHost({
+      runs,
+      catalog: { getTranscript: () => record },
+      identity: { reviewFor: () => ({ mentions: [], decisions: [], organizations: [] }) },
+      getCompleteJson: () => async (request) => {
+        modelCalls += 1;
+        return model(request);
+      },
+      materializeActionItems: (handover) => {
+        handovers.push(structuredClone(handover));
+        if (refuseNext) {
+          refuseNext = false;
+          throw new Error("workspace store refused the write");
+        }
+        return handover.actionItems.map((_, index) => ({
+          key: `materialization:v1:${handover.debriefRunId}:ce_${index}`,
+          debriefRunId: handover.debriefRunId,
+          outputEntryId: `ce_${index}`,
+          candidateAlias: handover.candidateAliases?.[index] ?? null,
+          payloadChecksum: `sha256:checked-${index}`,
+          actionItemId: `ai_${handover.debriefRunId}_${index}`,
+          proposalRevision: 1,
+          allocatedAt: new Date(BASE_TIME).toISOString(),
+          dependencies: [],
+        }));
+      },
+      log: () => {},
+    });
+    return {
+      runs,
+      host,
+      handovers,
+      modelCalls: () => modelCalls,
+      refuseNextMaterialize: () => {
+        refuseNext = true;
+      },
+      start: async () => {
+        await host.process(record);
+        await host.idle();
+        return runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs[0].id;
+      },
+    };
+  }
+
+  it("materializes an adopted revision under the aliases its extraction produced", async () => {
+    const k = harness();
+    k.refuseNextMaterialize();
+    const runId = await k.start();
+    const run = k.runs.open(runId)!;
+    expect(run.read().status).toBe("failed");
+    // The interruption shape: checked bytes committed, no manifest behind them.
+    const resultBytes = run.readArtifact("revision-r1.result.json");
+    expect(resultBytes).not.toBeNull();
+    expect(run.readArtifact("revision-r1.manifest.json")).toBeNull();
+    const produced = k.handovers[0].candidateAliases ?? [];
+    expect(produced).toHaveLength(1);
+    expect(produced[0]).toEqual(expect.any(String));
+    const callsBefore = k.modelCalls();
+
+    await k.host.retryRun(runId);
+    await k.host.idle();
+
+    expect(run.read().status).toBe("done");
+    expect(k.modelCalls()).toBe(callsBefore);
+    expect(run.readArtifact("revision-r1.result.json")).toBe(resultBytes);
+    // The recovery handed the Workspace the same accounting the model run did.
+    expect(k.handovers).toHaveLength(2);
+    expect(k.handovers[1].candidateAliases).toEqual(produced);
+    const manifest = JSON.parse(run.readArtifact("revision-r1.manifest.json")!) as {
+      materialization: { outputs: { candidateAlias: string | null }[] };
+    };
+    expect(manifest.materialization.outputs.map((output) => output.candidateAlias)).toEqual(
+      produced,
+    );
+  });
+
+  it("adopts an alias-less result written before aliases were carried as legacy", async () => {
+    const record = makeRecord();
+    h.catalog.set(record.id, record);
+    const orphan = h.runs.create({
+      module: MEETING_DEBRIEF_MODULE_ID,
+      moduleVersion: 2,
+      intake: "transcript-catalog",
+      fileName: record.source.fileName,
+      sourceUrl: null,
+      externalId: record.id,
+    });
+    orphan.writeArtifact(
+      "context-snapshot.json",
+      JSON.stringify({
+        version: 1,
+        capturedAt: new Date(BASE_TIME).toISOString(),
+        source: { transcriptId: record.id },
+      }),
+    );
+    orphan.writeArtifact(
+      "revision-r1.result.json",
+      `${JSON.stringify(
+        {
+          version: 1,
+          transcriptId: record.id,
+          extractedAt: new Date(BASE_TIME).toISOString(),
+          debrief: extractionWith(),
+        } satisfies MeetingDebriefRunResult,
+        null,
+        2,
+      )}\n`,
+    );
+
+    h.host.start();
+    await vi.waitFor(() => expect(h.runs.open(orphan.id)!.read().status).toBe("done"));
+    h.host.stop();
+
+    expect(h.extractInputs).toHaveLength(0);
+    expect(h.handovers).toHaveLength(1);
+    expect(h.handovers[0].candidateAliases).toEqual([]);
+    expect(
+      readJson<{ materialization: { outputs: { candidateAlias: string | null }[] } }>(
+        orphan.id,
+        "revision-r1.manifest.json",
+      ).materialization.outputs.map((output) => output.candidateAlias),
+    ).toEqual([null]);
+  });
+});

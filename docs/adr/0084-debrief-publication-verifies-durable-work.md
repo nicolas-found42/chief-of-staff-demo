@@ -37,6 +37,15 @@ pointer, so an older build still finds a Debrief where it always did and a Run w
 this protocol still reads as a legacy publication whose validation is explicitly unknown. No
 migration, and no activation of a new canonical generation, is claimed by this change.
 
+**Amended by [issue #385](https://github.com/nicolas-found42/chief-of-staff-demo/issues/385):**
+the revision result also carries the extraction's candidate aliases (`candidateAliases`, aligned
+with its Action Items). The result is the one artifact an interruption between it and its
+manifest is guaranteed to leave behind, so the reconciler reads the aliases from those bytes for
+a fresh and an adopted revision alike; before this, an adopted revision materialized alias-less
+while a prepared one kept the aliases its manifest recorded. A result written without the field
+still adopts as the alias-less revision it is, never as an integrity failure. No stored format is
+added: the field lives inside the Run directory's revision result beside the rest of it.
+
 Public Module and HTTP regressions cover zero-output and nonzero-output publication, a refused
 mapping write, an interrupted preparation, damaged result and manifest bytes, a corrupt review
 record that is refused rather than re-created, a missing projection, a missing completion receipt

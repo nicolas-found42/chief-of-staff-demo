@@ -684,6 +684,15 @@ export interface MeetingDebriefRunResult {
    * producers that claim a complete revision.
    */
   sections?: DebriefSectionAvailability[];
+  /**
+   * The extraction's own candidate ids, aligned with `debrief.actionItems`
+   * (#385). They travel with the checked bytes because the result is the one
+   * artifact an interrupted commit is guaranteed to leave behind: an adopted
+   * revision materializes under the aliases its model run produced. Absent on
+   * results written before this field and on producers without accounting,
+   * which materialize alias-less as they always did.
+   */
+  candidateAliases?: (string | null)[];
 }
 
 /** Identity review state consumed for one transcript, as the Catalog holds it. */
