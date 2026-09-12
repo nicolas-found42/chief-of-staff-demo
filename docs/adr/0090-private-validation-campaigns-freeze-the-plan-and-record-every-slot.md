@@ -104,11 +104,17 @@ Two additions from the first live campaigns under #363
 ([PR #396](https://github.com/nicolas-found42/chief-of-staff-demo/pull/396),
 [PR #400](https://github.com/nicolas-found42/chief-of-staff-demo/pull/400)):
 
-- **The campaign ceiling is the owner's number.** The USD 100 ledger default was an agent
-  recommendation the owner declined; a live campaign now requires `--campaign-allowance <usd>` and
-  refuses to freeze or dispatch without it. An existing ledger keeps the allowance it was created
-  with, so a second campaign on the same `--budget-root` shares one cumulative ceiling. At a zero
-  allowance the ledger admits only free models. ADR-0087 carries the same note.
+- **The campaign ceiling is the owner's rule, read from the account.** The USD 100 ledger default
+  was an agent recommendation the owner declined. A live campaign now requires two owner-stated
+  figures (#405) and refuses to freeze or dispatch without them: `--balance-floor <usd>`, the
+  account balance the owner keeps — the runner reads the provider's balance at every launch, gives
+  the ledger the headroom above the floor (re-basing an existing ledger, since the floor is about
+  the account rather than a campaign) and records floor, balance and headroom in the plan; at or
+  under the floor the headroom is zero and only free models can dispatch, so a campaign switches
+  to its free models rather than stopping. And `--price-cap <in>/<out>`, the dearest USD per
+  million tokens a planned model may carry, checked against the price evidence before the freeze.
+  A balance that cannot be read dispatches nothing. The frozen `campaignBudgetDollars` is the
+  headroom at freeze and is not what a resume must match. ADR-0087 carries the same note.
 - **A slot ends at its first failure; the campaign has no recovery.** The application's recovery —
   the provider's binding ladder and backoff inside the ceiling, and the one repair round a validator
   rejection earns — blurs *why* a cheap model failed behind minutes of retries. In a campaign the

@@ -350,12 +350,16 @@ pnpm run eval:campaign -- --plan-only --provider mock   # freeze and print the p
 
 Live dispatch is an explicit act: `--allow-live` plus `--grant <file>` (an owner
 source-lifecycle grant for `validation-campaign` use) and the provider's
-credentials, and `--campaign-allowance <usd>`: the owner states the campaign's
-cumulative ceiling, nothing defaults it (the former USD 100 default was an agent
-recommendation the owner never approved; see ADR-0087). The USD 2 per-Debrief
-allowance remains the operation default. Point `--budget-root` at durable
-private state so a new session cannot reset what was spent — an existing ledger
-keeps the allowance it was created with. The live baseline, comparison, final and
+credentials, and the owner's two ceilings (#405): `--balance-floor <usd>`, the
+account balance the owner keeps — every launch reads the provider account's
+balance and gives the ledger the headroom above the floor, re-basing an existing
+ledger, so at or under the floor only free models can dispatch — and
+`--price-cap <in>/<out>`, the dearest USD per million tokens a planned model may
+carry, checked against the price evidence before the freeze. Nothing defaults
+either (the former USD 100 default was an agent recommendation the owner never
+approved; see ADR-0087). The USD 2 per-Debrief allowance remains the operation
+default. Point `--budget-root` at durable private state so spend and
+reservations stay charged across sessions. The live baseline, comparison, final and
 Brief protocols, route/account authorization and human adjudication are external
 prerequisites — the harness records them, it does not perform them.
 

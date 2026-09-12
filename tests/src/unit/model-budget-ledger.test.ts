@@ -68,6 +68,47 @@ describe("ModelBudgetLedger", () => {
     expect(reopened.getCampaignSnapshot().allowedDollars).toBe(0);
   });
 
+  it("re-bases the campaign allowance on the account headroom the owner's floor leaves (#405)", () => {
+    const ledger = new ModelBudgetLedger(workspaceDir, { campaignAllowanceDollars: 2 });
+    const model = "mistralai/mistral-nemo";
+    ledger.getOrCreateOperationSnapshot("op_1", "run_1", "debrief");
+    const reservation = ledger.reserve({
+      operationId: "op_1",
+      model,
+      system: "system",
+      user: "user",
+      grant: createSourceLifecycleGrant({ sourceId: "t", purpose: "validation-campaign", model }),
+    });
+    ledger.settle(reservation.reservationId, {
+      provider: "openrouter",
+      model,
+      binding: "response_format",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      costUsd: 0.5,
+      cachedInputTokens: null,
+      systemFingerprint: null,
+    });
+    expect(ledger.getCampaignSnapshot()).toMatchObject({
+      spentDollars: 0.5,
+      remainingDollars: 1.5,
+    });
+
+    // Balance 13.48 above a 10.10 floor leaves 3.38 of headroom: that is what
+    // remains, whatever the ledger already charged.
+    const rebased = ledger.rebaseCampaignAllowance(3.38);
+    expect(rebased.remainingDollars).toBeCloseTo(3.38, 6);
+    expect(rebased.allowedDollars).toBeCloseTo(3.88, 6);
+    expect(rebased.spentDollars).toBe(0.5);
+    // Persisted across a reopen.
+    expect(new ModelBudgetLedger(workspaceDir).getCampaignSnapshot().remainingDollars).toBeCloseTo(
+      3.38,
+      6,
+    );
+    // At or under the floor the headroom is zero, never negative.
+    expect(ledger.rebaseCampaignAllowance(-1).remainingDollars).toBe(0);
+  });
+
   it("initializes with approved default campaign and operation budgets", () => {
     const ledger = new ModelBudgetLedger(workspaceDir);
     const campaign = ledger.getCampaignSnapshot();
