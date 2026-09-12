@@ -2006,6 +2006,9 @@ async function fetchReasoningCatalogue(signal: AbortSignal): Promise<Map<string,
  * lacks the requested level also omits: out-of-list values are undocumented
  * and map unpredictably. Exported so tests reach the contract directly.
  */
+/** OpenRouter's effort vocabulary, least thinking first. */
+const REASONING_EFFORT_LADDER = ["none", "minimal", "low", "medium", "high", "max"] as const;
+
 export function resolveReasoningEffort(
   requested: string | undefined,
   catalogue: Map<string, ModelReasoning> | null,
@@ -2014,9 +2017,27 @@ export function resolveReasoningEffort(
   const effort = requested ?? DEFAULT_REASONING_EFFORT;
   const metadata = catalogue?.get(model) ?? null;
   if (metadata === null) return undefined;
-  if (effort === "none" && metadata.mandatory) return undefined;
-  if (metadata.efforts !== null && !metadata.efforts.includes(effort)) return undefined;
-  return effort;
+  const rung = REASONING_EFFORT_LADDER.indexOf(effort as (typeof REASONING_EFFORT_LADDER)[number]);
+  if (rung < 0) return undefined;
+  const supported = (level: string): boolean =>
+    !(level === "none" && metadata.mandatory) &&
+    (metadata.efforts === null || metadata.efforts.includes(level));
+  if (supported(effort)) return effort;
+  /* The model does not take the level asked for. Sending nothing hands it the
+     provider's own default, which for a thinking model can be its deepest
+     setting — minutes of silent reasoning under a ceiling sized for a small
+     answer (#363: nex-n2.5-mini lists high/medium/none, defaults to high).
+     The nearest advertised level, preferring less thinking, keeps the call
+     bounded the way the caller meant. */
+  for (let below = rung - 1; below >= 0; below -= 1) {
+    const level = REASONING_EFFORT_LADDER[below]!;
+    if (supported(level)) return level;
+  }
+  for (let above = rung + 1; above < REASONING_EFFORT_LADDER.length; above += 1) {
+    const level = REASONING_EFFORT_LADDER[above]!;
+    if (supported(level)) return level;
+  }
+  return undefined;
 }
 
 /**
