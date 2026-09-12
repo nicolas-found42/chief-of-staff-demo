@@ -70,10 +70,20 @@ decision rests on (`signal` or `name`) rather than only its strength.
 `tests/src/modules/person-research-subject-attribution.test.ts` drives
 `PersonResearch.run` — the research/claims seam — for four cases: the fault,
 the pronominal-recall guard, the signal-anchored document, and a replay against
-the retained Sherrie Silver article committed under
-`artifacts/person-benchmark/`, using the ten `wrong-person` claims the judge
-recorded with their own quotes plus the two claims from that same document that
-really are about Tedros. The replay withholds ten and publishes two.
+the retained article the measured dossier cited.
+
+The first three use entirely fictional documents, as every committed fixture in
+this repo does, and carry the shape the fault needs: the declaration sentence
+sits behind a lead-in and an infobox, several hundred characters into the text,
+exactly as a retained encyclopedia article does.
+
+The replay uses the real retained Person Source Document, the ten
+`wrong-person` claims the judge recorded with their own quotes, and the two
+claims from that same document that really are about the subject: it withholds
+ten and publishes two. Every subdirectory of `artifacts/person-benchmark` is
+gitignored — retained Person Source Documents are not committed — so the replay
+runs where that evidence is present and skips where it is not. It ran, and
+passed, on the machine that measured the failure.
 
 The measurement that closes this — a re-run of the candidate arm against the
 recorded baseline of 28 `wrong-person` overclaims — is live spend and needs the
