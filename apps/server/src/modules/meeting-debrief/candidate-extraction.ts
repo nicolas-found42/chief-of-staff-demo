@@ -352,6 +352,20 @@ function prepareDebriefExtraction(options: CandidateExtractionOptions) {
     const reference = quote.trim().replace(/^@(\d+)$/, "@line:$1");
     const numbered = lineById.get(reference);
     if (numbered) return numbered;
+    // mistral-nemo echoes the displayed line after its identifier (#402):
+    // `@line:246 **Name** *[01:12:34]*: So the next…`. The identifier alone
+    // grounds the evidence, once the remainder verifies verbatim against that
+    // line's speech; a paraphrase or another line's speech still resolves nothing.
+    const echoed = reference.match(/^(@line:\d+)\s+(\S[\s\S]*)$/);
+    if (echoed) {
+      const line = lineById.get(echoed[1]!);
+      if (!line) return undefined;
+      const spoken = parseTranscriptTurn(line.text)?.text ?? line.text;
+      const prefix = line.text.slice(0, line.text.lastIndexOf(spoken)).trimStart();
+      const remainder = echoed[2]!.trim();
+      const speech = remainder.startsWith(prefix) ? remainder.slice(prefix.length) : remainder;
+      return speech.length > 0 && spoken.includes(speech) ? line : undefined;
+    }
     // Mercury sometimes selects the displayed timestamp using the line prefix.
     // Resolve only an exact, unique source timestamp; never guess a nearby turn.
     const timestamp = reference.match(/^@line:(\d+:\d+(?::\d+)?)$/)?.[1];
