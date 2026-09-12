@@ -105,6 +105,12 @@ export function defaultModelPriceEvidence(): Map<string, ModelPriceEvidence> {
     outputDollarsPerMillion: 0.0,
     contextWindowTokens: 256_000,
   });
+  add({
+    model: "poolside/laguna-xs-2.1:free",
+    inputDollarsPerMillion: 0.0,
+    outputDollarsPerMillion: 0.0,
+    contextWindowTokens: 262_144,
+  });
 
   // Solar eval gate model
   add({
