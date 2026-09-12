@@ -91,6 +91,20 @@ export function defaultModelPriceEvidence(): Map<string, ModelPriceEvidence> {
     outputDollarsPerMillion: 0.0,
     contextWindowTokens: 128_000,
   });
+  /* The owner's free-only baseline campaign set (#363, 2026-09-12): every
+     endpoint advertises zero input and output price on OpenRouter. */
+  add({
+    model: "thinkingmachines/inkling-small:free",
+    inputDollarsPerMillion: 0.0,
+    outputDollarsPerMillion: 0.0,
+    contextWindowTokens: 1_048_576,
+  });
+  add({
+    model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    inputDollarsPerMillion: 0.0,
+    outputDollarsPerMillion: 0.0,
+    contextWindowTokens: 256_000,
+  });
 
   // Solar eval gate model
   add({

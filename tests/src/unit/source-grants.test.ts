@@ -34,6 +34,30 @@ describe("source lifecycle grants and route authorization", () => {
     expect(verifySourceGrant(grant, "nex-agi/nex-n2.5-mini:free").ok).toBe(true);
   });
 
+  it.each([
+    "thinkingmachines/inkling-small:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  ])("treats the free campaign model %s as a non-ZDR exception (#363)", (model) => {
+    expect(defaultRoutePolicyForModel(model)).toEqual({
+      zdrRequired: false,
+      dataCollection: "deny",
+      allowNonZdrException: true,
+    });
+    const strict = createSourceLifecycleGrant({
+      sourceId: "transcript_3",
+      purpose: "validation-campaign",
+      model: "deepseek/deepseek-v4.1-flash",
+    });
+    expect(verifySourceGrant(strict, model).ok).toBe(false);
+    expect(verifySourceGrant(strict, model).reason).toContain("Zero Data Retention");
+    const excepted = createSourceLifecycleGrant({
+      sourceId: "transcript_3",
+      purpose: "validation-campaign",
+      model,
+    });
+    expect(verifySourceGrant(excepted, model).ok).toBe(true);
+  });
+
   it("refuses dispatch when grant is missing or null", () => {
     const verification = verifySourceGrant(null, "deepseek/deepseek-v4.1-flash");
     expect(verification.ok).toBe(false);
