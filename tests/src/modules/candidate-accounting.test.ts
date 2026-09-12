@@ -100,7 +100,16 @@ it("fails the meeting extraction when a discovered commitment has no disposition
   expect(detail.extraction).toBeNull();
 });
 
-it.each(["@line:1", "@1", "@line:00:01"])(
+it.each([
+  "@line:1",
+  "@1",
+  "@line:00:01",
+  // mistral-nemo echoes the displayed line after its identifier (#402); the
+  // remainder is verified verbatim against that line's speech, then the
+  // identifier alone grounds the evidence.
+  "@line:1 [00:01–00:05] Alice: After the workshop, I will ask for a reference.",
+  "@line:1 After the workshop, I will ask",
+])(
   "expands selected source span %s into literal evidence without asking the model to copy speech",
   async (reference) => {
     const model = accountedHandoffModel({
@@ -136,19 +145,23 @@ it.each(["@line:1", "@1", "@line:00:01"])(
   },
 );
 
-it.each(["@line:999999", "@999999"])(
-  "never admits invented source span %s as coverage evidence",
-  async (reference) => {
-    const detail = await extract(async (request) => {
-      if (request.system.startsWith("DISCOVER CANDIDATES")) return { candidates: [] };
-      if (request.system.startsWith("AUDIT SOURCE COVERAGE"))
-        return { candidates: [{ ...candidate, quote: reference }] };
-      return overview;
-    });
-    expect(detail.status).toBe("failed");
-    expect(detail.extraction).toBeNull();
-  },
-);
+it.each([
+  "@line:999999",
+  "@999999",
+  "@line:999999 Alice: After the workshop, I will ask for a reference.",
+  "@line:1 [00:01–00:05] Alice: After the workshop I ask for a reference.",
+  "@line:1 [00:01–00:05] Alice: I already sent the old plan.",
+  "@line:1 @line:2",
+])("never admits invented source span %s as coverage evidence", async (reference) => {
+  const detail = await extract(async (request) => {
+    if (request.system.startsWith("DISCOVER CANDIDATES")) return { candidates: [] };
+    if (request.system.startsWith("AUDIT SOURCE COVERAGE"))
+      return { candidates: [{ ...candidate, quote: reference }] };
+    return overview;
+  });
+  expect(detail.status).toBe("failed");
+  expect(detail.extraction).toBeNull();
+});
 
 it("materializes source references in decisions and excludes unsupported decision observations", async () => {
   const model = accountedHandoffModel({ ...overview, actionItems: [] });
