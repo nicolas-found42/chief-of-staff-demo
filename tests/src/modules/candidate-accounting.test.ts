@@ -145,6 +145,26 @@ it.each([
   },
 );
 
+it("shows every evidence-bearing stage the accepted reference form by example (#402)", async () => {
+  const systems = new Map<string, string>();
+  const model = accountedHandoffModel({ ...overview, actionItems: [] });
+  await extract(async (request) => {
+    systems.set(request.system.split("\n")[0], request.system);
+    if (request.system.startsWith("DISCOVER CANDIDATES"))
+      return { candidates: [{ ...candidate, quote: "@line:1" }] };
+    return model(request);
+  });
+  const example = '"quote": "@line:12"';
+  for (const stage of ["DISCOVER CANDIDATES", "AUDIT SOURCE COVERAGE"]) {
+    const system = systems.get(stage);
+    expect(system, stage).toBeDefined();
+    expect(system, stage).toContain(example);
+    // The stage text and the shared rule agree: the identifier, not the speech.
+    expect(system, stage).not.toMatch(/Copy an exact source quote|exact supporting quote/);
+  }
+  expect([...systems.values()].every((system) => system.includes("Not accepted:"))).toBe(true);
+});
+
 it.each([
   "@line:999999",
   "@999999",
