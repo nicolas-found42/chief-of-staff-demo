@@ -149,23 +149,31 @@ export class ModelBudgetLedger {
     options: {
       now?: (() => Date) | undefined;
       priceEvidenceTable?: Map<string, ModelPriceEvidence> | undefined;
+      /**
+       * The cumulative campaign allowance a new ledger is created with (#363).
+       * A validation campaign states it explicitly; an existing ledger keeps
+       * the allowance it already holds, so this cannot reset spend.
+       */
+      campaignAllowanceDollars?: number | undefined;
     } = {},
   ) {
     this.filePath = join(workspaceDir, "model-budget-ledger.json");
     this.priceEvidenceTable = options.priceEvidenceTable ?? defaultModelPriceEvidence();
     this.now = options.now ?? (() => new Date());
-    this.document = this.loadOrCreate();
+    this.document = this.loadOrCreate(
+      options.campaignAllowanceDollars ?? CAMPAIGN_BUDGET_DOLLARS_DEFAULT,
+    );
   }
 
-  private loadOrCreate(): ModelBudgetLedgerDocument {
+  private loadOrCreate(campaignAllowanceDollars: number): ModelBudgetLedgerDocument {
     if (!existsSync(this.filePath)) {
       const initial: ModelBudgetLedgerDocument = {
         version: 1,
         campaign: {
-          allowedDollars: CAMPAIGN_BUDGET_DOLLARS_DEFAULT,
+          allowedDollars: campaignAllowanceDollars,
           spentDollars: 0.0,
           reservedDollars: 0.0,
-          remainingDollars: CAMPAIGN_BUDGET_DOLLARS_DEFAULT,
+          remainingDollars: campaignAllowanceDollars,
           version: 1,
           updatedAt: this.now().toISOString(),
         },

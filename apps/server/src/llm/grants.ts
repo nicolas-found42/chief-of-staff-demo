@@ -1,7 +1,16 @@
 import type { SourceLifecycleGrant, TranscriptRoutePolicy } from "@chief-of-staff-demo/shared";
 
-/** Known development models with specific retention policies (#341, #351). */
-const NON_ZDR_MODELS_WITH_EXCEPTION = new Set(["nex-agi/nex-n2.5-mini:free"]);
+/**
+ * Known development models with specific retention policies (#341, #351).
+ * None of the free campaign models (#363) is on OpenRouter's ZDR list, so each
+ * dispatches only under a grant that carries the explicit non-ZDR exception.
+ */
+const NON_ZDR_MODELS_WITH_EXCEPTION = new Set([
+  "nex-agi/nex-n2.5-mini:free",
+  "thinkingmachines/inkling-small:free",
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "poolside/laguna-xs-2.1:free",
+]);
 
 /**
  * Returns whether a model is considered ZDR-compliant or covered by an explicit exception (#341).

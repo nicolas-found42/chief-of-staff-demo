@@ -83,6 +83,9 @@ describe("model admission and budget schemas", () => {
     expect(known.has("deepseek/deepseek-v4.1-flash")).toBe(true);
     expect(known.has("nvidia/nemotron-3.5-lightning")).toBe(true);
     expect(known.has("nex-agi/nex-n2.5-mini:free")).toBe(true);
+    expect(known.has("thinkingmachines/inkling-small:free")).toBe(true);
+    expect(known.has("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free")).toBe(true);
+    expect(known.has("poolside/laguna-xs-2.1:free")).toBe(true);
     expect(known.has("upstage/solar-pro4")).toBe(true);
     expect(known.has("mock")).toBe(true);
 

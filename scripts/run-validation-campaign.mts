@@ -112,6 +112,11 @@ Options
   --grant <path>          Frozen source-lifecycle grant; required for a live provider.
   --out <dir>             Private campaign record root (default: <tmp>/debrief-campaign/<id>).
   --budget-root <dir>     Durable ledger/timeline root (default: <out>/budget).
+  --campaign-allowance <usd>
+                          Cumulative USD ceiling the campaign ledger is created
+                          with. Required for a live provider; the owner states
+                          it, nothing defaults it. An existing ledger keeps its
+                          own allowance. A mock run defaults to 0.
   --concurrency <n>       Slots in flight (default: 4).
   --allow-live            Required before a non-mock provider may dispatch.
   --plan-only             Freeze the manifest and print the plan; no dispatch.
@@ -201,6 +206,21 @@ export async function runValidationCampaignCli(
       throw new Error(`--concurrency must be a positive integer, got ${arg("concurrency")}.`);
     }
 
+    /* The owner states the campaign ceiling (#363): the former USD 100
+       ledger default was an agent recommendation the owner never approved,
+       so a live campaign refuses to start without an explicit figure. */
+    const allowanceArg = arg("campaign-allowance");
+    if (provider !== "mock" && allowanceArg === undefined) {
+      throw new Error(
+        "A live provider needs --campaign-allowance <usd>, the owner's cumulative ceiling for this campaign.",
+      );
+    }
+    const campaignAllowanceDollars = Number(allowanceArg ?? "0");
+    if (!Number.isFinite(campaignAllowanceDollars) || campaignAllowanceDollars < 0) {
+      throw new Error(
+        `--campaign-allowance must be a non-negative USD amount, got ${allowanceArg}.`,
+      );
+    }
     let grant: SourceLifecycleGrant | null = null;
     if (provider !== "mock") {
       const grantPath = arg("grant");
@@ -224,10 +244,10 @@ export async function runValidationCampaignCli(
     /* A mock run contacts nothing and is billed nothing: give its models
        zero-cost evidence so the dry run cannot consume the campaign allowance
        the durable ledger tracks. */
-    const ledger = new ModelBudgetLedger(
-      budgetRoot,
-      provider === "mock" ? { priceEvidenceTable: mockModelPriceEvidence(models) } : {},
-    );
+    const ledger = new ModelBudgetLedger(budgetRoot, {
+      campaignAllowanceDollars,
+      ...(provider === "mock" ? { priceEvidenceTable: mockModelPriceEvidence(models) } : {}),
+    });
     const campaign = ledger.getCampaignSnapshot();
     const routeFor = (model: string): CampaignModelRoute =>
       grant === null
