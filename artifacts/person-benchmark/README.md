@@ -76,6 +76,35 @@ returns `not-comparable` and exit 1. It has an explicitly rejected positive: Ana
 chairmanship was called recovered even though the judge's rationale says the required date and
 family detail are missing. Do not treat that positive alone as the required improvement.
 
+## Speed validation smoke run (#319)
+
+`live-discovery-expanded-db8939daf4ad079e` is the four-person smoke run PR #319 cites as the
+evidence for `perf: pipeline person research and reuse source versions`. It ran at gitSha
+`c9cf65d1a7f5b2a911d80bce3865b748d4ce60c5` — the PR's own head, not a commit on `main` —
+2026-09-09T04:31:26Z–04:50:14Z, against corpus `14bca86ee0b97d28`, research and planning
+`openrouter inception/mercury-2.5-preview`, judge `openrouter z-ai/glm-5.3-flash 2026-09-06.10`,
+prompt `2026-09-06.4`, allowance 180 calls / 900000 ms per operation, live anonymous network,
+2,142,431 input / 382,318 output characters with tokens and cost unavailable from the model
+boundary.
+
+Its status is honestly **failed**, and it is a smoke run, not an acceptance result: 26 of the 30
+people were `Excluded by --limit`; of the four evaluated, `achim-steiner`'s support assessment
+failed an evidence/claim-reference guard and `arvind-krishna`'s hit its 90-second model ceiling,
+so neither zero is a completed quality assessment. All four research operations concluded
+`completed`. Recovery was `ana-botin` 2/13 and `anders-danielsson` 0/8, matching their earlier
+credited recovery; no quality improvement is claimed from it.
+
+What it does carry is the timing comparison in PR #319: median research time 15.17 → 6.29 minutes
+across those four people, recorded requests 2,849 → 1,006, reserved model calls 289 → 125, against
+the exact-#315 run that completed none of the four before its wall-clock bound. Those are
+operation accounting fields from a small live observation, never a controlled A/B attribution.
+
+These reports are committed here because a merged PR rests on them. Their
+`.evidence` bundle (22 MB, `evidenceBundleHash`
+`7f708eb8458cbdaf6179d8278729fa8ea38cb676759b18d56b9c0bcdfd12e810`) stays uncommitted under the
+artifacts policy in `.gitignore`, so reassessment from retained evidence is not possible from the
+repository alone.
+
 ## Expanded candidate arm (#258)
 
 `live-discovery-expanded-873614ead458212f` is the candidate half of the frozen acceptance pair:
