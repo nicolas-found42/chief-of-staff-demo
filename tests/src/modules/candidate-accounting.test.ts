@@ -994,6 +994,41 @@ it("grounds Markdown turn labels and preserves their named executor", async () =
   });
 });
 
+it("grounds a speaker and timestamp on the line before the spoken commitment", async () => {
+  const quote = "I will test the app tomorrow.";
+  const model = accountedHandoffModel({
+    ...overview,
+    actionItems: [
+      {
+        title: "Test the app",
+        owner: "Alice",
+        evidence: quote,
+        handoff: operationalHandoff({
+          responsibility: { names: ["Alice"], basis: "explicit", reason: "First-person promise" },
+          evidence: [{ quote, speaker: null, timestamp: null }],
+        }),
+      },
+    ],
+  });
+  const detail = await extract(async (request) => {
+    if (request.system.startsWith("VERIFY RESPONSIBILITY")) {
+      const reply = responsibilityFixture(request);
+      return {
+        responsibilities: reply.responsibilities.map((row) => ({
+          ...row,
+          bindings: [{ name: "Alice", evidence: ["@line:2"] }],
+        })),
+      };
+    }
+    return model(request);
+  }, `Alice  00:12\n${quote}\n\nBob  00:20\nThanks.`);
+  expect(detail.status).toBe("done");
+  expect(detail.extraction?.actionItems[0]).toMatchObject({
+    owner: "Alice",
+    handoff: { evidence: [{ quote, speaker: "Alice", timestamp: "00:12" }] },
+  });
+});
+
 it("checks action-specific role binding even when the proposed name is a known speaker", async () => {
   const quote = "Pricing is the priority; we have not chosen who will redo it.";
   const model = accountedHandoffModel({

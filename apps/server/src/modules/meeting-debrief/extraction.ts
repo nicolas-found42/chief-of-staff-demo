@@ -202,11 +202,19 @@ export function dropActionItemEvidence(raw: unknown): unknown {
 
 /** Share turn metadata across evidence grounding and responsibility checks so
  * retained Markdown exports carry the same identities as plain transcripts. */
-export function parseTranscriptTurn(line: string): {
+export function parseTranscriptTurn(
+  line: string,
+  previousLine?: string,
+): {
   speaker: string;
   timestamp: string | null;
   text: string;
 } | null {
+  // Some exports separate the label from its speech. Only the immediately
+  // following nonblank line belongs to that header; never carry it across a gap.
+  const header = previousLine?.match(/^([^:\n]+?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s*$/);
+  if (header && line.trim())
+    return { speaker: header[1]!.trim(), timestamp: header[2]!, text: line };
   const markdown = line.match(/^\*\*([^*\n]+)\*\*\s+\*\[([\d:]+)(?:[–-][\d:]+)?\]\*:\s*(.*)$/);
   if (markdown)
     return { speaker: markdown[1]!.trim(), timestamp: markdown[2]!, text: markdown[3]! };
@@ -220,8 +228,9 @@ export function groundTranscriptQuotes(
   record: Pick<TranscriptRecord, "normalizedText">,
 ): MeetingHandoff["evidence"] {
   const sourceText = normalizeQuote(record.normalizedText);
-  const segments = record.normalizedText.split("\n").map((line) => {
-    const turn = parseTranscriptTurn(line);
+  const lines = record.normalizedText.split("\n");
+  const segments = lines.map((line, index) => {
+    const turn = parseTranscriptTurn(line, lines[index - 1]);
     return turn ? { ...turn, text: normalizeQuote(turn.text) } : null;
   });
   return quotes.flatMap((source) => {
