@@ -1818,3 +1818,56 @@ it("does not carry a separate speaker header across a gap or another labeled tur
     ).toEqual([{ quote, speaker, timestamp }]);
   }
 });
+
+it.each(["unknown-with-binding", "header-reference"])(
+  "does not offer schema-constrained providers an invalid responsibility state: %s",
+  async (fault) => {
+    const quote = "I will test the app.";
+    const model = accountedHandoffModel({
+      ...overview,
+      actionItems: [
+        {
+          title: "Test the app",
+          owner: "Alice",
+          evidence: quote,
+          handoff: operationalHandoff({
+            evidence: [{ quote, speaker: "Alice", timestamp: "00:12" }],
+          }),
+        },
+      ],
+    });
+    const detail = await extract(async (request) => {
+      if (request.system.startsWith("VERIFY RESPONSIBILITY")) {
+        const reply = responsibilityFixture(request);
+        const valid = {
+          responsibilities: reply.responsibilities.map((row) => ({
+            ...row,
+            bindings: [{ name: "Alice", evidence: ["@line:2"] }],
+          })),
+        };
+        const invalid = {
+          responsibilities: valid.responsibilities.map((row) => ({
+            ...row,
+            ...(fault === "unknown-with-binding"
+              ? { responsibility: { names: [], basis: "unknown", reason: "Unresolved" } }
+              : { bindings: [{ name: "Alice", evidence: ["@line:1"] }] }),
+          })),
+        };
+        expect(request.schema.safeParse(invalid).success).toBe(false);
+        expect(request.schema.safeParse(valid).success).toBe(true);
+        return valid;
+      }
+      return model(request);
+    }, `Alice  00:12\n${quote}`);
+    expect(detail.status).toBe("done");
+  },
+);
+
+it("keeps a colon inside separate-line speech from becoming a new speaker", () => {
+  const quote = "Next steps: I will test the app.";
+  expect(
+    groundTranscriptQuotes([{ quote, speaker: null, timestamp: null }], {
+      normalizedText: `Alice  00:12\n${quote}`,
+    }),
+  ).toEqual([{ quote, speaker: "Alice", timestamp: "00:12" }]);
+});

@@ -804,7 +804,10 @@ For each supported executor return a binding with their source name and source e
       );
     };
     const sourceIds = sourceLines.filter((line) => line.turn?.text.trim()).map((line) => line.id);
-    const repairOutputSchema = (previous: z.infer<typeof Responsibilities>, count: number) => {
+    const responsibilityOutputSchema = (
+      previous: z.infer<typeof Responsibilities>,
+      count: number,
+    ) => {
       if (sourceIds.length === 0) return undefined;
       const row = Responsibilities.shape.responsibilities.element;
       const explicitBindings = [
@@ -867,7 +870,27 @@ For each supported executor return a binding with their source name and source e
           .length(count),
       });
     };
-    let result = await call(stage, schema, system, user, false, "high");
+    // The first answer needs the same source constraints as a repair: a
+    // speaker header is not speech, and unknown responsibility has no binding.
+    let result = await call(
+      stage,
+      schema,
+      system,
+      user,
+      false,
+      "high",
+      undefined,
+      responsibilityOutputSchema(
+        {
+          responsibilities: retained.map((row) => ({
+            candidateId: row.candidateId,
+            responsibility: row.facts!.responsibility,
+            bindings: [],
+          })),
+        },
+        retained.length,
+      ),
+    );
     if (!valid(result)) {
       const accounted = new Set(result.responsibilities.map((row) => row.candidateId));
       const canRepairSubset =
@@ -895,7 +918,7 @@ For each supported executor return a binding with their source name and source e
         false,
         "high",
         (value) => valid(value, repairRows),
-        repairOutputSchema(invalidResult, repairRows.length),
+        responsibilityOutputSchema(invalidResult, repairRows.length),
       );
       if (!valid(repaired, repairRows))
         throw new Error(

@@ -214,13 +214,14 @@ export function parseTranscriptTurn(
   if (markdown)
     return { speaker: markdown[1]!.trim(), timestamp: markdown[2]!, text: markdown[3]! };
   const plain = line.match(/^(?:\[([\d:]+)(?:[–-][\d:]+)?\]\s*)?([^:\n]+):\s(.*)$/);
-  if (plain) return { speaker: plain[2]!.trim(), timestamp: plain[1] ?? null, text: plain[3]! };
+  if (plain?.[1]) return { speaker: plain[2]!.trim(), timestamp: plain[1], text: plain[3]! };
   // Some exports separate the label from its speech. Only the immediately
   // following nonblank line belongs to that header; never carry it across a gap.
+  // A colon within that speech is prose unless it has its own turn timestamp.
   const header = previousLine?.match(/^([^:\n]+?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s*$/);
   if (header && line.trim())
     return { speaker: header[1]!.trim(), timestamp: header[2]!, text: line };
-  return null;
+  return plain ? { speaker: plain[2]!.trim(), timestamp: null, text: plain[3]! } : null;
 }
 
 /** Ground model quotes in literal transcript speech, preserving speaker boundaries. */
