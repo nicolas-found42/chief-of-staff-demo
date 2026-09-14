@@ -1776,6 +1776,7 @@ async function openAiCompatibleComplete(
       cfg.provider === "openrouter" &&
       response.status === 404 &&
       skippedRoutes.length > 0 &&
+      request.retry?.canRetry?.() !== false &&
       !restsGivenUp
     ) {
       restsGivenUp = true;

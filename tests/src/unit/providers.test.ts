@@ -3090,6 +3090,25 @@ describe("openrouter route rests and the binding ladder", () => {
     expect(routing(2)).toEqual({ sort: "throughput" });
   });
 
+  it("does not clear and retry an exhausted route when the caller forbids recovery", async () => {
+    declarations.push(declaring("temperature"));
+    responses.push({
+      status: 429,
+      body: { error: { code: 429, metadata: { provider_name: "Alibaba" } } },
+    });
+    const complete = openrouter("qwen/qwen3.7-flash");
+    const request = { system: "S", user: "U", schema: ExtractionWireSchema };
+    await complete(request).catch(() => undefined);
+    declarations.push(declaring("temperature"));
+    responses.push({ status: 404, body: { error: { code: 404 } } });
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    await expect(
+      complete({ ...request, retry: { onAttempt: () => {}, canRetry: () => false } }),
+    ).rejects.toMatchObject({ diagnostic: { status: 404 } });
+    expect(calls).toHaveLength(2);
+    expect(routing(1)).toEqual({ sort: "throughput", ignore: ["Alibaba"] });
+  });
+
   /* The recovery gives the rests up and asks again; it must not become a way
      to keep asking. This pins its shape: one call carries the rest, one gives
      it up, and refusals after that are spent on the ladder.
