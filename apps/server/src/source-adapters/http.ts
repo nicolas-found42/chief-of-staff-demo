@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { isIP, type LookupFunction } from "node:net";
+import { BlockList, isIP, type LookupFunction } from "node:net";
 import CacheableLookup from "cacheable-lookup";
-import { Agent, fetch as undiciFetch, type Dispatcher } from "undici";
+import { Agent, fetch as undiciFetch, type Dispatcher, type RequestInit } from "undici";
 
 export interface PublicHttpResponse {
   url: string;
@@ -35,20 +35,47 @@ export type PublicHttpFetch = (
 export const browserUserAgent =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 
-function privateIpv4(hostname: string): boolean {
-  const octets = hostname.split(".").map(Number);
-  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part))) {
-    return false;
-  }
-  const [a, b] = octets as [number, number, number, number];
-  return (
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    a === 0
-  );
+/* Public-source retrieval must apply one address policy to URL literals and
+   the addresses actually handed to the socket. BlockList also recognizes
+   IPv4-mapped IPv6, which string-prefix checks miss (SEC-01/02 in the
+   2026-09-14 product experience audit). */
+const nonPublicAddresses = new BlockList();
+for (const [address, prefix] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
+] as const)
+  nonPublicAddresses.addSubnet(address, prefix, "ipv4");
+for (const [address, prefix] of [
+  ["::", 128],
+  ["::1", 128],
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["ff00::", 8],
+  ["2001:db8::", 32],
+] as const)
+  nonPublicAddresses.addSubnet(address, prefix, "ipv6");
+
+function nonPublicAddress(address: string): boolean {
+  const family = isIP(address);
+  return family === 0 || nonPublicAddresses.check(address, family === 4 ? "ipv4" : "ipv6");
+}
+
+function privateAddressError(): NodeJS.ErrnoException {
+  return Object.assign(new Error("Source Targets must resolve to a public host."), {
+    code: "ERR_SOURCE_PRIVATE_ADDRESS",
+  });
 }
 
 export function assertPublicHttpUrl(value: string): URL {
@@ -56,17 +83,15 @@ export function assertPublicHttpUrl(value: string): URL {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Source Targets must use public HTTP or HTTPS URLs.");
   }
-  const hostname = url.hostname.toLowerCase();
+  const hostname = url.hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "");
   if (
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
     hostname.endsWith(".local") ||
-    privateIpv4(hostname) ||
-    (isIP(hostname) === 6 &&
-      (hostname === "::1" ||
-        hostname.startsWith("fc") ||
-        hostname.startsWith("fd") ||
-        hostname.startsWith("fe80")))
+    (isIP(hostname) !== 0 && nonPublicAddress(hostname))
   ) {
     throw new Error("Source Targets must resolve to a public host.");
   }
@@ -96,7 +121,7 @@ export type SourceHttpDispatcher = Agent;
  * `autoSelectFamily` requests), so the narrows below are the contract, not
  * ceremony: unknown families fall back to family-agnostic resolution.
  */
-function pooledLookup(lookup: CacheableLookup): LookupFunction {
+function pooledLookup(lookup: CacheableLookup, guarded: boolean): LookupFunction {
   return (hostname, options, callback) => {
     const family = options.family === 4 || options.family === 6 ? options.family : undefined;
     const base: { hints?: number; family?: 4 | 6 } = {
@@ -119,6 +144,10 @@ function pooledLookup(lookup: CacheableLookup): LookupFunction {
           callback(error, [], undefined);
           return;
         }
+        if (guarded && result.some(({ address }) => nonPublicAddress(address))) {
+          callback(privateAddressError(), [], undefined);
+          return;
+        }
         let family: number | undefined;
         for (const address of result) {
           family = address.family;
@@ -128,6 +157,10 @@ function pooledLookup(lookup: CacheableLookup): LookupFunction {
       });
     } else {
       lookup.lookup(hostname, base, (error, address, family) => {
+        if (!error && guarded && nonPublicAddress(address)) {
+          callback(privateAddressError(), "", family);
+          return;
+        }
         callback(error, address, family);
       });
     }
@@ -142,7 +175,7 @@ function pooledLookup(lookup: CacheableLookup): LookupFunction {
  * so tests never share the process singleton; production transports share one
  * via `sharedSourceHttpDispatcher`.
  */
-export function createSourceHttpDispatcher(): SourceHttpDispatcher {
+export function createSourceHttpDispatcher(guarded = true): SourceHttpDispatcher {
   const lookup = new CacheableLookup();
   return new Agent({
     keepAliveTimeout: SOURCE_HTTP_KEEP_ALIVE_TIMEOUT_MS,
@@ -152,17 +185,61 @@ export function createSourceHttpDispatcher(): SourceHttpDispatcher {
     connect: {
       timeout: SOURCE_HTTP_CONNECT_TIMEOUT_MS,
       autoSelectFamily: true,
-      lookup: pooledLookup(lookup),
+      lookup: pooledLookup(lookup, guarded),
     },
   });
 }
 
 let sharedDispatcher: SourceHttpDispatcher | undefined;
+let localSearchDispatcher: SourceHttpDispatcher | undefined;
 
 /** The process-wide pooling dispatcher behind the default transports. */
-function sharedSourceHttpDispatcher(): SourceHttpDispatcher {
+function sharedSourceHttpDispatcher(guarded = true): SourceHttpDispatcher {
+  if (!guarded) return (localSearchDispatcher ??= createSourceHttpDispatcher(false));
   sharedDispatcher ??= createSourceHttpDispatcher();
   return sharedDispatcher;
+}
+
+/** Validate each hop before fetch can open its socket, retaining one deadline.
+ * Automatic redirects would bypass the URL policy. Cross-origin redirects
+ * also must not carry provider-specific credentials or conditional headers. */
+async function fetchSource(url: URL, init: RequestInit, guarded: boolean) {
+  let current = url;
+  let request = init;
+  for (let redirects = 0; ; redirects += 1) {
+    const response = await undiciFetch(current, { ...request, redirect: "manual" });
+    const location = response.headers.get("location");
+    if (![301, 302, 303, 307, 308].includes(response.status) || location === null)
+      return { response, url: current.toString() };
+    await response.body?.cancel();
+    if (redirects >= 20) throw new Error("Source response exceeded the redirect limit.");
+    const target = new URL(location, current);
+    const next = guarded ? assertPublicHttpUrl(target.toString()) : target;
+    const headers = new Headers(request.headers as HeadersInit);
+    if (next.origin !== current.origin) {
+      for (const name of [
+        "authorization",
+        "proxy-authorization",
+        "cookie",
+        "x-api-key",
+        "x-auth-token",
+        "if-none-match",
+        "if-modified-since",
+      ])
+        headers.delete(name);
+    }
+    if (
+      response.status === 303 ||
+      ((response.status === 301 || response.status === 302) && request.method === "POST")
+    ) {
+      request = { ...request, method: "GET" };
+      delete request.body;
+      headers.delete("content-type");
+      headers.delete("content-length");
+    }
+    request = { ...request, headers: Object.fromEntries(headers) };
+    current = next;
+  }
 }
 
 /**
@@ -188,7 +265,7 @@ export function createHttpFetch(
 ): PublicHttpFetch {
   const defaultTimeoutMs = options.timeoutMs ?? 20_000;
   const guarded = options.guarded ?? true;
-  const dispatcher = options.dispatcher ?? sharedSourceHttpDispatcher();
+  const dispatcher = options.dispatcher ?? sharedSourceHttpDispatcher(guarded);
   return async (value, perCall = {}) => {
     const url = guarded ? assertPublicHttpUrl(value) : new URL(value);
     const controller = new AbortController();
@@ -213,23 +290,26 @@ export function createHttpFetch(
          global fetch with the default agent, and no global dispatcher is
          swapped. Tests intercept at the undici module boundary; the
          transport's guard, headers and timeout code still run. */
-      const response = await undiciFetch(url, {
-        ...(perCall.method !== undefined ? { method: perCall.method } : {}),
-        ...(perCall.body !== undefined ? { body: perCall.body } : {}),
-        headers: perCall.body
-          ? { ...headers, "content-type": "application/x-www-form-urlencoded" }
-          : headers,
-        redirect: "follow",
-        signal: controller.signal,
-        credentials: "omit",
-        dispatcher,
-      });
+      const { response, url: finalUrl } = await fetchSource(
+        url,
+        {
+          ...(perCall.method !== undefined ? { method: perCall.method } : {}),
+          ...(perCall.body !== undefined ? { body: perCall.body } : {}),
+          headers: perCall.body
+            ? { ...headers, "content-type": "application/x-www-form-urlencoded" }
+            : headers,
+          signal: controller.signal,
+          credentials: "omit",
+          dispatcher,
+        },
+        guarded,
+      );
       const body = await response.text();
       if (body.length > 5_000_000) {
         throw new Error("Source response exceeded the 5 MB collection limit.");
       }
       return {
-        url: response.url || url.toString(),
+        url: response.url || finalUrl,
         status: response.status,
         contentType: response.headers.get("content-type"),
         etag: response.headers.get("etag"),
@@ -276,23 +356,26 @@ function createHttpBytesFetch(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), perCall.timeoutMs ?? defaultTimeoutMs);
     try {
-      const response = await undiciFetch(url, {
-        headers: {
-          accept: perCall.accept ?? "application/pdf, application/octet-stream, */*;q=0.8",
-          "user-agent": "Found42-Content-Scout/1.0 (+public-source-monitor)",
-          ...options.headers,
+      const { response, url: finalUrl } = await fetchSource(
+        url,
+        {
+          headers: {
+            accept: perCall.accept ?? "application/pdf, application/octet-stream, */*;q=0.8",
+            "user-agent": "Found42-Content-Scout/1.0 (+public-source-monitor)",
+            ...options.headers,
+          },
+          signal: controller.signal,
+          credentials: "omit",
+          // Same pooled dispatcher as the text transport; see the note there.
+          dispatcher,
         },
-        redirect: "follow",
-        signal: controller.signal,
-        credentials: "omit",
-        // Same pooled dispatcher as the text transport; see the note there.
-        dispatcher,
-      });
+        true,
+      );
       const bytes = Buffer.from(await response.arrayBuffer());
       if (bytes.byteLength > 5_000_000)
         throw new Error("Source response exceeded the 5 MB collection limit.");
       return {
-        url: response.url || url.toString(),
+        url: response.url || finalUrl,
         status: response.status,
         contentType: response.headers.get("content-type"),
         retryAfter: response.headers.get("retry-after"),
