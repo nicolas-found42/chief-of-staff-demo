@@ -130,6 +130,38 @@ describe("public source HTTP boundary", () => {
     expect(new Set(transport.fetch.mock.calls.map((call) => call[1].signal)).size).toBe(1);
   });
 
+  it.each([301, 302, 303, 307, 308])("preserves fetch POST semantics for %s", async (status) => {
+    transport.fetch
+      .mockResolvedValueOnce(new Response(null, { status, headers: { location: "/next" } }))
+      .mockResolvedValueOnce(new Response("ready"));
+    await createHttpFetch()("https://public.example/start", { method: "POST", body: "q=value" });
+    const next = transport.fetch.mock.calls[1][1];
+    expect(next.method).toBe(status === 307 || status === 308 ? "POST" : "GET");
+    expect(next.body).toBe(status === 307 || status === 308 ? "q=value" : undefined);
+  });
+
+  it("strips every credential and conditional header at an origin change", async () => {
+    const names = [
+      "authorization",
+      "proxy-authorization",
+      "cookie",
+      "x-api-key",
+      "x-auth-token",
+      "if-none-match",
+      "if-modified-since",
+    ];
+    transport.fetch
+      .mockResolvedValueOnce(
+        new Response(null, { status: 307, headers: { location: "https://other.example/" } }),
+      )
+      .mockResolvedValueOnce(new Response("ready"));
+    await createHttpFetch({
+      headers: Object.fromEntries(names.map((name) => [name, "synthetic"])),
+    })("https://public.example/start");
+    const forwarded = new Headers(transport.fetch.mock.calls[1][1].headers);
+    for (const name of names) expect(forwarded.has(name)).toBe(false);
+  });
+
   it("preserves explicitly unguarded self-hosted search resolution", async () => {
     transport.fetch.mockResolvedValueOnce(new Response("local results"));
     const fetch = createHttpFetch({ guarded: false });

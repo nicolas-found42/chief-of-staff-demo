@@ -701,6 +701,13 @@ export function contentResearchBackfillModule(
         resetAttempts: false,
       };
     },
+    planRecovery(state) {
+      if (state.intake !== CONTENT_RESEARCH_BACKFILL_INTAKE || state.status !== "pending")
+        return null;
+      const days = Number(state.externalId?.split(":")[1]);
+      if (days !== 7 && days !== 30 && days !== 90) return null;
+      return { fromStage: "collect", reason: "setup_wait_cleared", input: { windowDays: days } };
+    },
     async run(ctx: RunContext, input: { windowDays: 7 | 30 | 90 }): Promise<RunOutcome> {
       const watched = deps.store.listPeople();
       let people: NamedPerson[] = watched;
@@ -832,6 +839,15 @@ export function peopleDiscoveryModule(
     id: CONTENT_RESEARCH_MODULE_ID,
     version: CONTENT_RESEARCH_MODULE_VERSION,
     failureHint: () => "People Discovery could not produce suggestions.",
+    planRecovery(state) {
+      if (state.intake !== CONTENT_RESEARCH_DISCOVERY_INTAKE || state.status !== "pending")
+        return null;
+      return {
+        fromStage: "discover",
+        reason: "setup_wait_cleared",
+        input: { invocation: "scheduled" },
+      };
+    },
     planRetry(meta): RetryPlan<{ invocation: "manual" | "scheduled" }> | null {
       return meta.intake === CONTENT_RESEARCH_DISCOVERY_INTAKE && meta.status === "failed"
         ? {

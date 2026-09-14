@@ -1,5 +1,7 @@
 import { chromium, type Page } from "playwright-core";
 import { assertPublicHttpUrl } from "./http.js";
+import { sourceBodyLimitError } from "./source-body.js";
+import { createBrowserResourceFetch } from "./browser-network.js";
 
 export interface BrowserRenderResult {
   url: string;
@@ -20,65 +22,170 @@ function renderingTimeout(): Error {
   );
 }
 
-async function readLandingDocument(page: Page, deadline: number): Promise<string> {
+async function readLandingDocument(
+  page: Page,
+  deadline: number,
+  expectedUrl: () => string | undefined,
+): Promise<string> {
   for (;;) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw renderingTimeout();
-    await page.waitForLoadState("domcontentloaded", { timeout: remaining });
+    const target = expectedUrl();
+    if (target && page.url() !== target)
+      await page.waitForURL(target, { timeout: remaining, waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("domcontentloaded", {
+      timeout: Math.max(1, deadline - Date.now()),
+    });
     try {
-      return await page.content();
+      return await page.evaluate((limit) => {
+        const html = document.documentElement.outerHTML;
+        if (new TextEncoder().encode(html).byteLength > limit) {
+          throw new Error("Rendered page exceeded the 5 MB collection limit.");
+        }
+        return `<!DOCTYPE html>${html}`;
+      }, BROWSER_COLLECTION_LIMIT_BYTES - 15);
     } catch (error) {
       // A client-side redirect can destroy the document after DOMContentLoaded.
       // Retry that race only, without giving each redirect a fresh time budget.
       if (
         !(error instanceof Error) ||
-        !error.message.includes(
+        (!error.message.includes(
           "Unable to retrieve content because the page is navigating and changing the content.",
-        )
+        ) &&
+          !error.message.includes("Execution context was destroyed"))
       )
         throw error;
     }
   }
 }
 
-/**
- * The bounded public browser route behind the Website Source Adapter. It
- * renders exactly one public URL in a fresh anonymous headless Chromium
- * context: no cookies, no persisted storage state, no authentication, no
- * CAPTCHA handling and no stealth flags. Launching and closing a browser per
- * request keeps the fallback isolated from every other adapter and bounded in
- * time and body size.
- */
-export function playwrightBrowserRenderer(): BrowserRenderer {
+const resourceFetch = createBrowserResourceFetch();
+let rendering = false;
+
+/** Chromium cannot create IP sockets: the production launcher installs an
+ * inherited Linux seccomp filter before exec. All supported HTTP traffic is
+ * fulfilled by the guarded Node transport. Missing launcher/filter fails closed.
+ * One renderer and the container memory limit bound the independent browser
+ * workload; response/DOM limits alone are not a whole-process memory guarantee. */
+export function playwrightBrowserRenderer(fetchResource = resourceFetch): BrowserRenderer {
   return async (value) => {
     const url = assertPublicHttpUrl(value);
-    const browser = await chromium.launch({ headless: true });
+    if (rendering) throw new Error("Browser source renderer is busy; retry later.");
+    rendering = true;
+    const controller = new AbortController();
+    const deadline = Date.now() + BROWSER_NAVIGATION_TIMEOUT_MS;
+    let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+    let failure: Error | undefined;
+    let requestCount = 0;
+    let navigationRedirects = 0;
+    let mainDocumentStatus: number | undefined;
+    let expectedMainDocument: string | undefined;
+    let activeRequests = 0;
+    let collectedBytes = 0;
+    const pending = new Set<Promise<void>>();
+    const resourceWaiters: (() => void)[] = [];
+    const timer = setTimeout(() => {
+      failure = renderingTimeout();
+      controller.abort();
+      void browser?.close().catch(() => undefined);
+    }, BROWSER_NAVIGATION_TIMEOUT_MS);
     try {
-      const page = await browser.newPage();
-      const deadline = Date.now() + BROWSER_NAVIGATION_TIMEOUT_MS;
-      try {
-        const navigation = await page.goto(url.toString(), {
-          waitUntil: "domcontentloaded",
-          timeout: BROWSER_NAVIGATION_TIMEOUT_MS,
-        });
-        const body = await readLandingDocument(page, deadline);
-        if (Buffer.byteLength(body, "utf8") > BROWSER_COLLECTION_LIMIT_BYTES) {
-          throw new Error("Rendered page exceeded the 5 MB collection limit.");
-        }
-        return {
-          url: page.url(),
-          contentType: "text/html",
-          status: navigation?.status() ?? 200,
-          body,
-        };
-      } catch (error) {
-        if (error instanceof Error && error.name === "TimeoutError") {
-          throw renderingTimeout();
-        }
-        throw error;
-      }
+      browser = await chromium.launch({
+        headless: true,
+        executablePath: "/usr/local/bin/browser-network-sandbox",
+        timeout: BROWSER_NAVIGATION_TIMEOUT_MS,
+        args: ["--disable-quic", "--disable-extensions"],
+      });
+      const context = await browser.newContext({ serviceWorkers: "block", acceptDownloads: false });
+      await context.routeWebSocket("**/*", (socket) => socket.close());
+      await context.route("**/*", (route) => {
+        const operation = (async () => {
+          requestCount += 1;
+          const admitted = requestCount <= 100;
+          while (activeRequests >= 8)
+            await new Promise<void>((resolve) => resourceWaiters.push(resolve));
+          activeRequests += 1;
+          try {
+            if (!admitted || collectedBytes >= 20_000_000) {
+              throw sourceBodyLimitError();
+            }
+            const request = route.request();
+            const response = await fetchResource(
+              request.url(),
+              request.method(),
+              request.headers(),
+              request.postDataBuffer(),
+              controller.signal,
+              request.isNavigationRequest(),
+            );
+            collectedBytes += response.body.byteLength;
+            if (collectedBytes > 20_000_000) {
+              throw sourceBodyLimitError();
+            }
+            if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.location) {
+              if (request.frame().parentFrame() === null)
+                expectedMainDocument = response.headers.location;
+              navigationRedirects += 1;
+              if (navigationRedirects > 20)
+                throw new Error("Browser source exceeded the redirect limit.");
+              // Playwright routing only sees the first URL in an HTTP redirect
+              // chain. A fresh document navigation is intercepted again and
+              // keeps the actual landing origin, without permitting direct IP.
+              const target = JSON.stringify(response.headers.location).replaceAll("<", "\\u003c");
+              await route.fulfill({
+                status: 200,
+                contentType: "text/html",
+                body: `<script>location.replace(${target})</script>`,
+              });
+            } else {
+              if (request.isNavigationRequest() && request.frame().parentFrame() === null) {
+                mainDocumentStatus = response.status;
+                expectedMainDocument = request.url();
+              }
+              await route.fulfill(response);
+            }
+          } catch (error) {
+            failure ??=
+              error instanceof Error ? error : new Error("Browser source request failed.");
+            await route.abort("blockedbyclient").catch(() => undefined);
+          } finally {
+            activeRequests -= 1;
+            resourceWaiters.shift()?.();
+          }
+        })();
+        pending.add(operation);
+        void operation.finally(() => pending.delete(operation));
+        return operation;
+      });
+      const page = await context.newPage();
+      const navigation = await page.goto(url.toString(), {
+        waitUntil: "domcontentloaded",
+        timeout: Math.max(1, deadline - Date.now()),
+      });
+      await Promise.allSettled(pending);
+      const body = await readLandingDocument(page, deadline, () => expectedMainDocument);
+      if (failure) throw failure;
+      return {
+        url: assertPublicHttpUrl(page.url()).toString(),
+        contentType: "text/html",
+        status: mainDocumentStatus ?? navigation?.status() ?? 200,
+        body,
+      };
+    } catch (error) {
+      if (failure) throw failure;
+      if (error instanceof Error && error.message.includes("5 MB collection limit"))
+        throw sourceBodyLimitError();
+      if (error instanceof Error && error.name === "TimeoutError") throw renderingTimeout();
+      throw error;
     } finally {
-      await browser.close();
+      clearTimeout(timer);
+      controller.abort();
+      try {
+        await browser?.close();
+        await Promise.allSettled(pending);
+      } finally {
+        rendering = false;
+      }
     }
   };
 }

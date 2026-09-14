@@ -1,33 +1,90 @@
-import { MeetingRecoveryPage } from "./pages/MeetingRecoveryPage";
-import { MeetingsHistoryPage } from "./pages/MeetingsHistoryPage";
-import { useCallback, useEffect, useState } from "react";
+import { lazy, useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
-import { AllRunsPage } from "./pages/AllRunsPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { HomePage } from "./pages/HomePage";
-import { ContentResearchPage } from "./pages/ContentResearchPage";
-import { ContentScoutPage } from "./pages/ContentScoutPage";
-import { ContentProjectDetailPage } from "./pages/ContentProjectDetailPage";
-import { MeetingPage } from "./pages/MeetingPage";
-import { MeetingsWeeklyPage } from "./pages/MeetingsWeeklyPage";
-import { MeetingsOverviewPage } from "./pages/MeetingsOverviewPage";
-import { MeetingBriefPage } from "./pages/MeetingBriefPage";
-import { MeetingDebriefDetailPage } from "./pages/MeetingDebriefDetailPage";
-import { MeetingDebriefPage } from "./pages/MeetingDebriefPage";
 import { MigrationGatePage } from "./pages/MigrationGatePage";
-import { NewPersonProfilePage } from "./pages/NewPersonProfilePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
-import { OnboardingSetupPage } from "./pages/OnboardingSetupPage";
-import { PeoplePage } from "./pages/PeoplePage";
-import { PersonProfileDetailPage } from "./pages/PersonProfileDetailPage";
-import { TranscriptReviewPage } from "./pages/TranscriptReviewPage";
-import { RunDetailPage } from "./pages/RunDetailPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { TasksPage } from "./pages/TasksPage";
-import { YoutubePage } from "./pages/YoutubePage";
 import { migrationApi, type MigrationStatus } from "./clients/workspace";
 import { isCurrentArea, PRODUCT_AREAS } from "./productAreas";
 import { useIsLoadedEntry } from "./usePageFocus";
+
+import { PageLoadingBoundary } from "./components/PageLoadingBoundary";
+
+const MeetingRecoveryPage = lazy(() =>
+  import("./pages/MeetingRecoveryPage").then((module) => ({ default: module.MeetingRecoveryPage })),
+);
+const MeetingsHistoryPage = lazy(() =>
+  import("./pages/MeetingsHistoryPage").then((module) => ({ default: module.MeetingsHistoryPage })),
+);
+const AllRunsPage = lazy(() =>
+  import("./pages/AllRunsPage").then((module) => ({ default: module.AllRunsPage })),
+);
+const ContentResearchPage = lazy(() =>
+  import("./pages/ContentResearchPage").then((module) => ({ default: module.ContentResearchPage })),
+);
+const ContentScoutPage = lazy(() =>
+  import("./pages/ContentScoutPage").then((module) => ({ default: module.ContentScoutPage })),
+);
+const ContentProjectDetailPage = lazy(() =>
+  import("./pages/ContentProjectDetailPage").then((module) => ({
+    default: module.ContentProjectDetailPage,
+  })),
+);
+const MeetingPage = lazy(() =>
+  import("./pages/MeetingPage").then((module) => ({ default: module.MeetingPage })),
+);
+const MeetingsWeeklyPage = lazy(() =>
+  import("./pages/MeetingsWeeklyPage").then((module) => ({ default: module.MeetingsWeeklyPage })),
+);
+const MeetingsOverviewPage = lazy(() =>
+  import("./pages/MeetingsOverviewPage").then((module) => ({
+    default: module.MeetingsOverviewPage,
+  })),
+);
+const MeetingBriefPage = lazy(() =>
+  import("./pages/MeetingBriefPage").then((module) => ({ default: module.MeetingBriefPage })),
+);
+const MeetingDebriefDetailPage = lazy(() =>
+  import("./pages/MeetingDebriefDetailPage").then((module) => ({
+    default: module.MeetingDebriefDetailPage,
+  })),
+);
+const MeetingDebriefPage = lazy(() =>
+  import("./pages/MeetingDebriefPage").then((module) => ({ default: module.MeetingDebriefPage })),
+);
+const NewPersonProfilePage = lazy(() =>
+  import("./pages/NewPersonProfilePage").then((module) => ({
+    default: module.NewPersonProfilePage,
+  })),
+);
+const OnboardingSetupPage = lazy(() =>
+  import("./pages/OnboardingSetupPage").then((module) => ({ default: module.OnboardingSetupPage })),
+);
+const PeoplePage = lazy(() =>
+  import("./pages/PeoplePage").then((module) => ({ default: module.PeoplePage })),
+);
+const PersonProfileDetailPage = lazy(() =>
+  import("./pages/PersonProfileDetailPage").then((module) => ({
+    default: module.PersonProfileDetailPage,
+  })),
+);
+const TranscriptReviewPage = lazy(() =>
+  import("./pages/TranscriptReviewPage").then((module) => ({
+    default: module.TranscriptReviewPage,
+  })),
+);
+const RunDetailPage = lazy(() =>
+  import("./pages/RunDetailPage").then((module) => ({ default: module.RunDetailPage })),
+);
+const SettingsPage = lazy(() =>
+  import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })),
+);
+const TasksPage = lazy(() =>
+  import("./pages/TasksPage").then((module) => ({ default: module.TasksPage })),
+);
+const YoutubePage = lazy(() =>
+  import("./pages/YoutubePage").then((module) => ({ default: module.YoutubePage })),
+);
 
 /* The one width the Shell changes shape at, shared with the stylesheet's
    reflow block so the disclosure and the layout cannot disagree. */
@@ -205,55 +262,57 @@ export function App() {
           </div>
         )}
         {status === null && !statusError && <p className="muted">Loading…</p>}
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          {/* A Shell page, not a tab: the bar renders product areas (spec:
+        <PageLoadingBoundary pathname={pathname}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            {/* A Shell page, not a tab: the bar renders product areas (spec:
               Navigation and onboarding #1), and no product surface links here —
               the list stays reachable from Settings' Diagnostics and from a
               failure's technical details, for diagnosis only (ADR-0051). */}
-          <Route path="/runs" element={<AllRunsPage />} />
-          <Route path="/runs/:id" element={<RunDetailPage />} />
-          {/* The migration gate, reachable by URL when not gated: the page
+            <Route path="/runs" element={<AllRunsPage />} />
+            <Route path="/runs/:id" element={<RunDetailPage />} />
+            {/* The migration gate, reachable by URL when not gated: the page
               itself reports that no migration is needed. While gated, the boot
               gate above renders it for every route. */}
-          <Route
-            path="/migration"
-            element={<MigrationGatePage onCutOver={refreshMigrationStatus} />}
-          />
-          {/* Only reachable post-completion: the gate holds /onboarding closed
+            <Route
+              path="/migration"
+              element={<MigrationGatePage onCutOver={refreshMigrationStatus} />}
+            />
+            {/* Only reachable post-completion: the gate holds /onboarding closed
               like every other route. */}
-          <Route path="/onboarding" element={<OnboardingSetupPage />} />
-          {/* YouTube Trends is presented under Content Research (spec:
+            <Route path="/onboarding" element={<OnboardingSetupPage />} />
+            {/* YouTube Trends is presented under Content Research (spec:
               /content-research/trends); the legacy top-level route is gone. */}
-          <Route path="/content-research/trends" element={<YoutubePage />} />
-          <Route path="/content-scout" element={<ContentScoutPage />} />
-          <Route
-            path="/content-engine/projects/:projectId"
-            element={<ContentProjectDetailPage />}
-          />
-          {/* Meeting Wizard (ADR-0043): Overview plus the sibling Brief
+            <Route path="/content-research/trends" element={<YoutubePage />} />
+            <Route path="/content-scout" element={<ContentScoutPage />} />
+            <Route
+              path="/content-engine/projects/:projectId"
+              element={<ContentProjectDetailPage />}
+            />
+            {/* Meeting Wizard (ADR-0043): Overview plus the sibling Brief
       journey; Brief and Debrief lifecycle state stays separate. The
       legacy /meeting-brief product route is gone — not-found. */}
-          <Route path="/meetings" element={<MeetingsOverviewPage />} />
-          <Route path="/meetings/history" element={<MeetingsHistoryPage />} />
-          <Route path="/meetings/weekly" element={<MeetingsWeeklyPage />} />
-          <Route path="/meetings/recovery/:runId" element={<MeetingRecoveryPage />} />
-          <Route path="/meetings/:meetingId" element={<MeetingPage />} />
-          <Route path="/meetings/brief" element={<MeetingBriefPage />} />
-          <Route path="/meetings/brief/:occurrenceKey" element={<MeetingBriefPage />} />
-          <Route path="/meeting-debrief" element={<MeetingDebriefPage />} />
-          <Route path="/meeting-debrief/:runId" element={<MeetingDebriefDetailPage />} />
-          <Route path="/content-research" element={<ContentResearchPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/people" element={<PeoplePage />} />
-          <Route path="/people/new" element={<NewPersonProfilePage />} />
-          <Route path="/people/:profileId" element={<PersonProfileDetailPage />} />
-          <Route path="/people/review" element={<TranscriptReviewPage />} />
-          {/* Tasks (ADR-0052): the canonical record of accepted work, and the
+            <Route path="/meetings" element={<MeetingsOverviewPage />} />
+            <Route path="/meetings/history" element={<MeetingsHistoryPage />} />
+            <Route path="/meetings/weekly" element={<MeetingsWeeklyPage />} />
+            <Route path="/meetings/recovery/:runId" element={<MeetingRecoveryPage />} />
+            <Route path="/meetings/:meetingId" element={<MeetingPage />} />
+            <Route path="/meetings/brief" element={<MeetingBriefPage />} />
+            <Route path="/meetings/brief/:occurrenceKey" element={<MeetingBriefPage />} />
+            <Route path="/meeting-debrief" element={<MeetingDebriefPage />} />
+            <Route path="/meeting-debrief/:runId" element={<MeetingDebriefDetailPage />} />
+            <Route path="/content-research" element={<ContentResearchPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/people" element={<PeoplePage />} />
+            <Route path="/people/new" element={<NewPersonProfilePage />} />
+            <Route path="/people/:profileId" element={<PersonProfileDetailPage />} />
+            <Route path="/people/review" element={<TranscriptReviewPage />} />
+            {/* Tasks (ADR-0052): the canonical record of accepted work, and the
               queue of Action Items a Meeting Debrief proposed. */}
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </PageLoadingBoundary>
       </main>
       <footer className="app-footer">
         <span>

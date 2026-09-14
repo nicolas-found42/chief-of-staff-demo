@@ -3,6 +3,7 @@ import type { PersonSourceDocument } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
 import type { DossierClient } from "./PersonDossierPanel";
 import "./personSourceInspector.css";
+import { EvidenceDate } from "./EvidenceDate";
 
 /** Keeps the evidence beside the reading task, with request lifetime tied to this selection. */
 export function PersonSourceInspector({
@@ -33,14 +34,22 @@ export function PersonSourceInspector({
     live.current = true;
     const element = dialog.current!;
     const opener = window.document.activeElement;
+    const fallback = opener
+      ?.closest('[aria-label="Person dossier"]')
+      ?.querySelector<HTMLElement>('[role="tabpanel"]');
+    const page = window.document.documentElement;
+    const overflow = page.style.overflow;
+    page.style.overflow = "hidden";
     element.showModal();
     // React removes the dialog before passive cleanup, so native restoration alone
     // can lose the citation. Keep its identity without moving the reading position.
     return () => {
       live.current = false;
       element.close();
+      page.style.overflow = overflow;
       if (opener instanceof HTMLElement && opener.isConnected)
         opener.focus({ preventScroll: true });
+      else if (fallback?.isConnected) fallback.focus({ preventScroll: true });
     };
   }, []);
 
@@ -107,23 +116,58 @@ export function PersonSourceInspector({
       ) : null}
       {document && (
         <section aria-label="Retained source">
-          <h3>{document.title}</h3>
-          <p className="muted">
-            {document.author ?? "Author unknown"} · Published{" "}
-            {document.publishedAt ?? "date unknown"} · Retrieved {document.retrievedAt}
-          </p>
-          <p className="source-inspector-url">{document.url}</p>
-          <p className="muted">
-            {document.sourceClass} · {document.completeness} · {document.access} · Extraction{" "}
-            {document.extractionCoverage ?? "coverage not recorded"} · Source family{" "}
-            {document.family}
-          </p>
+          <div className="source-inspector-identity">
+            <p className="source-inspector-eyebrow">Retained evidence · {document.family}</p>
+            <h3>{document.title || "Untitled retained source"}</h3>
+            <p className="muted">
+              {document.author ?? "Author unknown"} · Published{" "}
+              <EvidenceDate value={document.publishedAt} />
+            </p>
+            <p className="source-inspector-url">
+              {/^(https?):\/\//i.test(document.url) ? (
+                <a href={document.url} target="_blank" rel="noopener noreferrer">
+                  {document.url}
+                </a>
+              ) : (
+                document.url
+              )}
+            </p>
+          </div>
           {quote && (
-            <>
+            <section className="source-inspector-passage" aria-label="Supporting passage">
               <h4>Supporting passage</h4>
+              <p className="muted">The passage cited by the selected dossier statement.</p>
               <blockquote>{quote}</blockquote>
-            </>
+            </section>
           )}
+          <details className="source-inspector-provenance">
+            <summary>
+              Source details · Retrieved <EvidenceDate value={document.retrievedAt} />
+            </summary>
+            <p className="muted">
+              Retrieval records collection, not verification of a claim or identity.
+            </p>
+            <dl>
+              <dt>Retrieved (exact)</dt>
+              <dd>{document.retrievedAt}</dd>
+              <dt>Published (recorded)</dt>
+              <dd>{document.publishedAt ?? "Date unknown"}</dd>
+              <dt>Source class</dt>
+              <dd>{document.sourceClass}</dd>
+              <dt>Retained content</dt>
+              <dd>{document.completeness}</dd>
+              <dt>Access</dt>
+              <dd>{document.access}</dd>
+              <dt>Extraction coverage</dt>
+              <dd>{document.extractionCoverage ?? "Not recorded"}</dd>
+              <dt>Source family</dt>
+              <dd>{document.family}</dd>
+              <dt>Acquisition</dt>
+              <dd>{document.acquisition}</dd>
+              <dt>Visibility</dt>
+              <dd>{document.visibility}</dd>
+            </dl>
+          </details>
           <details open>
             <summary>Retained text</summary>
             <div className="source-inspector-text">
@@ -140,8 +184,10 @@ export function PersonSourceInspector({
           <details className="source-inspector-correction">
             <summary>This source is about someone else</summary>
             <p>
-              Remove its attribution to this Profile when the evidence identifies a different
-              person.
+              Remove this source and identical copies from this Profile’s current attribution and
+              exclude them from later research. Earlier dossier revisions keep their recorded
+              claims; their citations do not grant current source access. The retained source is not
+              deleted from other Profiles.
             </p>
             <button type="button" disabled={detaching} onClick={() => void detach()}>
               {detaching ? "Removing attribution…" : "Remove wrong-person attribution"}

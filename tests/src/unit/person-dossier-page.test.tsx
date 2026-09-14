@@ -254,6 +254,22 @@ test("dossier tabs use a single tab stop and arrow keys move selection", async (
     });
     expect(tabs.at(-1)?.getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(tabs.at(-1));
+    for (const [key, index] of [
+      ["ArrowRight", 0],
+      ["End", tabs.length - 1],
+      ["Home", 0],
+    ] as const) {
+      await act(async () =>
+        document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })),
+      );
+      expect(document.activeElement).toBe(tabs[index]);
+      expect(tabs.filter((tab) => tab.tabIndex === 0)).toEqual([tabs[index]]);
+      expect(tabs[index].getAttribute("aria-selected")).toBe("true");
+      const panel = container.querySelector<HTMLElement>('[role="tabpanel"]')!;
+      expect(tabs[index].getAttribute("aria-controls")).toBe(panel.id);
+      expect(panel.getAttribute("aria-labelledby")).toBe(tabs[index].id);
+      expect(panel.tabIndex).toBe(0);
+    }
   } finally {
     await act(async () => root.unmount());
     container.remove();

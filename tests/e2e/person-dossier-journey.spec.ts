@@ -87,7 +87,10 @@ test("automatic dossier journey — add, research, inspect source, and query dem
     timeout: 30000,
   });
   await expect(page.getByText("200 sites", { exact: false }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Evidence 1", exact: true }).first().click();
+  await page
+    .getByRole("button", { name: /^Evidence 1:/ })
+    .first()
+    .click();
   await expect(page.getByRole("region", { name: "Retained source" })).toContainText(quote);
   await page.getByRole("button", { name: "Close source" }).click();
   await page.getByLabel("Dossier revision").selectOption("1");
@@ -401,7 +404,10 @@ test("published claims remain readable while the same operation awaits another e
     expect(active?.state).toBe("researching");
     const operationId = active?.checkpoint?.operationId;
     expect(operationId).toBeTruthy();
-    await page.getByRole("button", { name: "Evidence 1", exact: true }).first().click();
+    await page
+      .getByRole("button", { name: /^Evidence 1:/ })
+      .first()
+      .click();
     await expect(page.getByRole("region", { name: "Retained source" })).toContainText(firstQuote);
     await page.getByRole("button", { name: "Close source" }).click();
     await page.request.post("/api/test/person-dossier-extraction/release", {

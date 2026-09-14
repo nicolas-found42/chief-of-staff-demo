@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { ProviderId, RunSummary, TaskOverview } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
@@ -14,7 +14,10 @@ import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 // PROTOTYPE — throwaway Home UI exploration (?variant=a|b|c). Delete with losers.
 import { PrototypeSwitcher } from "../components/PrototypeSwitcher";
-import { VariantA, VariantB, VariantC } from "./homePrototypeVariants";
+const prototypeVariants = () => import("./homePrototypeVariants");
+const VariantA = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantA })));
+const VariantB = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantB })));
+const VariantC = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantC })));
 
 const TERMINAL = new Set(["done", "skipped", "failed"]);
 
@@ -177,9 +180,11 @@ export function HomePage() {
     };
     return (
       <div className="page">
-        {variant === "a" && <VariantA data={data} />}
-        {variant === "b" && <VariantB data={data} />}
-        {variant === "c" && <VariantC data={data} />}
+        <Suspense fallback={<p role="status">Loading preview…</p>}>
+          {variant === "a" && <VariantA data={data} />}
+          {variant === "b" && <VariantB data={data} />}
+          {variant === "c" && <VariantC data={data} />}
+        </Suspense>
         {workError ? (
           <p role="alert">{workError}</p>
         ) : work ? (

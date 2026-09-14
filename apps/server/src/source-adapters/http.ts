@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import CacheableLookup from "cacheable-lookup";
 import { Agent, fetch as undiciFetch, type Dispatcher, type RequestInit } from "undici";
+import { readSourceBytes, readSourceText } from "./source-body.js";
 
 export interface PublicHttpResponse {
   url: string;
@@ -304,10 +305,7 @@ export function createHttpFetch(
         },
         guarded,
       );
-      const body = await response.text();
-      if (body.length > 5_000_000) {
-        throw new Error("Source response exceeded the 5 MB collection limit.");
-      }
+      const body = await readSourceText(response.body);
       return {
         url: response.url || finalUrl,
         status: response.status,
@@ -371,9 +369,7 @@ function createHttpBytesFetch(
         },
         true,
       );
-      const bytes = Buffer.from(await response.arrayBuffer());
-      if (bytes.byteLength > 5_000_000)
-        throw new Error("Source response exceeded the 5 MB collection limit.");
+      const bytes = await readSourceBytes(response.body);
       return {
         url: response.url || finalUrl,
         status: response.status,

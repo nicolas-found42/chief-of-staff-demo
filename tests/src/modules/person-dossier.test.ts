@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
@@ -487,8 +487,9 @@ test("identical mirrored source text is one independent source family", () => {
   expect(mirror.family).toBe(original.family);
 });
 
-test("exact dossier revisions remain readable until a source is detached or the person is deleted", () => {
-  const store = new PersonDossierStore(workspace());
+test("detachment preserves historical revisions but denies current attribution after restart", () => {
+  const root = workspace();
+  const store = new PersonDossierStore(root);
   const source = store.retainSource({
     url: "https://example.com/history",
     title: "History",
@@ -532,8 +533,21 @@ test("exact dossier revisions remain readable until a source is detached or the 
     sections: [],
   });
   expect(store.getRevision("maya", 1)?.claims[0]?.status).toBe("supported");
+  const historical = store.getRevision("maya", 1);
+  const oldResearch = store.get("maya")!;
   store.detach("maya", source.id);
-  expect(store.getRevision("maya", 1)?.claims).toEqual([]);
+  const restarted = new PersonDossierStore(root);
+  expect(restarted.getRevision("maya", 1)).toEqual(historical);
+  expect(restarted.get("maya")?.claims).toEqual([]);
+  expect(restarted.source("maya", source.id)).toBeNull();
+  expect(
+    JSON.parse(readFileSync(join(root, "person-source-documents", `${source.id}.json`), "utf8"))
+      .text,
+  ).toBe(source.text);
+  expect(() => restarted.publish("maya", oldResearch.revision, oldResearch)).toThrow(
+    "Dossier changed during research",
+  );
+  expect(() => restarted.publish("maya", 3, oldResearch)).toThrow("Rejected attribution");
   store.privacyDelete("maya");
   expect(store.getRevision("maya", 2)).toBeNull();
 });
