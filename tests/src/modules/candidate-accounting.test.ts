@@ -14,6 +14,7 @@ import {
   sourceStatusFixture,
   responsibilityFixture,
 } from "../helpers/operational-handoff";
+import { groundTranscriptQuotes } from "../../../apps/server/src/modules/meeting-debrief/extraction";
 import { openRuns } from "../../../apps/server/src/runs";
 
 const overview = {
@@ -1801,4 +1802,19 @@ it("rejects ambiguous timestamp evidence instead of choosing one speaker's turn"
   }, `[00:01] Alice: ${candidate.quote}\n[00:01] Bob: I disagree.`);
   expect(detail.status).toBe("failed");
   expect(detail.extraction).toBeNull();
+});
+
+it("does not carry a separate speaker header across a gap or another labeled turn", () => {
+  const quote = "I will test the app.";
+  for (const [source, speaker, timestamp] of [
+    [`Alice  00:12\n\n${quote}`, null, null],
+    [`Alice  00:12\n[00:20] Bob: ${quote}`, "Bob", "00:20"],
+    [`Speaker 2  00:12\n${quote}`, "Speaker 2", "00:12"],
+  ]) {
+    expect(
+      groundTranscriptQuotes([{ quote, speaker: "Untrusted", timestamp: null }], {
+        normalizedText: source!,
+      }),
+    ).toEqual([{ quote, speaker, timestamp }]);
+  }
 });

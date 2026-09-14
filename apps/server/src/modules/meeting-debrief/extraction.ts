@@ -210,16 +210,17 @@ export function parseTranscriptTurn(
   timestamp: string | null;
   text: string;
 } | null {
+  const markdown = line.match(/^\*\*([^*\n]+)\*\*\s+\*\[([\d:]+)(?:[–-][\d:]+)?\]\*:\s*(.*)$/);
+  if (markdown)
+    return { speaker: markdown[1]!.trim(), timestamp: markdown[2]!, text: markdown[3]! };
+  const plain = line.match(/^(?:\[([\d:]+)(?:[–-][\d:]+)?\]\s*)?([^:\n]+):\s(.*)$/);
+  if (plain) return { speaker: plain[2]!.trim(), timestamp: plain[1] ?? null, text: plain[3]! };
   // Some exports separate the label from its speech. Only the immediately
   // following nonblank line belongs to that header; never carry it across a gap.
   const header = previousLine?.match(/^([^:\n]+?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s*$/);
   if (header && line.trim())
     return { speaker: header[1]!.trim(), timestamp: header[2]!, text: line };
-  const markdown = line.match(/^\*\*([^*\n]+)\*\*\s+\*\[([\d:]+)(?:[–-][\d:]+)?\]\*:\s*(.*)$/);
-  if (markdown)
-    return { speaker: markdown[1]!.trim(), timestamp: markdown[2]!, text: markdown[3]! };
-  const plain = line.match(/^(?:\[([\d:]+)(?:[–-][\d:]+)?\]\s*)?([^:\n]+):\s(.*)$/);
-  return plain ? { speaker: plain[2]!.trim(), timestamp: plain[1] ?? null, text: plain[3]! } : null;
+  return null;
 }
 
 /** Ground model quotes in literal transcript speech, preserving speaker boundaries. */
