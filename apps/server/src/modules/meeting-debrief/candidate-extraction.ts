@@ -977,6 +977,28 @@ For each supported executor return a binding with their source name and source e
     const schema = RelationshipClaims.extend({
       claims: RelationshipClaims.shape.claims.length(retained.length),
     });
+    const spokenIds = sourceLines.filter((line) => line.turn?.text.trim()).map((line) => line.id);
+    const sourceId = spokenIds.length > 0 ? z.enum(spokenIds as [string, ...string[]]) : null;
+    const claim = RelationshipClaims.shape.claims.element;
+    // Ask for source identifiers, not prose that can repeatedly cite a header.
+    // Literal quotations remain accepted when parsing historical/provider replies.
+    const outputSchema = sourceId
+      ? schema.extend({
+          claims: z
+            .array(
+              claim.extend({
+                candidateId: z.enum(
+                  retained.map((row) => row.candidateId) as [string, ...string[]],
+                ),
+                statement: sourceId,
+                assignment: sourceId.nullable(),
+                acceptance: sourceId.nullable(),
+                laterUpdates: z.array(claim.shape.laterUpdates.element.extend({ turn: sourceId })),
+              }),
+            )
+            .length(retained.length),
+        })
+      : undefined;
     const supplied = retained.map((row) => ({
       candidateId: row.candidateId,
       obligation: row.facts!.title,
@@ -1008,7 +1030,7 @@ statement is the turn that states the obligation; acceptance, when present, must
     };
     let judged: z.infer<typeof RelationshipClaims> | null = null;
     try {
-      judged = await call(stage, schema, system, user, false, "high");
+      judged = await call(stage, schema, system, user, false, "high", undefined, outputSchema);
       if (!valid(judged)) {
         const repaired = await call(
           `${stage}-repair`,
@@ -1017,6 +1039,8 @@ statement is the turn that states the obligation; acceptance, when present, must
           `${user}\n<invalid-claims>\n${JSON.stringify(judged)}\n</invalid-claims>\nRepair every supplied candidateId exactly once, and cite only displayed source IDs that name real spoken turns. A citation that does not resolve cannot be repaired by dropping it: choose the turn it meant.`,
           false,
           "high",
+          undefined,
+          outputSchema,
         );
         judged = valid(repaired) ? repaired : null;
       }

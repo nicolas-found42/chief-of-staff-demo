@@ -1945,3 +1945,48 @@ it("allows responsibility verification to recover a named executor absent from p
   expect(detail.status).toBe("done");
   expect(detail.extraction?.actionItems[0].owner).toBe("Carol");
 });
+
+it("constrains relationship citations to spoken turns so header references cannot survive repair", async () => {
+  const quote = "I will test the app.";
+  const model = accountedHandoffModel({
+    ...overview,
+    actionItems: [
+      {
+        title: "Test the app",
+        owner: "Alice",
+        evidence: quote,
+        handoff: operationalHandoff({
+          evidence: [{ quote, speaker: "Alice", timestamp: "00:12" }],
+        }),
+      },
+    ],
+  });
+  let invalidOffered = false;
+  let relationshipCalls = 0;
+  const detail = await extract(async (request) => {
+    if (request.system.startsWith("VERIFY RELATIONSHIP")) {
+      relationshipCalls++;
+      const rows = JSON.parse(
+        request.user.split("<checked-actions>\n")[1].split("\n</checked-actions>")[0],
+      ) as Array<{ candidateId: string }>;
+      const valid = {
+        claims: rows.map((row) => ({
+          candidateId: row.candidateId,
+          relationship: "self-commitment",
+          statement: "@line:2",
+          assignment: null,
+          acceptance: null,
+          laterUpdates: [],
+          unresolvedReasons: [],
+        })),
+      };
+      const invalid = { claims: valid.claims.map((row) => ({ ...row, statement: "@line:1" })) };
+      invalidOffered ||= request.schema.safeParse(invalid).success;
+      return request.schema.safeParse(invalid).success ? invalid : valid;
+    }
+    return model(request);
+  }, `Alice  00:12\n${quote}`);
+  expect(detail.status).toBe("done");
+  expect(invalidOffered).toBe(false);
+  expect(relationshipCalls).toBe(1);
+});
