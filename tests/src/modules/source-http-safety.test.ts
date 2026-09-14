@@ -91,12 +91,15 @@ describe("public source HTTP boundary", () => {
     transport.fetch
       .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/final" } }))
       .mockResolvedValueOnce(new Response("ready"));
-    await expect(createHttpFetch()("https://public.example/start")).resolves.toMatchObject({
+    await expect(
+      createHttpFetch({ headers: { "api-key": "public" } })("https://public.example/start"),
+    ).resolves.toMatchObject({
       url: "https://public.example/final",
       body: "ready",
     });
     expect(transport.fetch).toHaveBeenCalledTimes(2);
     expect(String(transport.fetch.mock.calls[1]?.[0])).toBe("https://public.example/final");
+    expect(new Headers(transport.fetch.mock.calls[1][1].headers).get("api-key")).toBe("public");
   });
 
   it("drops origin-bound headers and converts POST to GET for a 302", async () => {
@@ -161,6 +164,79 @@ describe("public source HTTP boundary", () => {
     const forwarded = new Headers(transport.fetch.mock.calls[1][1].headers);
     for (const name of names) expect(forwarded.has(name)).toBe(false);
   });
+
+  it("forwards only explicitly public request metadata across origins, without restoring stripped headers on return", async () => {
+    transport.fetch
+      .mockResolvedValueOnce(
+        new Response(null, { status: 307, headers: { location: "/same-origin" } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, { status: 307, headers: { location: "https://other.example/" } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 307,
+          headers: { location: "https://public.example/returned" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ready"));
+    const supplied = {
+      "Api-Key": "synthetic-private-key",
+      "X-Future-Credential": "synthetic-private-key",
+      "X-Request-Signature": "synthetic-signature",
+      referer: "https://public.example/private-context",
+      accept: "application/json",
+      "accept-language": "en-US",
+      "user-agent": "Found42-test",
+      "content-length": "7",
+    };
+    await createHttpFetch({ headers: supplied })("https://public.example/start", {
+      method: "POST",
+      body: "q=value",
+      etag: "origin-etag",
+      lastModified: "origin-date",
+    });
+    const sameOrigin = new Headers(transport.fetch.mock.calls[1][1].headers);
+    for (const [name, value] of Object.entries(supplied)) expect(sameOrigin.get(name)).toBe(value);
+    expect(sameOrigin.get("if-none-match")).toBe("origin-etag");
+    for (const [, request] of transport.fetch.mock.calls.slice(2)) {
+      expect(request.method).toBe("POST");
+      expect(request.body).toBe("q=value");
+      expect(Object.fromEntries(new Headers(request.headers))).toEqual({
+        accept: "application/json",
+        "accept-language": "en-US",
+        "user-agent": "Found42-test",
+        "content-type": "application/x-www-form-urlencoded",
+        "content-length": "7",
+      });
+    }
+  });
+
+  it.each([301, 302, 303, 307, 308])(
+    "keeps cross-origin POST body metadata consistent for %s",
+    async (status) => {
+      transport.fetch
+        .mockResolvedValueOnce(
+          new Response(null, { status, headers: { location: "https://other.example/" } }),
+        )
+        .mockResolvedValueOnce(new Response("ready"));
+      await createHttpFetch({ headers: { "content-length": "7", "api-key": "public" } })(
+        "https://public.example/start",
+        { method: "POST", body: "q=value" },
+      );
+      const next = transport.fetch.mock.calls[1][1];
+      const headers = new Headers(next.headers);
+      const preservesBody = status === 307 || status === 308;
+      expect(next.method).toBe(preservesBody ? "POST" : "GET");
+      expect(next.body).toBe(preservesBody ? "q=value" : undefined);
+      expect(headers.get("content-length")).toBe(preservesBody ? "7" : null);
+      expect(headers.get("content-type")).toBe(
+        preservesBody ? "application/x-www-form-urlencoded" : null,
+      );
+      expect(headers.has("api-key")).toBe(false);
+      expect(new Headers(transport.fetch.mock.calls[0][1].headers).get("api-key")).toBe("public");
+    },
+  );
 
   it("preserves explicitly unguarded self-hosted search resolution", async () => {
     transport.fetch.mockResolvedValueOnce(new Response("local results"));

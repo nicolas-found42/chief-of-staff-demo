@@ -53,7 +53,12 @@ try {
     await (kind === "text" ? readSourceText(response.body) : readSourceBytes(response.body));
   }
   outcome = "success";
-} catch {
+} catch (error) {
+  const expected =
+    mode === "before"
+      ? error instanceof Error && error.message === "limit"
+      : error instanceof Error && "code" in error && error.code === "ERR_SOURCE_BODY_LIMIT";
+  if (!expected) throw error;
   outcome = "rejected";
 } finally {
   clearInterval(sampler);

@@ -159,6 +159,7 @@ export function PersonDossierPanel({
     // Never label the last revision's claims as the newly selected revision.
     setView(null);
     setAnalysis(null);
+    setCorrectionNotice("");
     setReadError("");
     void refresh();
     const timer = setInterval(() => {
@@ -695,7 +696,9 @@ export function PersonDossierPanel({
           client={client}
           onClose={() => setSource(null)}
           onDetached={async () => {
+            const generation = lifecycle.current;
             await refresh();
+            if (generation !== lifecycle.current) return;
             setCorrectionNotice(
               "Attribution removed from this Profile. Historical revisions retain their recorded claims.",
             );

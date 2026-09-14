@@ -236,7 +236,7 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
           )}{" "}
           <Link to="/settings">Open Settings</Link>
           {" · "}
-          <Link to="/content-scout">Brand Voice</Link>
+          <Link to="/content-scout">Open Content Scout</Link>
         </div>
       )}
 

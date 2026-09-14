@@ -182,3 +182,55 @@ test.each(["success", "failure"])(
     expect(container.querySelector("dialog script")).toBeNull();
   },
 );
+
+test.each(["profile", "revision"])(
+  "correction notice is cleared when changing %s",
+  async (context) => {
+    const api = client();
+    api.source = vi.fn(async () =>
+      fromPartial<PersonSourceDocument>({ title: "Evidence", text: "Evidence" }),
+    );
+    await act(async () =>
+      root.render(createElement(PersonDossierPanel, { profileId: "maya", client: api })),
+    );
+    await click("Sources");
+    await click("Inspect retained source");
+    await click("Remove wrong-person attribution");
+    expect(container.textContent).toContain("Attribution removed from this Profile");
+    if (context === "profile") {
+      await act(async () =>
+        root.render(createElement(PersonDossierPanel, { profileId: "ada", client: api })),
+      );
+    } else {
+      await act(async () => {
+        const select = container.querySelector("select")!;
+        select.value = "1";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+    expect(container.textContent).not.toContain("Attribution removed from this Profile");
+  },
+);
+
+test("a late correction refresh cannot announce success on another Profile", async () => {
+  const api = client();
+  api.source = vi.fn(async () =>
+    fromPartial<PersonSourceDocument>({ title: "Evidence", text: "Evidence" }),
+  );
+  await act(async () =>
+    root.render(createElement(PersonDossierPanel, { profileId: "maya", client: api })),
+  );
+  await click("Sources");
+  await click("Inspect retained source");
+  const originalRead = api.read.bind(api);
+  const pending = Promise.withResolvers<Awaited<ReturnType<DossierClient["read"]>>>();
+  api.read = vi.fn<DossierClient["read"]>(async (id, revision) =>
+    id === "maya" ? pending.promise : originalRead(id, revision),
+  );
+  await click("Remove wrong-person attribution");
+  await act(async () =>
+    root.render(createElement(PersonDossierPanel, { profileId: "ada", client: api })),
+  );
+  await act(async () => pending.resolve(await originalRead("maya")));
+  expect(container.textContent).not.toContain("Attribution removed from this Profile");
+});

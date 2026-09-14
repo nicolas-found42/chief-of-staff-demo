@@ -32,3 +32,13 @@ test("Home defers product code and route failures keep navigation and reload rec
   await page.reload();
   await expect(page.locator("main h1")).toBeVisible();
 });
+
+test("query-only navigation recovers from an unavailable Home preview", async ({ page }) => {
+  await page.route("**/assets/homePrototypeVariants-*.js", (route) => route.abort());
+  await page.goto("/?variant=a");
+  await expect(page.getByRole("heading", { name: "This page could not load" })).toBeVisible();
+  await page.getByRole("link", { name: "Found42 — Chief of Staff", exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "This page could not load" })).toHaveCount(0);
+  await expect(page.locator("main h1")).toBeVisible();
+});

@@ -4,7 +4,7 @@ import { Component, Suspense, type ReactNode } from "react";
  * obtains the current asset manifest after a deployment or interrupted load;
  * the Shell navigation stays usable while this page reports the failure. */
 export class PageLoadingBoundary extends Component<
-  { children: ReactNode; pathname: string },
+  { children: ReactNode; resetKey: string },
   { failed: boolean }
 > {
   override state = { failed: false };
@@ -13,9 +13,9 @@ export class PageLoadingBoundary extends Component<
     return { failed: true };
   }
 
-  override componentDidUpdate(previous: Readonly<{ children: ReactNode; pathname: string }>) {
+  override componentDidUpdate(previous: Readonly<{ children: ReactNode; resetKey: string }>) {
     // Reset failures on navigation without remounting a healthy route's state.
-    if (previous.pathname !== this.props.pathname && this.state.failed)
+    if (previous.resetKey !== this.props.resetKey && this.state.failed)
       this.setState({ failed: false });
   }
 

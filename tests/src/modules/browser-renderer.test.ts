@@ -60,6 +60,58 @@ describe("public browser rendering", () => {
     expect(browser.route).toHaveBeenCalledWith("**/*", expect.any(Function));
   });
 
+  it("rejects request 101 before joining the full resource queue", async () => {
+    const page = pageFixture();
+    const routes = [];
+    const fixtureRoute = () => ({
+      request: () => ({
+        url: () => "https://example.com/asset",
+        method: () => "GET",
+        headers: () => ({}),
+        postDataBuffer: () => null,
+        isNavigationRequest: () => false,
+      }),
+      abort: vi.fn(async () => undefined),
+      fulfill: vi.fn(async () => undefined),
+    });
+    let dispatch!: (route: ReturnType<typeof fixtureRoute>) => Promise<void>;
+    browser.route.mockImplementation((_pattern, handler) => {
+      dispatch = handler;
+    });
+    let releaseResources!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseResources = resolve;
+    });
+    const fetchResource = vi.fn(async () => {
+      await gate;
+      return { status: 200, headers: {}, body: Buffer.from("asset") };
+    });
+    let finishNavigation!: () => void;
+    page.goto.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishNavigation = () => resolve({ status: () => 200 });
+        }),
+    );
+    const outcome = playwrightBrowserRenderer(fetchResource)("https://example.com").catch(
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(page.goto).toHaveBeenCalled());
+    for (let i = 0; i < 100; i++) routes.push(dispatch(fixtureRoute()));
+    const excess = fixtureRoute();
+    routes.push(dispatch(excess));
+    try {
+      await Promise.resolve();
+      expect(fetchResource).toHaveBeenCalledTimes(8);
+      expect(excess.abort).toHaveBeenCalledWith("blockedbyclient");
+    } finally {
+      releaseResources();
+      finishNavigation();
+      await Promise.all(routes);
+      expect(await outcome).toMatchObject({ code: "ERR_SOURCE_BODY_LIMIT" });
+    }
+  });
+
   it("rejects overlapping renders and releases admission after cleanup", async () => {
     const page = pageFixture();
     let finish!: () => void;

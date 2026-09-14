@@ -201,6 +201,17 @@ function sharedSourceHttpDispatcher(guarded = true): SourceHttpDispatcher {
   return sharedDispatcher;
 }
 
+/* Only representation and body metadata survive an origin change. Provider
+   headers are open-ended, so a list of known credential names would leak the
+   next adapter's secret. Same-origin hops retain the caller's complete headers. */
+const CROSS_ORIGIN_SOURCE_HEADERS = new Set([
+  "accept",
+  "accept-language",
+  "user-agent",
+  "content-type",
+  "content-length",
+]);
+
 /** Validate each hop before fetch can open its socket, retaining one deadline.
  * Automatic redirects would bypass the URL policy. Cross-origin redirects
  * also must not carry provider-specific credentials or conditional headers. */
@@ -218,16 +229,9 @@ async function fetchSource(url: URL, init: RequestInit, guarded: boolean) {
     const next = guarded ? assertPublicHttpUrl(target.toString()) : target;
     const headers = new Headers(request.headers as HeadersInit);
     if (next.origin !== current.origin) {
-      for (const name of [
-        "authorization",
-        "proxy-authorization",
-        "cookie",
-        "x-api-key",
-        "x-auth-token",
-        "if-none-match",
-        "if-modified-since",
-      ])
-        headers.delete(name);
+      for (const name of [...headers.keys()]) {
+        if (!CROSS_ORIGIN_SOURCE_HEADERS.has(name)) headers.delete(name);
+      }
     }
     if (
       response.status === 303 ||

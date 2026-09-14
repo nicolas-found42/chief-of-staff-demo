@@ -126,7 +126,7 @@ export function App() {
   const [status, setStatus] = useState<MigrationStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
 
-  const { pathname } = useLocation();
+  const { pathname, key: locationKey } = useLocation();
   const compactNav = useCompactNav();
   const [navOpen, setNavOpen] = useState(false);
   /* Following a link is the end of the menu's job. Without this the disclosed
@@ -262,7 +262,7 @@ export function App() {
           </div>
         )}
         {status === null && !statusError && <p className="muted">Loading…</p>}
-        <PageLoadingBoundary pathname={pathname}>
+        <PageLoadingBoundary resetKey={locationKey}>
           <Routes>
             <Route path="/" element={<HomePage />} />
             {/* A Shell page, not a tab: the bar renders product areas (spec:

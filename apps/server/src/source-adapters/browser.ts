@@ -97,16 +97,22 @@ export function playwrightBrowserRenderer(fetchResource = resourceFetch): Browse
         args: ["--disable-quic", "--disable-extensions"],
       });
       const context = await browser.newContext({ serviceWorkers: "block", acceptDownloads: false });
-      await context.routeWebSocket("**/*", (socket) => socket.close());
+      await context.routeWebSocket("**/*", (socket) =>
+        socket.close({ code: 1008, reason: "Browser source WebSockets are unsupported." }),
+      );
       await context.route("**/*", (route) => {
         const operation = (async () => {
           requestCount += 1;
-          const admitted = requestCount <= 100;
+          if (requestCount > 100) {
+            failure ??= sourceBodyLimitError();
+            await route.abort("blockedbyclient").catch(() => undefined);
+            return;
+          }
           while (activeRequests >= 8)
             await new Promise<void>((resolve) => resourceWaiters.push(resolve));
           activeRequests += 1;
           try {
-            if (!admitted || collectedBytes >= 20_000_000) {
+            if (collectedBytes >= 20_000_000) {
               throw sourceBodyLimitError();
             }
             const request = route.request();

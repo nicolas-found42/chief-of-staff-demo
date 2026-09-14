@@ -4,8 +4,10 @@ export function EvidenceDate({ value }: { value: string | null | undefined }) {
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
   const hasZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
   const parsed = new Date(dateOnly ? `${value}T12:00:00Z` : value);
+  const valid =
+    Number.isFinite(parsed.getTime()) && (!dateOnly || parsed.toISOString().slice(0, 10) === value);
   const label =
-    (dateOnly || hasZone) && Number.isFinite(parsed.getTime())
+    (dateOnly || hasZone) && valid
       ? new Intl.DateTimeFormat("en", {
           year: "numeric",
           month: "short",
