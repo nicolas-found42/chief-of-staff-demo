@@ -1871,3 +1871,77 @@ it("keeps a colon inside separate-line speech from becoming a new speaker", () =
     }),
   ).toEqual([{ quote, speaker: "Alice", timestamp: "00:12" }]);
 });
+
+it.each(["missing", "unknown"])(
+  "constrains verification to the supplied candidate count and IDs: %s",
+  async (fault) => {
+    const model = accountedHandoffModel({
+      ...overview,
+      actionItems: [
+        {
+          title: candidate.work,
+          owner: "Alice",
+          evidence: candidate.quote,
+          handoff: operationalHandoff({
+            evidence: [{ quote: candidate.quote, speaker: "Alice", timestamp: null }],
+          }),
+        },
+      ],
+    });
+    const detail = await extract(async (request) => {
+      const reply = await model(request);
+      if (request.system.startsWith("VERIFY ACTION FACTS")) {
+        const result = reply as { dispositions: Array<Record<string, unknown>> };
+        const invalid = {
+          dispositions:
+            fault === "missing"
+              ? []
+              : result.dispositions.map((row) => ({ ...row, candidateId: "not-supplied" })),
+        };
+        // A schema-constrained provider can select any state the request offers.
+        if (request.schema.safeParse(invalid).success) return invalid;
+      }
+      return reply;
+    });
+    expect(detail.status).toBe("done");
+    expect(detail.extraction?.actionItems[0].title).toBe(candidate.work);
+  },
+);
+
+it("allows responsibility verification to recover a named executor absent from proposed facts and speaker labels", async () => {
+  const quote = "Carol will write the plan.";
+  const model = accountedHandoffModel({
+    ...overview,
+    actionItems: [
+      {
+        title: "Write the plan",
+        owner: "Alice",
+        evidence: quote,
+        handoff: operationalHandoff({
+          evidence: [{ quote, speaker: "Alice", timestamp: "00:12" }],
+        }),
+      },
+    ],
+  });
+  const detail = await extract(async (request) => {
+    if (request.system.startsWith("VERIFY RESPONSIBILITY")) {
+      const reply = responsibilityFixture(request);
+      const corrected = {
+        responsibilities: reply.responsibilities.map((row) => ({
+          ...row,
+          responsibility: {
+            names: ["Carol"],
+            basis: "explicit",
+            reason: "The source names Carol as executor",
+          },
+          bindings: [{ name: "Carol", evidence: ["@line:2"] }],
+        })),
+      };
+      expect(request.schema.safeParse(corrected).success).toBe(true);
+      return corrected;
+    }
+    return model(request);
+  }, `Alice  00:12\n${quote}`);
+  expect(detail.status).toBe("done");
+  expect(detail.extraction?.actionItems[0].owner).toBe("Carol");
+});
