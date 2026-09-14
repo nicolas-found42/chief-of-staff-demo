@@ -292,6 +292,12 @@ test("weekly work keeps accepted Task previews and complete Meeting approval nav
 });
 
 test("returning to History restores filters and reading position", async ({ page, request }) => {
+  let delayedChunk = false;
+  await page.route(/\/assets\/MeetingPage-[^/]+\.js$/, async (route) => {
+    delayedChunk = true;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.continue();
+  });
   await request.post("/api/test/meetings/history-fixture");
   await page.goto("/meetings/history?search=History&from=2020-01-01");
   const link = page.getByRole("link", { name: "History session 20", exact: true });
@@ -299,6 +305,7 @@ test("returning to History restores filters and reading position", async ({ page
   const position = await page.evaluate(() => window.scrollY);
   await link.click();
   await expect(page.getByRole("heading", { level: 1, name: "History session 20" })).toBeVisible();
+  expect(delayedChunk).toBe(true);
   await page.goBack();
   await expect(page.getByLabel("Search meetings")).toHaveValue("History");
   await expect(link).toBeInViewport();

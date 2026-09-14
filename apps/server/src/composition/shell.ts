@@ -213,7 +213,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      `modulesRunning` is the gate's knowledge of what it started and stopped:
      the arm seam stops Modules, and neither restart path may double-start a
      scheduler the confirm already restarted. */
-  let gateActive = new TaskCutover({ workspaceDir }).state() === "required";
+  const initialCutover = new TaskCutover({ workspaceDir });
+  initialCutover.initializePristine();
+  let gateActive = initialCutover.state() === "required";
   let modulesRunning = false;
   const migrationGate: MigrationGate = {
     isActive() {
@@ -349,7 +351,16 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       transcriptIdentityService
         .confirmedMentions(profileId)
         .some((mention) => mention.transcriptId === transcriptId),
-    researchEnabled: () => !migrationGate.isActive(),
+    researchEnabled: () => {
+      if (migrationGate.isActive()) return false;
+      const current = configStore.getForPurpose("personResearch");
+      const demo = process.env.ENABLE_TEST_SEED === "1" || process.env.DEMO_MODE === "1";
+      if (current.provider === "mock") return demo;
+      return (
+        (current.provider === "ollama" || Boolean(current.apiKey.trim())) &&
+        ownerOnboarding.confirmed() !== null
+      );
+    },
     upcomingParticipantEmails: () =>
       meetings
         .list()
@@ -527,6 +538,19 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     runs,
     workspaceDir,
     store: contentResearchStore,
+    readiness: (kind) => {
+      if (migrationGate.isActive()) return "Complete Workspace initialization.";
+      const current = configStore.getForPurpose("contentResearch");
+      const demo = process.env.ENABLE_TEST_SEED === "1" || process.env.DEMO_MODE === "1";
+      if (current.provider === "mock" && !demo)
+        return "Choose a production model provider in Settings.";
+      if (current.provider !== "mock" && current.provider !== "ollama" && !current.apiKey.trim())
+        return "Configure the model provider API key in Settings.";
+      if (!demo && !ownerOnboarding.confirmed()) return "Confirm the owner Profile in Settings.";
+      if (kind === "discovery" && !demo && !brandProfiles.current())
+        return "Create Brand Voice before People Discovery.";
+      return null;
+    },
     /* Watches resolve and pin their Profile through the public-safe projection
        seam (spec #134): publications and public surfaces only. */
     profileProjection: (profileId) => peopleProfiles.project("public-safe", profileId),

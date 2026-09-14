@@ -178,7 +178,9 @@ test("person profiles journey — nav → search → create → detail → revis
 
   // 8. The routes the page-wide scans do not walk yet are still axe-clean.
   await page.goto("/people/new");
+  await expect(page.getByRole("button", { name: "Create profile" })).toBeVisible();
   await scanForViolations(page);
   await page.goto(`/people/${profileId}`);
+  await expect(page.getByRole("heading", { level: 1, name: "Grace Hopper" })).toBeVisible();
   await scanForViolations(page);
 });

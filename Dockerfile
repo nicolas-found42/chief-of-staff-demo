@@ -46,6 +46,9 @@ RUN apt-get update \
   -DWHISPER_BUILD_SERVER=OFF \
   && cmake --build /tmp/whisper-build --config Release --target whisper-cli --parallel 2
 
+COPY scripts/browser-network-sandbox.c /tmp/browser-network-sandbox.c
+RUN cc -O2 -Wall -Wextra -Werror /tmp/browser-network-sandbox.c -o /tmp/browser-network-sandbox
+
 # This release tag pins Playwright's Chromium revision and its system libraries.
 FROM mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 AS runtime
 ARG YT_DLP_VERSION=2025.08.22
@@ -78,6 +81,7 @@ RUN apt-get update \
   && ln -s "$chromium_path" /usr/local/bin/chromium \
   && rm -rf /var/lib/apt/lists/*
 
+COPY --from=whisper-build /tmp/browser-network-sandbox /usr/local/bin/browser-network-sandbox
 COPY --from=whisper-build /tmp/whisper-build/bin/whisper-cli /usr/local/bin/whisper-cli
 RUN mkdir -p /usr/local/share/content-scout \
   && printf '%s\n' "${WHISPER_CPP_VERSION}" > /usr/local/share/content-scout/whisper-cpp-version
@@ -97,7 +101,8 @@ COPY --from=build /app/apps/web/dist apps/web/dist
 COPY scripts/start-workspace.py /usr/local/share/content-scout/start-workspace.py
 
 # Hermetic runtime smoke checks: command boundaries only, with no social-network calls.
-RUN chromium --version \
+RUN browser-network-sandbox --self-test \
+  && chromium --version \
   | grep -F "153.0.8010.12" \
   && printf '%s\n' '<!doctype html><html><body><h1>browser-render-probe</h1></body></html>' > /tmp/browser-render-probe.html \
   && chromium --headless --no-sandbox --disable-gpu --dump-dom "file:///tmp/browser-render-probe.html" 2>/dev/null | grep -F "browser-render-probe" \

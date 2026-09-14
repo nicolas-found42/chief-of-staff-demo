@@ -79,3 +79,99 @@ test("owner can inspect research states, change research bounds, and enqueue wit
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test.each(["queued", "retrieving"])(
+  "detaching %s evidence preserves revisions and excludes late research after restart",
+  async (phase) => {
+    const root = mkdtempSync(join(tmpdir(), "dossier-detach-api-"));
+    const app = Fastify();
+    try {
+      const people = new WorkspacePersonProfiles({
+        store: new PersonProfileStore(root),
+        lifecycle: [],
+      });
+      const person = people.create({ primaryEmail: "maya@example.com" });
+      const other = people.create({ primaryEmail: "ada@example.com" });
+      const dossiers = new PersonDossierStore(root);
+      const source = dossiers.retainSource({
+        url: "https://example.com/atlas",
+        title: "Atlas notes",
+        author: null,
+        publishedAt: null,
+        retrievedAt: "2026-09-14",
+        text: "Maya built Atlas.",
+        family: "example.com",
+        sourceClass: "primary-artifact",
+        visibility: "public",
+        completeness: "full",
+        access: "retrieved",
+        acquisition: "public-web",
+      });
+      const content = {
+        sourceIds: [source.id],
+        claims: [],
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      };
+      const original = dossiers.publish(person.id, 0, content);
+      dossiers.publish(other.id, 0, content);
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const queue = new PersonResearchQueue({
+        workspaceDir: root,
+        people,
+        research: new PersonResearch({
+          dossiers,
+          search: async () => {
+            started.resolve();
+            await release.promise;
+            return [{ title: source.title, url: source.url, snippet: source.text }];
+          },
+          complete: async () => {
+            throw new Error("Late model dispatch");
+          },
+        }),
+        enabled: () => true,
+      });
+      registerPersonDossierApi(app, { people, dossiers, queue });
+      await app.inject({ method: "POST", url: `/api/people/${person.id}/research` });
+      expect(queue.job(person.id)?.state).toBe("queued");
+      const tick = phase === "retrieving" ? queue.tick(person.id) : Promise.resolve();
+      if (phase === "retrieving") {
+        await started.promise;
+        expect(queue.job(person.id)?.state).toBe("researching");
+      }
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/people/${person.id}/sources/${source.id}/detach`,
+      });
+      expect(response.statusCode).toBe(200);
+      release.resolve();
+      await tick;
+      expect(response.json().dossier.sourceIds).toEqual([]);
+      expect(queue.job(person.id)).toBeNull();
+      expect((await app.inject(`/api/people/${person.id}/sources/${source.id}`)).statusCode).toBe(
+        404,
+      );
+      expect((await app.inject(`/api/people/${other.id}/sources/${source.id}`)).statusCode).toBe(
+        200,
+      );
+      expect((await app.inject(`/api/people/${person.id}/dossier/revisions/1`)).json()).toEqual(
+        original,
+      );
+      const restarted = new PersonDossierStore(root);
+      expect(restarted.getRevision(person.id, 1)).toEqual(original);
+      expect(() => restarted.publish(person.id, 1, content)).toThrow(
+        "Dossier changed during research",
+      );
+      expect(() => restarted.publish(person.id, 2, content)).toThrow("Rejected attribution");
+      expect(restarted.source(person.id, source.id)).toBeNull();
+      expect(restarted.source(other.id, source.id)?.text).toBe(source.text);
+    } finally {
+      await app.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);

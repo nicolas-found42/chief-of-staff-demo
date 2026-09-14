@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import CacheableLookup from "cacheable-lookup";
 import { Agent, fetch as undiciFetch, type Dispatcher, type RequestInit } from "undici";
+import { readSourceBytes, readSourceText } from "./source-body.js";
 
 export interface PublicHttpResponse {
   url: string;
@@ -200,6 +201,17 @@ function sharedSourceHttpDispatcher(guarded = true): SourceHttpDispatcher {
   return sharedDispatcher;
 }
 
+/* Only representation and body metadata survive an origin change. Provider
+   headers are open-ended, so a list of known credential names would leak the
+   next adapter's secret. Same-origin hops retain the caller's complete headers. */
+const CROSS_ORIGIN_SOURCE_HEADERS = new Set([
+  "accept",
+  "accept-language",
+  "user-agent",
+  "content-type",
+  "content-length",
+]);
+
 /** Validate each hop before fetch can open its socket, retaining one deadline.
  * Automatic redirects would bypass the URL policy. Cross-origin redirects
  * also must not carry provider-specific credentials or conditional headers. */
@@ -217,16 +229,9 @@ async function fetchSource(url: URL, init: RequestInit, guarded: boolean) {
     const next = guarded ? assertPublicHttpUrl(target.toString()) : target;
     const headers = new Headers(request.headers as HeadersInit);
     if (next.origin !== current.origin) {
-      for (const name of [
-        "authorization",
-        "proxy-authorization",
-        "cookie",
-        "x-api-key",
-        "x-auth-token",
-        "if-none-match",
-        "if-modified-since",
-      ])
-        headers.delete(name);
+      for (const name of [...headers.keys()]) {
+        if (!CROSS_ORIGIN_SOURCE_HEADERS.has(name)) headers.delete(name);
+      }
     }
     if (
       response.status === 303 ||
@@ -304,10 +309,7 @@ export function createHttpFetch(
         },
         guarded,
       );
-      const body = await response.text();
-      if (body.length > 5_000_000) {
-        throw new Error("Source response exceeded the 5 MB collection limit.");
-      }
+      const body = await readSourceText(response.body);
       return {
         url: response.url || finalUrl,
         status: response.status,
@@ -371,9 +373,7 @@ function createHttpBytesFetch(
         },
         true,
       );
-      const bytes = Buffer.from(await response.arrayBuffer());
-      if (bytes.byteLength > 5_000_000)
-        throw new Error("Source response exceeded the 5 MB collection limit.");
+      const bytes = await readSourceBytes(response.body);
       return {
         url: response.url || finalUrl,
         status: response.status,

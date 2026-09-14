@@ -46,7 +46,7 @@ test("source review preserves reading position, keeps background inert, retries 
     await page.request.post("/api/people", { data: { primaryEmail: "review-maya@example.com" } })
   ).json();
   await page.goto(`/people/${created.id}`);
-  const citation = page.getByRole("button", { name: "Source 1", exact: true }).first();
+  const citation = page.getByRole("button", { name: /^Source 1:/ }).first();
   await expect(citation).toBeVisible({ timeout: 30000 });
   await citation.focus();
   const before = await page.evaluate(() => window.scrollY);
@@ -117,10 +117,35 @@ test("source review preserves reading position, keeps background inert, retries 
   await expect(dialog).toHaveCount(0);
   await page.unroute("**/api/people/*/sources/*");
   await citation.click();
+  const beforeCorrection = await (
+    await page.request.get(`/api/people/${created.id}/dossier`)
+  ).json();
   await dialog.getByText("This source is about someone else", { exact: true }).click();
   await dialog.getByRole("button", { name: "Remove wrong-person attribution" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(citation).toHaveCount(0);
+  await expect(page.getByRole("tabpanel")).toBeFocused();
+  const historical = beforeCorrection.dossier;
+  expect(
+    await (
+      await page.request.get(`/api/people/${created.id}/dossier/revisions/${historical.revision}`)
+    ).json(),
+  ).toEqual(historical);
+  await page.goto(`/people/${created.id}?dossierRevision=${historical.revision}`);
+  await expect(citation).toBeVisible();
+  await citation.click();
+  await expect(dialog.getByRole("alert")).toContainText("Source could not be loaded");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Prioritise research" }).click();
+  await expect(page.getByLabel("Dossier revision", { exact: true })).toHaveValue(
+    String(historical.revision),
+  );
+  await expect(citation).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Dossier revision", { exact: true })).toHaveValue(
+    String(historical.revision),
+  );
+  await expect(citation).toBeVisible();
 
   let historyFails = true;
   await page.route("**/relationship-history", async (route) => {

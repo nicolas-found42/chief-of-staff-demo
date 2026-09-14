@@ -1,0 +1,24 @@
+{
+  "command": [
+    "pnpm",
+    "exec",
+    "tsx",
+    "scripts/run-validation-campaign.mts",
+    "--plan-only",
+    "--provider",
+    "mock",
+    "--models",
+    "synthetic/mock",
+    "--corpus",
+    "<synthetic-campaign>/corpus",
+    "--out",
+    "<synthetic-campaign>/output",
+    "--campaign-id",
+    "remediation-synthetic-plan"
+  ],
+  "exitCode": 0,
+  "stdout": "frozen manifest at <synthetic-campaign>/output/manifest.json\ncampaign remediation-synthetic-plan (baseline, frozen 2026-09-14T17:38:28.318Z)\nplanned 1 slots: golden 1, incident 0, brief 0 \u2014 corpus revision 8373d19b951e\n  synthetic/mock: 1 slot(s)\nbudgets: campaign $0.00, operation $2.00\n",
+  "stderr": "",
+  "fixture": "entirely synthetic; no private corpus read",
+  "pathRedaction": "Run-specific absolute temporary directory replaced with <synthetic-campaign>; command arguments and outcomes otherwise unchanged."
+}

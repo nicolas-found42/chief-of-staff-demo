@@ -154,21 +154,28 @@ describe("PeoplePage against a fake PeopleClient", () => {
 });
 
 describe("People search recovery", () => {
-  it("ignores an older search response and its error after the filters change", async () => {
-    const initial = Promise.withResolvers<PersonProfile[]>();
-    const filtered = Promise.withResolvers<PersonProfile[]>();
-    const client = fakePeopleClient((_query, archived) =>
-      archived ? filtered.promise : initial.promise,
-    );
-    const container = await mountPage(client);
-    await act(async () => {
-      container.querySelector<HTMLInputElement>("#people-archived")!.click();
-    });
-    await act(async () => filtered.resolve([profileFixture({ fullName: "Current result" })]));
-    await act(async () => initial.resolve([profileFixture({ fullName: "Obsolete result" })]));
-    expect(container.textContent).toContain("Current result");
-    expect(container.textContent).not.toContain("Obsolete result");
-  });
+  it.each(["success", "failure"])(
+    "ignores an older search %s after the filters change",
+    async (outcome) => {
+      const initial = Promise.withResolvers<PersonProfile[]>();
+      const filtered = Promise.withResolvers<PersonProfile[]>();
+      const client = fakePeopleClient((_query, archived) =>
+        archived ? filtered.promise : initial.promise,
+      );
+      const container = await mountPage(client);
+      await act(async () => {
+        container.querySelector<HTMLInputElement>("#people-archived")!.click();
+      });
+      await act(async () => filtered.resolve([profileFixture({ fullName: "Current result" })]));
+      await act(async () => {
+        if (outcome === "failure") initial.reject(new Error("Obsolete failure"));
+        else initial.resolve([profileFixture({ fullName: "Obsolete result" })]);
+      });
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(container.textContent).toContain("Current result");
+      expect(container.textContent).not.toContain("Obsolete result");
+    },
+  );
 
   it("offers a retry after an initial failure instead of claiming to keep loading", async () => {
     const people = vi

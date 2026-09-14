@@ -1,3 +1,4 @@
+import { EvidenceDate } from "./EvidenceDate";
 import { PersonSourceInspector } from "./PersonSourceInspector";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
@@ -91,8 +92,17 @@ export function PersonDossierPanel({
   const [latestRevision, setLatestRevision] = useState(0);
   const [view, setView] = useState<DossierView | null>(null);
   const [tab, setTab] = useState<keyof typeof tabs>("overview");
-  const [source, setSource] = useState<{ id: string; quote: string } | null>(null);
+  const [source, setSource] = useState<{
+    id: string;
+    quote: string;
+    profileId: string;
+    revision: number | undefined;
+    attributedWhenOpened: boolean;
+  } | null>(null);
   const [analysis, setAnalysis] = useState<PersonDossierAnalysis | null>(null);
+  const [currentSources, setCurrentSources] = useState<{ profileId: string; ids: string[] } | null>(
+    null,
+  );
   const [history, setHistory] = useState<PersonRelationshipRecord[]>([]);
   const editingSettings = useRef(false);
   const settingsEditRevision = useRef(0);
@@ -102,6 +112,7 @@ export function PersonDossierPanel({
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyRetry, setHistoryRetry] = useState(0);
   const [actionError, setActionError] = useState("");
+  const [correctionNotice, setCorrectionNotice] = useState("");
   const readGeneration = useRef(0);
   const reading = useRef(false);
   const lifecycle = useRef(0);
@@ -125,6 +136,7 @@ export function PersonDossierPanel({
           : progress,
       );
       setLatestRevision(current.dossier?.revision ?? 0);
+      setCurrentSources({ profileId, ids: current.dossier?.sourceIds ?? [] });
       const data = revision === undefined ? current : await client.read(profileId, revision);
       if (generation !== readGeneration.current) return;
       setView(data);
@@ -147,6 +159,7 @@ export function PersonDossierPanel({
     // Never label the last revision's claims as the newly selected revision.
     setView(null);
     setAnalysis(null);
+    setCorrectionNotice("");
     setReadError("");
     void refresh();
     const timer = setInterval(() => {
@@ -179,9 +192,22 @@ export function PersonDossierPanel({
   }, [profileId, client, historyRetry]);
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("source");
-    setSource(id ? { id, quote: "" } : null);
+    setSource(id ? { id, quote: "", profileId, revision, attributedWhenOpened: true } : null);
     if (id) setTab("sources");
-  }, [profileId]);
+  }, [profileId, revision]);
+
+  useEffect(() => {
+    if (
+      source?.attributedWhenOpened &&
+      currentSources?.profileId === source.profileId &&
+      !currentSources.ids.includes(source.id)
+    ) {
+      setSource(null);
+      setCorrectionNotice(
+        "This source is no longer attributed to this Profile. Historical citations do not establish current attribution.",
+      );
+    }
+  }, [currentSources, source]);
 
   async function act(action: () => Promise<unknown>, savesSettings = false) {
     const generation = lifecycle.current;
@@ -198,7 +224,13 @@ export function PersonDossierPanel({
     }
   }
   function inspect(id: string, quote: string) {
-    setSource({ id, quote });
+    setSource({
+      id,
+      quote,
+      profileId,
+      revision,
+      attributedWhenOpened: currentSources?.ids.includes(id) ?? true,
+    });
   }
   const dossier = view?.dossier;
   const claims = dossier?.claims ?? [];
@@ -212,11 +244,12 @@ export function PersonDossierPanel({
     citations(record).map((citation, index) => (
       <button
         type="button"
-        className="linklike"
+        className="linklike dossier-citation"
         key={`${citation.sourceId}-${index}`}
         onClick={() => void inspect(citation.sourceId, citation.quote)}
       >
-        Evidence {index + 1}
+        Evidence {index + 1}: “
+        {citation.quote.length > 80 ? `${citation.quote.slice(0, 80)}…` : citation.quote}”
       </button>
     ));
   /* A claim grounded in archived material is evidence about the capture date
@@ -235,12 +268,13 @@ export function PersonDossierPanel({
       </p>
       {item.citations.map((citation, index) => (
         <button
-          className="linklike"
+          className="linklike dossier-citation"
           type="button"
           key={index}
           onClick={() => void inspect(citation.sourceId, citation.quote)}
         >
-          Source {index + 1}
+          Source {index + 1}: “
+          {citation.quote.length > 80 ? `${citation.quote.slice(0, 80)}…` : citation.quote}”
         </button>
       ))}
       {item.changeReason && <p>{item.changeReason}</p>}
@@ -259,6 +293,7 @@ export function PersonDossierPanel({
                 event.target.value === "current" ? undefined : Number(event.target.value),
               );
               setAnalysis(null);
+              setSource(null);
             }}
           >
             <option value="current">Current</option>
@@ -274,8 +309,8 @@ export function PersonDossierPanel({
       )}
       {revision !== undefined && (
         <p role="status">
-          Reading historical dossier revision {revision}. Source removal and privacy deletion may
-          invalidate historical evidence.
+          Reading historical dossier revision {revision}. This records earlier evidence, not current
+          attribution. Corrected sources may be unavailable; privacy deletion can remove evidence.
         </p>
       )}
       <div className="card">
@@ -381,6 +416,7 @@ export function PersonDossierPanel({
           )}
         </details>
       </div>
+      {correctionNotice && <p role="status">{correctionNotice}</p>}
       {[actionError, readError, historyError].filter(Boolean).map((error, index) => (
         <p role="alert" className="banner-error" key={index}>
           {error}
@@ -415,11 +451,7 @@ export function PersonDossierPanel({
           ))}
         </details>
       )}
-      <div
-        role="tablist"
-        aria-label="Dossier sections"
-        style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBlock: 16 }}
-      >
+      <div role="tablist" aria-label="Dossier sections" className="dossier-sections">
         {Object.entries(tabs).map(([key, label]) => (
           <button
             type="button"
@@ -464,7 +496,7 @@ export function PersonDossierPanel({
           <>
             <p>{section.summary}</p>
             <p className="muted">
-              {section.state} · Last researched {section.updatedAt ?? "not yet"}
+              {section.state} · Last researched <EvidenceDate value={section.updatedAt} />
             </p>
             {evidence(section)}
             {section.gaps.map((gap) => (
@@ -655,7 +687,7 @@ export function PersonDossierPanel({
           </p>
         )}
       </div>
-      {source && (
+      {source && source.profileId === profileId && source.revision === revision && (
         <PersonSourceInspector
           key={`${profileId}:${source.id}:${source.quote}`}
           profileId={profileId}
@@ -663,7 +695,14 @@ export function PersonDossierPanel({
           quote={source.quote}
           client={client}
           onClose={() => setSource(null)}
-          onDetached={refresh}
+          onDetached={async () => {
+            const generation = lifecycle.current;
+            await refresh();
+            if (generation !== lifecycle.current) return;
+            setCorrectionNotice(
+              "Attribution removed from this Profile. Historical revisions retain their recorded claims.",
+            );
+          }}
         />
       )}
     </section>

@@ -184,6 +184,8 @@ export type PeopleSuggestionShape = z.infer<typeof PeopleSuggestionShapeSchema>;
 
 /** Cross-Run index derived on read per ADR-0005. */
 export interface ContentResearchIndex {
+  /** Current admission prerequisites, not persisted schedule state. */
+  waiting?: { research: string | null; discovery: string | null };
   byPerson: {
     personId: string;
     personName: string;

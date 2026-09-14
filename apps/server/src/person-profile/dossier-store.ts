@@ -400,7 +400,9 @@ export class PersonDossierStore {
       return !!document && document.url !== source.url && document.hash !== source.hash;
     };
     this.publish(profileId, dossier.revision, this.prune(dossier, keep));
-    this.scrubHistory(profileId, keep);
+    /* Correction changes current attribution, not what an older revision recorded.
+       Historical citations do not grant source access: source() checks the current
+       dossier. Privacy deletion retains its separate historical scrubbing path. */
   }
 
   merge(survivorId: string, duplicateId: string): void {

@@ -1,0 +1,82 @@
+{
+  "verifiedAt": "2026-09-14T17:51:09.909065+00:00",
+  "sourceHead": "6417005b6e29482c7aed90bf76945aa6818dfbc2",
+  "sourceIncludesUncommittedRemediation": true,
+  "image": "sha256:acedb1fa98caae86884d543470ff9b291f30a19bf71faa2b95a6fde7b3ee29ea",
+  "node": "v24.20.0",
+  "composeProject": "found42-remediation-final",
+  "isolatedNetwork": "found42-remediation-final_default",
+  "imageOnly": true,
+  "extraCodeMounts": false,
+  "freshMountVerifiedEmptyBeforeBoot": true,
+  "health": true,
+  "accessibility": {
+    "violations": 0,
+    "passes": 42
+  },
+  "concurrentWriter": {
+    "exitCode": 73,
+    "diagnostic": "Workspace is already open by another writable app process."
+  },
+  "screenshots": [
+    "onboarding-production-home.png",
+    "onboarding-production-waiting.png",
+    "onboarding-production-refusal.png"
+  ],
+  "remainingLimit": "Synthetic fresh setup validates admission and recovery; configured provider reachability and live research quality were not exercised.",
+  "previousVerifiedImage": "sha256:ace6fe25117f76f58139d6e26107589419efb57fdb339e32229e2c10587c958b",
+  "afterFinalImageRecreation": {
+    "migration": "completed",
+    "onboardingComplete": false,
+    "contentResearchRuns": 0,
+    "setupWaiting": true,
+    "runNowRefusedBeforeRunCreation": true,
+    "settingsReachable": true,
+    "pageErrors": []
+  },
+  "priorImageFreshBootAndRestartPassed": true,
+  "finalImageChange": "PageLoadingBoundary pathname remount correction and source text BOM allowance; no onboarding policy change",
+  "latestImageReverification": {
+    "image": "sha256:1a0640d93006a326b2f01bb6edf141354ae130cd3d9f7f7082d5901ba799383b",
+    "implementationCommit": "db4aadb20b1529825bbc876fdc5ea432d7fa22d2",
+    "result": {
+      "migration": "completed",
+      "onboardingComplete": false,
+      "contentRuns": 0,
+      "waiting": {
+        "research": "Configure the model provider API key in Settings.",
+        "discovery": "Configure the model provider API key in Settings."
+      },
+      "pageErrors": [],
+      "settingsReachable": true
+    },
+    "health": {
+      "ok": true
+    },
+    "accessibility": {
+      "violations": [],
+      "passes": 42
+    },
+    "note": "Same synthetic mount recreated with final web loading-heading image; prior fresh boot/restart/concurrent-writer evidence retained above."
+  },
+  "reviewFollowup": {
+    "sourceCommit": "3734e76dbd797f9e5e414ecf702a48793acbbd69",
+    "image": "sha256:d5d1dba72183424d12a5d68a3c6d479cb181a81efb504e13b7c35ba85ac0b63e",
+    "result": {
+      "migration": "completed",
+      "onboardingComplete": false,
+      "contentRuns": 0,
+      "waiting": {
+        "research": "Configure the model provider API key in Settings.",
+        "discovery": "Configure the model provider API key in Settings."
+      },
+      "pageErrors": [],
+      "settingsReachable": true
+    },
+    "accessibility": {
+      "violations": [],
+      "passes": 42
+    },
+    "note": "Same synthetic mount; reviewed source changes do not alter pristine initialization. Updated waiting/refusal screenshots use corrected Content Scout label."
+  }
+}

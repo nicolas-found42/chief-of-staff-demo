@@ -65,6 +65,9 @@ export interface ContentResearchHostDeps {
   discoverFeeds?: FeedDiscoverer;
   searchPublic?: PublicSearch;
   configStore?: ConfigStore;
+  /** Shell-owned provider and onboarding prerequisites; absent for isolated
+   * explicitly supplied test runtimes. Null means eligible to execute. */
+  readiness?: (kind: "research" | "discovery") => string | null;
   now?: () => Date;
   log?: (message: string) => void;
   sleep?: (milliseconds: number) => Promise<void>;
@@ -99,6 +102,7 @@ export class ContentResearchHost implements HostedModule {
 
     this.runner = new Runner({
       runs: deps.runs,
+      waitingReason: () => deps.readiness?.("research") ?? null,
       module: contentResearchModule({
         store: this.store,
         adapters: deps.adapters,
@@ -118,6 +122,7 @@ export class ContentResearchHost implements HostedModule {
 
     this.backfillRunner = new Runner({
       runs: deps.runs,
+      waitingReason: () => deps.readiness?.("research") ?? null,
       module: contentResearchBackfillModule({
         store: this.store,
         adapters: deps.adapters,
@@ -136,6 +141,7 @@ export class ContentResearchHost implements HostedModule {
 
     this.discoveryRunner = new Runner({
       runs: deps.runs,
+      waitingReason: () => deps.readiness?.("discovery") ?? null,
       module: peopleDiscoveryModule({
         store: this.store,
         brandProfile: deps.getBrandProfile ?? (() => null),
@@ -334,7 +340,13 @@ export class ContentResearchHost implements HostedModule {
   }
 
   scheduleState() {
-    return this.store.scheduleState();
+    return {
+      ...this.store.scheduleState(),
+      waiting: {
+        research: this.deps.readiness?.("research") ?? null,
+        discovery: this.deps.readiness?.("discovery") ?? null,
+      },
+    };
   }
 
   getDailyCheckpoint(): string | null {
@@ -438,7 +450,7 @@ export class ContentResearchHost implements HostedModule {
       entry.reports.sort((a, b) => (a.generatedAt < b.generatedAt ? 1 : -1));
     }
 
-    return { byPerson: [...byPersonMap.values()], runs };
+    return { byPerson: [...byPersonMap.values()], runs, waiting: this.scheduleState().waiting };
   }
 
   start(): void {
@@ -482,6 +494,7 @@ export class ContentResearchHost implements HostedModule {
       const dailyDue =
         local.hour > dailyHour || (local.hour === dailyHour && local.minute >= dailyMinute);
       if (
+        !this.deps.readiness?.("research") &&
         hasPeople &&
         dailyDue &&
         state.lastSuccessfulDailyPeriod !== dailyPeriod &&
@@ -497,6 +510,7 @@ export class ContentResearchHost implements HostedModule {
         (local.weekday === config.weeklyDiscoveryDay &&
           (local.hour > weeklyHour || (local.hour === weeklyHour && local.minute >= weeklyMinute)));
       if (
+        !this.deps.readiness?.("discovery") &&
         hasPeople &&
         weeklyDue &&
         state.lastSuccessfulDiscoveryPeriod !== weeklyPeriod &&

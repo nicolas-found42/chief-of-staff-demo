@@ -3,6 +3,8 @@ import {
   cpSync,
   existsSync,
   mkdtempSync,
+  mkdirSync,
+  lstatSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -31,6 +33,46 @@ export class TaskCutover {
   private executing: Promise<TaskCutoverReceipt> | null = null;
   constructor(private readonly deps: CutoverDeps) {}
 
+  /** Initialize only a positively empty Workspace before ConfigStore or any
+   * scheduler writes. Reuse the canonical atomic bundle, with no legacy reset
+   * or processing consent. Existing entries (including recovery artifacts)
+   * must pass through the ordinary migration/recovery flow. This synchronous
+   * boundary cannot interleave with another startup/request in this process. */
+  initializePristine(): boolean {
+    if (this.receipt()) return true;
+    const directory = this.deps.workspaceDir;
+    /* The production entrypoint holds this exact empty lock inode across exec.
+       It is process ownership, not legacy product state; never replace it. */
+    if (
+      existsSync(directory) &&
+      readdirSync(directory).some((entry) => {
+        const stat = lstatSync(join(directory, entry));
+        return entry !== ".writer.lock" || !stat.isFile() || stat.size !== 0;
+      })
+    )
+      return false;
+    mkdirSync(directory, { recursive: true });
+    const receipt: TaskCutoverReceipt = {
+      kind: "canonical-tasks",
+      workspace: realpathSync(directory),
+      fingerprint: this.fingerprint(),
+      counts: {
+        legacyRuns: 0,
+        receipts: 0,
+        tasks: 0,
+        actionItems: 0,
+        taskLists: 0,
+        tasksToCreate: 0,
+        actionItemsToCreate: 0,
+      },
+      authenticationPreserved: true,
+      historicalRunsPreserved: true,
+      completedAt: new Date().toISOString(),
+    };
+    new TaskStore(directory).publishCutover({ tasks: [], lists: [], actionItems: [] }, receipt);
+    return true;
+  }
+
   state(): "required" | "completed" | "fresh" {
     if (this.receipt()) return "completed";
     const runs = openRuns(this.deps.workspaceDir);
@@ -50,7 +92,14 @@ export class TaskCutover {
         throw new Error("Unreadable historical Debrief; repair it before cutover");
       }
     }
-    return readMigrationState(this.deps.workspaceDir);
+    const migration = readMigrationState(this.deps.workspaceDir);
+    // The legacy classifier ignores unknown entries when deciding freshness.
+    // They cannot authorize automatic initialization or normal startup.
+    return migration === "fresh" &&
+      existsSync(this.deps.workspaceDir) &&
+      readdirSync(this.deps.workspaceDir).length > 0
+      ? "required"
+      : migration;
   }
 
   receipt(): TaskCutoverReceipt | null {

@@ -228,6 +228,17 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         </div>
       </div>
       <ContentResearchSubNav />
+      {(index.waiting?.research || index.waiting?.discovery) && (
+        <div className="banner" role="status">
+          <strong>Research is waiting for setup.</strong>{" "}
+          {[...new Set([index.waiting.research, index.waiting.discovery].filter(Boolean))].join(
+            " ",
+          )}{" "}
+          <Link to="/settings">Open Settings</Link>
+          {" · "}
+          <Link to="/content-scout">Open Content Scout</Link>
+        </div>
+      )}
 
       <div aria-live="polite" aria-atomic="true">
         {error && (

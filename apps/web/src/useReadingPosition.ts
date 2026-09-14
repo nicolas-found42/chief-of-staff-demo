@@ -1,11 +1,14 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { NavigationType, useLocation, useNavigationType } from "react-router-dom";
 
 /** Restore the originating history entry after its asynchronous content arrives. */
 export function useReadingPosition(ready: boolean) {
   const { key } = useLocation();
   const navigation = useNavigationType();
-  useEffect(() => {
+  /* Stop recording before route replacement or Suspense hiding changes document
+     height. A passive cleanup can observe the next page's clamped scroll position
+     and overwrite the originating entry before it unmounts. */
+  useLayoutEffect(() => {
     if (!ready) return;
     const storageKey = `meeting-position:${key}`;
     let saved: { y: number; focus: string | null } = { y: 0, focus: null };

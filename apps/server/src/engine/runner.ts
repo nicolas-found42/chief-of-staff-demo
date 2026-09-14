@@ -42,6 +42,9 @@ export interface RunnerDeps<Input> {
   /** Constructed once by the Shell: the run directory has one owner. */
   runs: Runs;
   module: ShellModule<Input>;
+  /** A setup prerequisite, checked before admission and again when queued work
+   * executes. Recovery waits without changing retained Runs until it clears. */
+  waitingReason?: () => string | null;
   /** Absent and `undefined` both mean: do not log. */
   log?: ((message: string) => void) | undefined;
   /** Clock used for durable wait records and recovery decisions. */
@@ -81,6 +84,7 @@ export class Runner<Input> {
 
   /** Create the Run and enqueue the Module's work. The id is available at once. */
   async startRun(record: RunRecord, input: Input): Promise<string> {
+    this.assertReady();
     const run = this.deps.runs.create({
       module: this.deps.module.id,
       moduleVersion: this.deps.module.version,
@@ -103,6 +107,7 @@ export class Runner<Input> {
   }
 
   async retryRun(id: string): Promise<RunMeta> {
+    this.assertReady();
     const run = this.deps.runs.open(id);
     if (!run) {
       throw new RunNotFoundError(id);
@@ -172,6 +177,7 @@ export class Runner<Input> {
 
   /** Continue a blocked Run in place using the owning Module's durable plan. */
   async resumeRun(id: string): Promise<RunMeta> {
+    this.assertReady();
     const run = this.deps.runs.open(id);
     if (!run) {
       throw new RunNotFoundError(id);
@@ -195,6 +201,7 @@ export class Runner<Input> {
    * Runs are returned to the same queue in place.
    */
   async recoverRuns(): Promise<number> {
+    if (this.deps.waitingReason?.()) return 0;
     let recovered = 0;
     const now = this.deps.now?.() ?? new Date();
     for (const summary of this.deps.runs.list({ module: this.deps.module.id }).runs) {
@@ -261,6 +268,11 @@ export class Runner<Input> {
     this.recoveryTimer = null;
   }
 
+  private assertReady(): void {
+    const reason = this.deps.waitingReason?.();
+    if (reason) throw Object.assign(new Error(`Setup required: ${reason}`), { statusCode: 409 });
+  }
+
   private enqueue(run: RunHandle, input: Input): boolean {
     if (this.active.has(run.id)) {
       return false;
@@ -272,6 +284,7 @@ export class Runner<Input> {
 
   private async execute(run: RunHandle, input: Input): Promise<void> {
     try {
+      if (this.deps.waitingReason?.()) return;
       run.finished(await this.deps.module.run(this.context(run), input));
     } catch (error) {
       /* A Stage failure is already on the Run, so the log stays quiet about it.
