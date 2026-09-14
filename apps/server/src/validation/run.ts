@@ -11,6 +11,7 @@ import { join } from "node:path";
 import {
   CampaignGoldenScoreSchema,
   CampaignHumanJudgmentSchema,
+  debriefSectionResolved,
   type CampaignGoldenScore,
   type CampaignHumanJudgment,
   type CampaignManifest,
@@ -392,6 +393,9 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
             });
           },
         });
+        const unavailable = checked.sections.filter(
+          (section) => !debriefSectionResolved(section.state),
+        );
         try {
           writeTerminalRunOutcome({
             outFile: files.outFile,
@@ -400,8 +404,9 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
             body: {
               model: slot.model,
               ms: now().getTime() - started,
-              valid: true,
+              valid: unavailable.length === 0,
               raw: checked.extraction,
+              sections: checked.sections,
               strategy: options.strategy,
             },
             ...fileSeams,
@@ -415,7 +420,18 @@ export function createExtractionSlotExecutor(options: ExtractionSlotExecutorOpti
                 }`;
           return facts("failed", reason.slice(0, 500));
         }
-        return { ...facts("success", null), artifactPath: files.outFile };
+        // The production extractor can preserve checked actions when another
+        // section fails. A campaign must not count that partial result as a
+        // complete successful slot or erase the section's failure evidence.
+        return {
+          ...facts(
+            unavailable.length === 0 ? "success" : "failed",
+            unavailable.length === 0
+              ? null
+              : `Required sections unavailable: ${unavailable.map((section) => section.name).join(", ")}`,
+          ),
+          artifactPath: files.outFile,
+        };
       } catch (error) {
         const { status, reason } = statusForExtractionError(error);
         const failure = slotFailureFor(error);

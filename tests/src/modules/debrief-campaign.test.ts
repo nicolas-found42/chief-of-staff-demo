@@ -815,6 +815,22 @@ describe("terminal run artifacts", () => {
 });
 
 describe("campaign runner and extraction executor", () => {
+  it("keeps separate campaigns isolated in a shared budget ledger", () => {
+    const corpus = writeCorpus({ goldens: 1 });
+    const input = {
+      protocol: "baseline" as const,
+      corpus: corpus.revision,
+      models: [MODELS[0]],
+      coldRoot: "/private/slots",
+    };
+    const first = planCampaignSlots({ ...input, campaignId: "campaign/first" });
+    const second = planCampaignSlots({ ...input, campaignId: "campaign-first" });
+    expect(first[0].operationId).not.toBe(second[0].operationId);
+    const ledger = new ModelBudgetLedger(tempDir("shared-campaign-budget-"));
+    ledger.getOrCreateOperationSnapshot(first[0].operationId, null, "debrief");
+    expect(ledger.getOperationSnapshot(second[0].operationId)).toBeNull();
+  });
+
   function extractionFixture(): MeetingDebriefExtraction {
     return {
       summary: "summary",
@@ -911,6 +927,30 @@ describe("campaign runner and extraction executor", () => {
     expect(report.complete).toBe(true);
     expect(report.statusCounts.failed).toBe(1);
     expect(report.missing).toHaveLength(0);
+  });
+
+  it("retains partial extraction but fails a slot with an unavailable required section", async () => {
+    const corpus = writeCorpus({ goldens: 1 });
+    const { manifest } = buildPlan({ goldens: 1, corpus, models: [MODELS[0]] });
+    const executor = extractionExecutor(corpus, tempDir("partial-campaign-"), async () => ({
+      ...extractionRun(),
+      sections: validatedDebriefSections().map((section) =>
+        section.name === "decisions"
+          ? { ...section, state: "failed", reason: "Provider refused decision verification" }
+          : section,
+      ),
+    }));
+    const outcome = await executor.execute(manifest.slots[0]);
+    expect(outcome.status).toBe("failed");
+    expect(outcome.reason).toContain("decisions");
+    const retained: unknown = JSON.parse(readFileSync(outcome.artifactPath!, "utf8"));
+    expect(retained).toMatchObject({
+      valid: false,
+      sections: expect.arrayContaining([
+        expect.objectContaining({ name: "decisions", state: "failed" }),
+      ]),
+      raw: { summary: "summary" },
+    });
   });
 
   it("records where and why a slot failed when the extraction names its stage (#363)", async () => {
