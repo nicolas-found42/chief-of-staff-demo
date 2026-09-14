@@ -815,6 +815,22 @@ describe("terminal run artifacts", () => {
 });
 
 describe("campaign runner and extraction executor", () => {
+  it("keeps separate campaigns isolated in a shared budget ledger", () => {
+    const corpus = writeCorpus({ goldens: 1 });
+    const input = {
+      protocol: "baseline" as const,
+      corpus: corpus.revision,
+      models: [MODELS[0]],
+      coldRoot: "/private/slots",
+    };
+    const first = planCampaignSlots({ ...input, campaignId: "campaign/first" });
+    const second = planCampaignSlots({ ...input, campaignId: "campaign-first" });
+    expect(first[0].operationId).not.toBe(second[0].operationId);
+    const ledger = new ModelBudgetLedger(tempDir("shared-campaign-budget-"));
+    ledger.getOrCreateOperationSnapshot(first[0].operationId, null, "debrief");
+    expect(ledger.getOperationSnapshot(second[0].operationId)).toBeNull();
+  });
+
   function extractionFixture(): MeetingDebriefExtraction {
     return {
       summary: "summary",

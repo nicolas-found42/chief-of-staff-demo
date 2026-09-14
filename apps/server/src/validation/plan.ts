@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   CampaignCorpusRevision,
   CampaignModelRoute,
@@ -95,6 +96,9 @@ export function planCampaignSlots(input: CampaignPlanInput): CampaignSlot[] {
   const briefCases = [...input.corpus.briefCaseIds].sort();
   const models = [...input.models];
   const slots: CampaignSlot[] = [];
+  // Distinct campaigns can share a durable ledger without inheriting an earlier
+  // slot's charges. Hash the exact id, since filename slugification is lossy.
+  const campaignKey = createHash("sha256").update(input.campaignId).digest("hex");
 
   const add = (
     kind: CampaignSlotKind,
@@ -122,7 +126,7 @@ export function planCampaignSlots(input: CampaignPlanInput): CampaignSlot[] {
       repetition,
       cold,
       root: `${input.coldRoot}/${slotId}`,
-      operationId: `op_${slotId}`,
+      operationId: `op_${campaignKey}_${slotId}`,
     });
   };
 
