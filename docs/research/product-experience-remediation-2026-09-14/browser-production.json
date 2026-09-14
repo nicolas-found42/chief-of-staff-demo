@@ -1,16 +1,16 @@
 {
-  "measuredAt": "2026-09-14T17:55:56.660793+00:00",
+  "measuredAt": "2026-09-14T18:28:52.514409+00:00",
   "startingHead": "6417005b6e29482c7aed90bf76945aa6818dfbc2",
-  "imageId": "sha256:1a0640d93006a326b2f01bb6edf141354ae130cd3d9f7f7082d5901ba799383b",
+  "imageId": "sha256:d5d1dba72183424d12a5d68a3c6d479cb181a81efb504e13b7c35ba85ac0b63e",
   "imageTag": "found42-remediation-final-app",
-  "codeState": "working tree; source checksums identify measured inputs",
+  "codeState": "Source commit identifies packaged server and launcher; source checksums identify measured inputs.",
   "sourceSha256": {
-    "apps/server/src/source-adapters/browser.ts": "08b68f8a520df65cb69479da8507be0b5478be35b447d5070fd7dcee5cdb93ab",
+    "apps/server/src/source-adapters/browser.ts": "01d39850aa9a7d8e7c769b141cb07bc22d5ac947f9dbcd5bf2d8b5aa881d409d",
     "apps/server/src/source-adapters/browser-network.ts": "615a8faccbaabc7222cf0be0560e32a6fbe1543bec582dda6f9d2ab67a8cff2e",
     "apps/server/src/source-adapters/source-body.ts": "7b90f3b3b8ef2aa862ca0f23bc31870400c2959f607031092d43f9c92774cf5e",
-    "apps/server/src/source-adapters/http.ts": "84bee646a971aee9f7d4f3fe78f6d973918fed6cda2b5887826a3523e0f45c63",
+    "apps/server/src/source-adapters/http.ts": "1423645cce2766e5a8b06cca5c1ad3e409dc2cdbb3114aba5a2c4601c151d73c",
     "scripts/browser-network-sandbox.c": "3b3b18f4cfd329a8faa29df8da5324d0d559c5120716caf82c329ca96c4f1912",
-    "scripts/browser-safety-probe.mjs": "8d06c4c067793162aefec2d449019fd66ebf833d1dee6592d190641108cc752d",
+    "scripts/browser-safety-probe.mjs": "8e63382b2e81c4c23341542a935661c397ed24831fb01f8836815627d81e93e9",
     "Dockerfile": "9dbb1d48380b7330319e58fabddbdc1571f7d71bccf6976f5c41aa4e6a0a907e",
     "docker-compose.yml": "a70d9fb16ed9500eb36aa8ebccd8cdbfa92c4a05b7d65b3be020e77005e711b6"
   },
@@ -36,7 +36,8 @@
       "actual socket DNS private answer rejected before fixture",
       "forbidden redirect rejected before destination",
       "forbidden subresource rejected before destination",
-      "WebSocket closed and Service Worker blocked",
+      "WebSocket clean policy close code1008 and Service Worker registration returns no registration, registry empty, and no worker resource requested",
+      "21 redirected script assets render without consuming the document redirect budget",
       "oversized broker response rejected",
       "JavaScript-expanded DOM rejected before Node receives HTML",
       "five redirect repetitions retain final document origin, body and 404 status",
@@ -48,13 +49,13 @@
     "forbiddenDestinationRequests": 0,
     "positiveControlRequests": 1,
     "memory": {
-      "rss": 141127680,
+      "rss": 141770752,
       "heapTotal": 56213504,
-      "heapUsed": 52381280,
-      "external": 4516527,
-      "arrayBuffers": 345966
+      "heapUsed": 52852528,
+      "external": 4517646,
+      "arrayBuffers": 347085
     },
-    "containerPeakBytes": 630218752,
+    "containerPeakBytes": 654782464,
     "containerLimitBytes": 2147483648
   },
   "limits": [
@@ -63,5 +64,45 @@
     "Memory peak covers the isolated synthetic browser probe, not a busy app workload.",
     "Document loops can reach the shared 15-second deadline before the 20-hop ceiling due to Chromium navigation throttling.",
     "No live provider, private service, business corpus, or paid evaluation was contacted."
-  ]
+  ],
+  "sourceCommit": "3734e76dbd797f9e5e414ecf702a48793acbbd69",
+  "reviewRegressions": {
+    "excessRequestAdmission": {
+      "reviewCommentId": 4008202137,
+      "before": "New unit test failed: request101 had zero abort calls while eight producers held their slots.",
+      "after": "Request101 aborts before any producer is released; 23 renderer/broker unit tests pass."
+    },
+    "assetRedirectBudget": {
+      "reviewCommentId": 4008202155,
+      "disposition": "Reported asset behavior not reproduced; document/frame budget preserved.",
+      "evidence": "21 individually redirected script assets execute in production without consuming the document redirect ceiling."
+    },
+    "alternativeControls": {
+      "reviewCommentId": 4008202191,
+      "positive": "Parser-blocking fixture waits for both outcomes: clean WebSocket policy close1008; no returned Service Worker registration, empty registry, zero worker requests.",
+      "negativeControls": [
+        {
+          "mutation": "Remove only WebSocket route in temporary compiled browser module.",
+          "expectedFailure": {
+            "code": 1006,
+            "clean": false
+          },
+          "assertionFailed": true,
+          "logSha256": "a3cdd8d658c569dc1e029d4467a96049b925e959d18604284c1e1802067c5717"
+        },
+        {
+          "mutation": "Change only serviceWorkers:block to serviceWorkers:allow in temporary compiled browser module.",
+          "expectedFailure": {
+            "settled": "resolved",
+            "registrationReturned": true,
+            "registrations": 1
+          },
+          "assertionFailed": true,
+          "logSha256": "24dd987486ff0427dd4c7ca43518bb4fd8d8c6640193d73fe1acaa3464239cdd"
+        }
+      ],
+      "negativeControlRuntimeImage": "sha256:1a0640d93006a326b2f01bb6edf141354ae130cd3d9f7f7082d5901ba799383b",
+      "negativeControlScope": "Synthetic probe and one temporary compiled browser-module replacement; seccomp remains enabled; no external network or business Workspace."
+    }
+  }
 }

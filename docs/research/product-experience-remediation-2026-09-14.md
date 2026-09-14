@@ -23,6 +23,14 @@ it did not start the app or read Workspace contents. That container exited. The 
 was rerun using a new temporary directory containing only compiled modules and their
 two dependencies. All app/container journeys mount only their new synthetic Workspace.
 
+Clean CI exposed a second verification-scope distinction: the repository's existing
+`person-research-subject-attribution.test.ts` conditionally replays a retained public-source
+article from ignored `artifacts/person-benchmark` when it exists. The local whole-suite
+runs therefore included that replay; clean CI skipped it (3,088 passed / 1 skipped).
+This was not a live provider call or private transcript evaluation, but it was not a
+synthetic-only test run. Final follow-up verification uses a clean checkout without
+ignored evidence artifacts; the existing optional test is not weakened or removed.
+
 Read: AGENTS/CLAUDE (the latter links to AGENTS), CODING_STANDARDS, CONTEXT,
 docs/agents guidance, relevant ADRs, manifests/lockfile, Dockerfile/Compose and CI.
 Read-only GitHub lookup found PR #413 merged at starting HEAD and zero open issues.
@@ -126,6 +134,7 @@ the pinned Playwright runtime actually contains **Node 24.20.0**.
   semantics); invalidate reader selection on Profile/revision changes and lost current
   attribution. Historical evidence remains readable as history; source API authorization
   still requires current attribution and reports unavailable when it no longer exists.
+  Historical evidence already scrubbed by earlier corrections cannot be reconstructed by this fix.
 - Evidence: `person-dossier.test.ts`, `person-dossier-api.test.ts`,
   `person-source-lifetime.test.tsx`, dossier refresh and browser lifecycle journeys.
   New failure tests were observed red before the owning changes.
@@ -327,14 +336,15 @@ remain unchanged; no new dependency, lockfile change, or copied example was need
 
 ## Integrated verification and delivery
 
-The tested implementation is commit **`db4aadb20b1529825bbc876fdc5ea432d7fa22d2`**.
-The subsequent evidence commit changes documentation/artifacts only. The
+The first integrated implementation was commit **`db4aadb20b1529825bbc876fdc5ea432d7fa22d2`**.
+The review follow-up below identifies the final tested implementation.
+Its subsequent evidence commit changed documentation/artifacts only. The
 [machine-readable verification record](product-experience-remediation-2026-09-14/integrated-verification.json)
 contains SHA-256 hashes for every implementation/test/script/configuration file, exact
 image identity, production route results, onboarding state and timing summaries.
 Pre-commit formatting/lint passed without changing the tested source bytes.
 
-- Final `pnpm run check:all`: **264 unit files / 3,089 tests and 121 browser tests passed**;
+- First integrated `pnpm run check:all`: **264 unit files / 3,089 tests and 121 browser tests passed**;
   typecheck, lint (including 12 policy probes), formatting, knip, workflow checks and
   production web/server build passed. Browser journeys include briefing, debriefing,
   People filtering/lifecycle, dossier research/revisions, source correction/read/retry,
@@ -343,18 +353,19 @@ Pre-commit formatting/lint passed without changing the tested source bytes.
   from this checkout. `up -d --no-build` used isolated ports **44527/44528**, network
   `found42-remediation-final_default`, and a verified new synthetic mount. The committed
   [Compose evidence](product-experience-2026-09-14/remediation/onboarding-production-compose.json)
-  records the exact configuration; temporary paths are run-specific, not reusable defaults.
+  records the configuration with `<repo>` and `<synthetic-workspace>` replacing run-specific
+  absolute host paths; substitute a new verified-empty Workspace when reproducing.
   Image-only boot/recreation returned `GET /api/health` **`{"ok":true}`**.
-- Final production image:
+- First integrated production image:
   **`sha256:1a0640d93006a326b2f01bb6edf141354ae130cd3d9f7f7082d5901ba799383b`**.
   `docker run --rm --network none --mount type=bind,src=<repo>/scripts,dst=/app/scripts,readonly
   found42-remediation-final-app node scripts/run-canaries.mjs --check` composed all
   **9 production adapters without external calls**.
 - The [production browser proof](product-experience-remediation-2026-09-14/browser-production.json)
-  directly retested this final image, with no compiled-code overlay: **13 probe groups
+  now records the review-follow-up image below, with no compiled-code overlay: **14 probe groups
   passed**, forbidden destination requests **0**, unguarded positive control **1**.
-  Container peak **630,218,752 bytes** under **2,147,483,648 bytes**; post-run Node RSS
-  **141,127,680 bytes**. Eight in-flight resource collectors can temporarily exceed the
+  Container peak **654,782,464 bytes** under **2,147,483,648 bytes**; post-run Node RSS
+  **141,770,752 bytes**. Eight in-flight resource collectors can temporarily exceed the
   20 MB accepted-resource aggregate before rejection; each retains at most 5 MB, and the
   independent container ceiling still applies. Memory sizing covers this synthetic workload.
 - [Onboarding production results](product-experience-2026-09-14/remediation/onboarding-production-result.json)
@@ -375,9 +386,76 @@ followed by the exclusive final passing full run above. No test/golden/coverage 
 lint rule or security control was weakened. The full integrated source and evidence diff
 was reviewed; the repository's four current-head CI checks gate PR squash delivery.
 
+### CodeRabbit and CI follow-up — final implementation
+
+[PR #414](https://github.com/nicolas-found42/chief-of-staff-demo/pull/414) received an explicitly
+requested full CodeRabbit review of `bcc7d14eb332978a13a948faa8a70d0813c71c41`.
+[The review](https://github.com/nicolas-found42/chief-of-staff-demo/pull/414#pullrequestreview-5201291748)
+posted eight inline comments and one additional HTTP comment. Each has a response;
+this is the final disposition, not an assertion that the bot re-reviewed the follow-up:
+
+| Review item | Disposition and verification |
+| --- | --- |
+| Excess resource requests waited before rejection | Fixed: request 101 aborts before queueing; regression held all eight active slots and failed before the change. |
+| Redirected assets allegedly consume document budget | No change: 21 redirected scripts execute successfully. The broker follows ordinary asset redirects internally. The intentional global 20 document/frame budget remains. |
+| Query-only navigation cannot clear loading error | Fixed: location key resets failed state without remounting healthy routes; real browser failure → remove variant query → healthy Home regression passes. |
+| Brand Voice link opens Content Scout | Fixed label to Open Content Scout; destination and prerequisite explanation remain accurate. |
+| Impossible date-only values normalize | Fixed UTC date roundtrip validation; three invalid and two valid cases pass, preserving malformed values verbatim. |
+| Correction notice leaks across context | Fixed context clearing and existing generation guard on late correction refresh; three previously failing Profile/revision/later-completion cases pass. |
+| WS/SW probe records unasserted success | Fixed explicit control outcomes. WS must close cleanly with policy code 1008; SW yields no registration, empty registry and no worker-script fetch. Removing either guard in a temporary compiled test copy makes its assertion fail. |
+| Measurement accepts any error as a limit | Fixed expected-error classification. Injected connection failure exits 1 and emits no successful measurement record; all 12 fresh-process samples rerun. |
+| Additional HTTP custom credential forwarding | Fixed explicit cross-origin allowlist: accept, accept-language, user-agent, content-type, content-length. Same-origin headers stay intact; origin changes drop every other header and return hops do not restore them. 301/302/303 versus 307/308 body/header semantics covered; safety/dispatcher/Marginalia 37 tests pass. |
+
+Cross-origin forwarding deliberately drops even Marginalia's literal public API key and
+DuckDuckGo referer/sec-fetch-mode; initial/same-origin requests remain unchanged. No current
+caller requires their cross-origin forwarding. Live provider redirect compatibility remains
+unvalidated. Auxiliary scan claims were inspected: the alleged API key is a test-source
+SHA-256 checksum, and the alleged prototype-pollution loop iterates fixed literal keys.
+Neither establishes a vulnerability. Host paths were redacted from public evidence;
+Compose already supplies the supported deployment's health checks.
+
+CI run **34878449764** on the initial PR head passed static checks, unit coverage and image,
+but its browser shard caught loss of History reading position. The trace showed position
+3440 followed by shorter Meeting content, then Back at zero. Chunk delay alone did not
+reproduce locally. Deterministic React tests proved passive scroll listeners could record
+the next layout's clamped zero before cleanup. `useLayoutEffect` cleanup fixes replacement
+and actual Suspense hiding; the browser test additionally delays the real route chunk
+while retaining the original filter/viewport/less-than-60px position assertions.
+
+Final source commit: **`3734e76dbd797f9e5e414ecf702a48793acbbd69`**. After the follow-up,
+`pnpm install --frozen-lockfile` and **`pnpm run check:all`** ran in a clean detached checkout
+with no ignored Workspace/corpus/evidence artifacts: **266 unit files, 3,105 tests passed,
+1 existing optional retained-article test skipped, and all 122 browser tests passed**.
+All static gates and production build passed. No tests, coverage floors or security
+controls were weakened. The clean checkout uses the exact committed implementation.
+
+Final packaged image: **`sha256:d5d1dba72183424d12a5d68a3c6d479cb181a81efb504e13b7c35ba85ac0b63e`**.
+Disposable Compose build/boot and health passed; all nine production adapters composed
+with networking disabled. The 14-group browser proof used the packaged server/launcher
+without a compiled overlay. Production onboarding and direct-route/reload/error-recovery
+journeys passed again. Existing fresh-boot/restart/writer exclusion evidence is retained;
+the review changes do not alter pristine initialization. Updated waiting/refusal screenshots
+show the corrected Content Scout link label.
+
+[Strict-error memory samples](product-experience-remediation-2026-09-14/body-memory-verified.jsonl)
+retain the original measurements separately. All before samples consumed 104,857,600 bytes;
+bounded text stopped at 5,046,272 bytes and bytes at 5,111,808. Peak RSS delta ranges were
+**351.9–360.2 MB before**, **19.8–23.8 MB bounded text**, **24.6–25.4 MB bounded bytes**.
+This confirms the same retention benefit under explicit expected-limit classification.
+The fault check preloaded an Undici MockAgent with network disabled; its unmatched
+connection error propagated, the CLI exited 1, and the synthetic server cleaned up.
+
+[Final follow-up verification metadata](product-experience-remediation-2026-09-14/review-verification.json)
+records source hashes, image, clean-checkout totals, production journeys and final loading
+samples. Repository delivery remains squash merge only after current-head `check`, `test`,
+`e2e` and `image` pass; the PR's check history records those immutable runs. LIVE-01 remains
+blocked, independently of CodeRabbit/CI results.
+
 ### Production loading comparison
 
-Both arms used production images from the current baseline and final implementation,
+The final [before](product-experience-remediation-2026-09-14/loading-review-before.jsonl) and
+[after](product-experience-remediation-2026-09-14/loading-review-after.jsonl) samples use production
+images from the current baseline and review-follow-up implementation,
 the same host/browser, empty synthetic Workspaces, unthrottled loopback, and three
 samples per phase. Both were rerun serially after build/test workloads ended. Cold
 contexts clear browser cache; warm phases reuse it. Raw records include every requested
@@ -386,28 +464,42 @@ JS chunk and encoded/decoded/transfer sizes. These production responses are unco
 
 | Journey | Before JS bytes / chunks | After JS bytes / chunks | Median heading ms before → after |
 | --- | ---: | ---: | ---: |
-| Cold Home | 869,584 / 1 | 373,321 / 4 | 65 → 62 |
-| Warm Home reload | 300 / 1 | 1,200 / 4 | 43 → 46 |
-| Home → Meetings | 0 / 0 | 18,104 / 6 | 54 → 87 |
-| Meetings → People | 0 / 0 | 12,447 / 2 | 56 → 81 |
-| Warm People reload | 300 / 1 | 1,800 / 6 | 23 → 28 |
-| Brief deep link after navigation | 300 / 1 | 15,078 / 8 | 44 → 44 |
-| Return Home | 300 / 1 | 1,200 / 4 | 41 → 42 |
-| Cold direct Meetings | 869,584 / 1 | 391,425 / 10 | 70 → 85 |
-| Cold direct People | 869,584 / 1 | 385,768 / 6 | 76 → 79 |
-| Cold direct Brief | 869,584 / 1 | 391,251 / 8 | 67 → 70 |
+| Cold Home | 869,584 / 1 | 373,327 / 4 | 74 → 55 |
+| Warm Home reload | 300 / 1 | 1,200 / 4 | 47 → 42 |
+| Home → Meetings | 0 / 0 | 18,110 / 6 | 44 → 107 |
+| Meetings → People | 0 / 0 | 12,447 / 2 | 58 → 52 |
+| Warm People reload | 300 / 1 | 1,800 / 6 | 26 → 809 |
+| Brief deep link after navigation | 300 / 1 | 15,078 / 8 | 47 → 828 |
+| Return Home | 300 / 1 | 1,200 / 4 | 40 → 43 |
+| Cold direct Meetings | 869,584 / 1 | 391,437 / 10 | 69 → 80 |
+| Cold direct People | 869,584 / 1 | 385,774 / 6 | 74 → 80 |
+| Cold direct Brief | 869,584 / 1 | 391,257 / 8 | 74 → 79 |
 
 Keep the split: **57.1% less cold Home JavaScript transferred**, and each representative
 cold product route also needs under 392 kB rather than 870 kB. Home requests shared
 chunks but does not request the Tasks/Profile-detail/optional-prototype code. The entry
-is **322.84 kB / 93.66 kB gzip**; entry size alone is not the benefit claim. Final shared
+is **322.85 kB / 93.67 kB gzip**; entry size alone is not the benefit claim. Final shared
 async chunks are Vite-managed, with no duplicated heavy dependency introduced. Optional
 Home variants live in a separate 14.32 kB chunk and their motion dependency is deferred.
 
 The cost is additional requests/cache validation and measured first-navigation delay
-(**+33 ms Meetings, +25 ms People** in this local sample). No general latency, LCP/TTI,
+(**+63 ms Meetings, -6 ms People** in this local sample). No general latency, LCP/TTI,
 WAN or model/API speedup is claimed. Three unthrottled samples are descriptive, not a
-statistically powered performance result. Reproduce with `node scripts/measure-page-loading.mjs
+statistically powered performance result.
+
+The follow-up run's warm People/Brief waits (**809/828 ms** medians) differ materially
+from the earlier **28/44 ms** samples. They were investigated, not discarded. Nine
+read-only diagnostic sequences failed to reproduce the large delay. The
+[exact-flow repeat with a DOM observer](product-experience-remediation-2026-09-14/loading-review-observed.jsonl)
+(including the same CDP cache clearing) measured warm People **26–27 ms** wait /
+**22.2–23.8 ms** visible heading, and Brief **44–47 ms** wait / **39.3–42.4 ms** visible
+heading. The transient's cause is not established; neither a product latency regression
+nor an instrumentation cause is proven. All initial/raw repeat samples are retained.
+No speculative product change was made to chase the outlier. Transfer reduction remains
+the supported reason for retaining route splitting, with extra request/warm-validation
+costs explicitly reported.
+
+Reproduce with `node scripts/measure-page-loading.mjs
 http://127.0.0.1:<isolated-production-port>` against separately built baseline/final images;
 do not point the measurement at business data.
 

@@ -58,5 +58,25 @@
       "passes": 42
     },
     "note": "Same synthetic mount recreated with final web loading-heading image; prior fresh boot/restart/concurrent-writer evidence retained above."
+  },
+  "reviewFollowup": {
+    "sourceCommit": "3734e76dbd797f9e5e414ecf702a48793acbbd69",
+    "image": "sha256:d5d1dba72183424d12a5d68a3c6d479cb181a81efb504e13b7c35ba85ac0b63e",
+    "result": {
+      "migration": "completed",
+      "onboardingComplete": false,
+      "contentRuns": 0,
+      "waiting": {
+        "research": "Configure the model provider API key in Settings.",
+        "discovery": "Configure the model provider API key in Settings."
+      },
+      "pageErrors": [],
+      "settingsReachable": true
+    },
+    "accessibility": {
+      "violations": [],
+      "passes": 42
+    },
+    "note": "Same synthetic mount; reviewed source changes do not alter pristine initialization. Updated waiting/refusal screenshots use corrected Content Scout label."
   }
 }

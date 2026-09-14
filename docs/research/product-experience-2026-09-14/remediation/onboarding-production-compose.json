@@ -9,7 +9,7 @@
   "services": {
     "app": {
       "build": {
-        "context": "/Users/Nicolas/Documents/github/chief-of-staff-demo",
+        "context": "<repo>",
         "dockerfile": "Dockerfile"
       },
       "command": null,
@@ -55,14 +55,14 @@
       "volumes": [
         {
           "type": "bind",
-          "source": "/var/folders/vj/z460ltg56p122lsl4_s8pd140000gp/T/found42-remediation-final-workspace-bimwiujc",
+          "source": "<synthetic-workspace>",
           "target": "/app/workspace"
         }
       ]
     },
     "relay": {
       "build": {
-        "context": "/Users/Nicolas/Documents/github/chief-of-staff-demo",
+        "context": "<repo>",
         "dockerfile": "relay/Dockerfile"
       },
       "command": null,

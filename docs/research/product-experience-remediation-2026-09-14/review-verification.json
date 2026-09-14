@@ -1,0 +1,235 @@
+{
+  "measuredAt": "2026-09-14T18:31:54.434331+00:00",
+  "sourceCommit": "3734e76dbd797f9e5e414ecf702a48793acbbd69",
+  "productionImage": "sha256:d5d1dba72183424d12a5d68a3c6d479cb181a81efb504e13b7c35ba85ac0b63e",
+  "sourceSha256": {
+    "Dockerfile": "9dbb1d48380b7330319e58fabddbdc1571f7d71bccf6976f5c41aa4e6a0a907e",
+    "apps/server/src/composition/shell.ts": "7173b6c1874a0e1a846a8b815ee79675d38412a99a5656370f9ed70bd0a3821b",
+    "apps/server/src/engine/runner.ts": "37c48f7c13439a37d3b40ae5489f194fc80d8425f67427b3c0ff3a3245febb7d",
+    "apps/server/src/modules/content-research/host.ts": "4f21eaf03058c34883b1ce77583243e006e1ac9656753743eea5e3d352e4490a",
+    "apps/server/src/modules/content-research/module.ts": "bd482192831798615c93fe85286ce37ab9d9b20c2a4ab0aaba93002de1c66635",
+    "apps/server/src/person-profile/dossier-store.ts": "efacbb9eefbb46206291a0fdcee6b5fd2ec7a340539afd0b744c31213685e857",
+    "apps/server/src/source-adapters/browser-network.ts": "615a8faccbaabc7222cf0be0560e32a6fbe1543bec582dda6f9d2ab67a8cff2e",
+    "apps/server/src/source-adapters/browser.ts": "01d39850aa9a7d8e7c769b141cb07bc22d5ac947f9dbcd5bf2d8b5aa881d409d",
+    "apps/server/src/source-adapters/http.ts": "1423645cce2766e5a8b06cca5c1ad3e409dc2cdbb3114aba5a2c4601c151d73c",
+    "apps/server/src/source-adapters/source-body.ts": "7b90f3b3b8ef2aa862ca0f23bc31870400c2959f607031092d43f9c92774cf5e",
+    "apps/server/src/tasks/cutover.ts": "dad7e4f12741862f26fbd42f7c6731d961d5d687375fe0ffcb4ddccae7520062",
+    "apps/web/src/App.tsx": "85dae0de6aba73fa03a9aa9f2bb67f44354cf014546639aec65eadb20687e6b1",
+    "apps/web/src/components/PageLoadingBoundary.tsx": "dec44958dd6404f3da412badc5398dde7797be1344e1d86f6acac9c5f430b290",
+    "apps/web/src/pages/ContentResearchPage.tsx": "078b2df15e6531db945307b1fc5e25355cbab9c3020fdc105565800c9d17d52b",
+    "apps/web/src/pages/EvidenceDate.tsx": "e1583ca47c610f23ff6c6d49924a55752f80f68bb32558f003452b30a6c5bfdc",
+    "apps/web/src/pages/HomePage.tsx": "90c79061a9d4da74538929549cd315ecaef8dcb5bcbcb76387ea49fc9e6d78c0",
+    "apps/web/src/pages/PersonDossierPanel.tsx": "2d6c40a38031d3b970a1f16158558e5689e3e93c03484a89112d55754aca2b5d",
+    "apps/web/src/pages/PersonSourceInspector.tsx": "087c5414553127f6fea7e1fcdf140ae22d03589b7ae15f65ab2df36009cd92e1",
+    "apps/web/src/pages/personSourceInspector.css": "d94adbdfe8b81c4db03cbcf60812afdb55719456f8cddef3631fe191191a66ff",
+    "apps/web/src/useReadingPosition.ts": "ad240df2d7bd23b8a8a0d08cdadf644d7155d0cc786b1e5deaf311763a35fb30",
+    "docker-compose.yml": "a70d9fb16ed9500eb36aa8ebccd8cdbfa92c4a05b7d65b3be020e77005e711b6",
+    "knip.jsonc": "59c90e1674c1eb2e17f09a8de1c71d7c7fc60e8cc3711d0106727465a960ba74",
+    "packages/shared/src/content-research.ts": "385ff95914db8067005e0f3b44dfcb0188a2964e82dc7cb0bcb6a8fa70fc061a",
+    "scripts/browser-network-sandbox.c": "3b3b18f4cfd329a8faa29df8da5324d0d559c5120716caf82c329ca96c4f1912",
+    "scripts/browser-safety-probe.mjs": "8e63382b2e81c4c23341542a935661c397ed24831fb01f8836815627d81e93e9",
+    "scripts/measure-page-loading.mjs": "7ec4be3d055c53eeca39d201f1cede54066b4c048fb6f18056e8bb9b05d78c60",
+    "scripts/measure-source-retention.mjs": "5652ac6e194731b8a98e894a7023ab0aadbef895679d79c6b01fe91bd5bdd31b",
+    "tests/e2e/evidence-recovery.spec.ts": "0f508cb0d32fd90aaa11c52e91127b62a931b0fc55b2d357425bd79ecfce5240",
+    "tests/e2e/meeting-overview-history-journey.spec.ts": "d6af847c1fd55322a2a82bb49e7b652a16569ed5ea519f1e9e8e33b5b33ec485",
+    "tests/e2e/page-loading.spec.ts": "305636dac4eac89c19b48d6c6e6124654244caee4c3ac660850bda83e99f7ce4",
+    "tests/e2e/people-journey.spec.ts": "26efd9f29d11bb0491365dbb18f30944aab9b5f84072f0a1f817dde7e3b9826b",
+    "tests/e2e/people-lifecycle-journey.spec.ts": "8481d41c160e08132b2d123396798d556c28291521ec4a2d6c1626c485cc2917",
+    "tests/e2e/person-dossier-journey.spec.ts": "cb4a3387e0eafdabcc7f4eb15c9464e0db64ec0a8f370923d68f2d18b65b5bf1",
+    "tests/e2e/source-reader-layout.spec.ts": "b93e98272145c73d76717218783e611274593f8b05dd9035e84c3e83d3bfb967",
+    "tests/src/composition/pristine-startup.test.ts": "1a8b35c320261d44b4916b6194d5a0269cf2663496beb943abd948abb4bea6ab",
+    "tests/src/modules/browser-network.test.ts": "b5ed794081f4c268ab9a1cd541df9f6cb30077a4e3667092f733f317c17b5f05",
+    "tests/src/modules/browser-renderer.test.ts": "fd5dcd85c8d911f34c863b6a60a86ed520536dd6d43a5e5f1028b9edb1b4d587",
+    "tests/src/modules/content-research-prerequisites.test.ts": "7a54f87e7653cce8c5c3765208fe3380696c63692d9f4cc4676dbc7ca916ec8f",
+    "tests/src/modules/person-dossier-api.test.ts": "3c7adfd0f075b79af9afba5d98201065d0fa2de1c88b2fc4d91a18041e8a7bd8",
+    "tests/src/modules/person-dossier.test.ts": "4512d2fda051cb126a925c171f828af259d0cd898e0af5acac4a976c35c1f3ae",
+    "tests/src/modules/source-body-limits.test.ts": "f2c9dae078efc9ef8aafd8f9d2bf938bae57d56d2ad36f2e2585f85192ceaa99",
+    "tests/src/modules/source-http-safety.test.ts": "d3522e9d837e9befdeae29ee755ce4a86c7830982cc07903264f4e272b58a5f7",
+    "tests/src/modules/source-stream-cleanup.test.ts": "1dd7701bb41b74d517fc5792e4c97667663373b9987529a1ec7c0842c031df44",
+    "tests/src/unit/evidence-date.test.tsx": "a69659f25332c1ef84ad22e35e9a1fcfd0fa0b505197a3323a264ba61f18d718",
+    "tests/src/unit/people-page.test.tsx": "f3730dd5e826986a2b0dd89222764427c1d1dbb769776dbc78b524bd6ebfdc69",
+    "tests/src/unit/person-dossier-page.test.tsx": "33d4bd0ac178c2390a99e87b82501d5a69cf6096e2ab2418059bc84f11029301",
+    "tests/src/unit/person-source-lifetime.test.tsx": "0128b9db0f6d1ee11f7f7cade9d6b19987c405661bdabee6ba0c5dc3f72ed509",
+    "tests/src/unit/reading-position.test.tsx": "f5b974ef124cec8d52dfb56e8d5b78da701b4fd0925acc8f401fb40fa164ddcf"
+  },
+  "cleanCheckout": {
+    "commands": [
+      "git worktree add --detach <clean-checkout> 3734e76dbd797f9e5e414ecf702a48793acbbd69",
+      "pnpm install --frozen-lockfile",
+      "pnpm run check:all"
+    ],
+    "unitFiles": 266,
+    "unitPassed": 3105,
+    "unitSkipped": 1,
+    "skip": "Existing optional retained-public-article replay; ignored article absent in clean checkout.",
+    "browserPassed": 122,
+    "staticGates": "passed",
+    "businessWorkspaceOrIgnoredEvidencePresent": false
+  },
+  "production": {
+    "health": {
+      "ok": true
+    },
+    "canaries": "[canary] Composed 9 production adapters; no external calls made.",
+    "onboarding": {
+      "migration": "completed",
+      "onboardingComplete": false,
+      "contentRuns": 0,
+      "waiting": {
+        "research": "Configure the model provider API key in Settings.",
+        "discovery": "Configure the model provider API key in Settings."
+      },
+      "pageErrors": [],
+      "settingsReachable": true
+    },
+    "routeRecovery": {
+      "measuredAt": "2026-09-14T18:28:36.008Z",
+      "origin": "http://127.0.0.1:44527",
+      "passed": [
+        "chunk failure gives explicit recovery",
+        "navigation remains usable after failure",
+        "reload refetches failed chunk",
+        "/meetings direct load and reload",
+        "/people direct load and reload",
+        "/meetings/brief direct load and reload"
+      ]
+    },
+    "browserProbe": "browser-production.json"
+  },
+  "measurementFailureControl": {
+    "transport": "Preloaded Undici MockAgent with network disabled",
+    "error": "UND_MOCK_ERR_MOCK_NOT_MATCHED",
+    "exitCode": 1,
+    "successfulMeasurementEmitted": false
+  },
+  "loading": {
+    "beforeCommit": "6417005b6e29482c7aed90bf76945aa6818dfbc2",
+    "afterCommit": "3734e76dbd797f9e5e414ecf702a48793acbbd69",
+    "condition": "Both arms rerun serially after clean tests and Docker builds finished; three samples per phase; same browser/host, fresh synthetic Workspaces, unthrottled loopback.",
+    "summary": {
+      "before": {
+        "cold-home": {
+          "headingMs": 74,
+          "jsBytes": 869584,
+          "chunks": 1
+        },
+        "warm-home": {
+          "headingMs": 47,
+          "jsBytes": 300,
+          "chunks": 1
+        },
+        "navigate-meetings": {
+          "headingMs": 44,
+          "jsBytes": 0,
+          "chunks": 0
+        },
+        "navigate-people": {
+          "headingMs": 58,
+          "jsBytes": 0,
+          "chunks": 0
+        },
+        "warm-people-reload": {
+          "headingMs": 26,
+          "jsBytes": 300,
+          "chunks": 1
+        },
+        "direct-meeting-deep-link": {
+          "headingMs": 47,
+          "jsBytes": 300,
+          "chunks": 1
+        },
+        "return-home": {
+          "headingMs": 40,
+          "jsBytes": 300,
+          "chunks": 1
+        },
+        "cold-direct-meetings": {
+          "headingMs": 69,
+          "jsBytes": 869584,
+          "chunks": 1
+        },
+        "cold-direct-people": {
+          "headingMs": 74,
+          "jsBytes": 869584,
+          "chunks": 1
+        },
+        "cold-direct-brief": {
+          "headingMs": 74,
+          "jsBytes": 869584,
+          "chunks": 1
+        }
+      },
+      "after": {
+        "cold-home": {
+          "headingMs": 55,
+          "jsBytes": 373327,
+          "chunks": 4
+        },
+        "warm-home": {
+          "headingMs": 42,
+          "jsBytes": 1200,
+          "chunks": 4
+        },
+        "navigate-meetings": {
+          "headingMs": 107,
+          "jsBytes": 18110,
+          "chunks": 6
+        },
+        "navigate-people": {
+          "headingMs": 52,
+          "jsBytes": 12447,
+          "chunks": 2
+        },
+        "warm-people-reload": {
+          "headingMs": 809,
+          "jsBytes": 1800,
+          "chunks": 6
+        },
+        "direct-meeting-deep-link": {
+          "headingMs": 828,
+          "jsBytes": 15078,
+          "chunks": 8
+        },
+        "return-home": {
+          "headingMs": 43,
+          "jsBytes": 1200,
+          "chunks": 4
+        },
+        "cold-direct-meetings": {
+          "headingMs": 80,
+          "jsBytes": 391437,
+          "chunks": 10
+        },
+        "cold-direct-people": {
+          "headingMs": 80,
+          "jsBytes": 385774,
+          "chunks": 6
+        },
+        "cold-direct-brief": {
+          "headingMs": 79,
+          "jsBytes": 391257,
+          "chunks": 8
+        }
+      }
+    },
+    "timingInvestigation": {
+      "reason": "Initial follow-up warm People/Brief waits around809/828ms were absent from earlier samples.",
+      "method": "Repeated original script flow, including CDP cache clearing, with an additive MutationObserver recording visible main headings. No product changes.",
+      "originalScriptWithObserverSha256": "5ccb4f97aafac200e0410b1822f54fc4e5b99f166ddc2c1dd0f8866395e8d863",
+      "raw": "loading-review-observed.jsonl",
+      "warmPeopleWaitMs": [27, 26, 27],
+      "warmPeopleVisibleMs": [23.6, 22.2, 23.8],
+      "briefWaitMs": [46, 47, 44],
+      "briefVisibleMs": [39.3, 42.4, 39.3],
+      "conclusion": "Large delay not reproduced across nine diagnostic sequences. Cause not established; all original samples retained. Transfer benefit supported; no general latency improvement claimed."
+    }
+  },
+  "review": {
+    "url": "https://github.com/nicolas-found42/chief-of-staff-demo/pull/414#pullrequestreview-5201291748",
+    "reviewedCommit": "bcc7d14eb332978a13a948faa8a70d0813c71c41",
+    "inlineFixed": 7,
+    "inlineRetainedWithEvidence": 1,
+    "additionalHttpCommentFixed": true,
+    "followupReReviewedByCodeRabbit": false
+  }
+}
