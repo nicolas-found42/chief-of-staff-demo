@@ -7,6 +7,10 @@ implementation. The audit baseline `84dbd82e92fdcb599e21cf77ff41604f15944c73` is
 ancestor, not the starting implementation. Branch: `codex/product-experience-remediation`.
 The three original screenshots were inspected before implementation.
 
+This ledger preserves the original implementation campaign's authorization statements
+as history. LIVE-01 now has a separately owner-authorized, exact-Qwen live campaign;
+its current disposition and evidence are linked in the finding below.
+
 ## Authority, assumptions, and baseline
 
 All app fixtures and Compose projects use new synthetic Workspaces. No model call,
@@ -256,10 +260,24 @@ the pinned Playwright runtime actually contains **Node 24.20.0**.
   is not LCP/TTI or a WAN performance claim; API/model latency is not measured.
 - Final disposition: fixed-and-verified for initial transfer reduction; navigation tradeoffs measured below.
 
-### LIVE-01 — authorization boundary
+### LIVE-01 — live evaluation disposition
 
-- Audit status and final disposition: **explicitly unresolved — blocked by missing owner
-  grant, authorized corpus/revision access, selected provider/model and spending controls**.
+- Historical disposition before the new authorization: **explicitly unresolved — blocked
+  by missing owner grant, corpus access, model selection and spending controls**.
+- New authorization and live evidence: see [the model-specific LIVE-01 campaign](live-01-qwen-validation-2026-09-14.md). The owner authorized this work on September 14
+  with every model-backed step restricted to exactly `qwen/qwen3.7-flash`, superseding
+  this entry's earlier Solar/floor/cap prerequisites for the new campaign only.
+  The historical preparation below remains a record of what had not run at that time.
+- Current disposition: **campaign completed; acceptance failed; LIVE-01 remains open**.
+  Nine extraction slots have nine terminal outcomes. The final follow-up completed
+  one of three extractions; zero of three passed the bounded Golden gate. There were
+  70 completion requests / 78 HTTP attempts, all restricted to the exact model.
+  Provider-reported cost was **$0.047474401**; the conservative cumulative ledger
+  charge, including estimated failures, was **$0.102894001**. Three scoped harness/
+  retry defects were fixed. The private review packet is ready; no human judgment
+  is fabricated. Two extraction failures, the Golden/semantic findings and a TED
+  browser compatibility loss prevent closure. The linked record holds full revision
+  IDs, commands, route/prices, source restrictions, limits and verification evidence.
 - Preparation: inspected current CLI `--help`, corpus hashing and grant validation. The
   CLI reads corpus before grant validation, so even planning must use an authorized corpus.
   A new entirely synthetic one-case corpus was passed explicitly with `--provider mock
@@ -267,7 +285,7 @@ the pinned Playwright runtime actually contains **Node 24.20.0**.
   `8373d19b951e`, with no external calls. [Exact command/output](product-experience-remediation-2026-09-14/live-plan-synthetic.json).
   The existing synthetic campaign suite passed **40 tests**, including terminal outcomes,
   recovery boundaries, grant requirements and budget controls. This does not close LIVE-01.
-- Next action: owner supplies a corpus snapshot and permission to read it, an unrevoked
+- Historical next action (superseded by the new campaign authorization): owner supplies a corpus snapshot and permission to read it, an unrevoked
   source-lifecycle grant with explicit route policy, one model, credentials, balance floor
   and price cap. Repository guidance records **10.10 USD** floor and **0.10/0.20 USD per
   million input/output tokens** cap; they are not inferred authorization for this campaign.
@@ -448,8 +466,8 @@ connection error propagated, the CLI exited 1, and the synthetic server cleaned 
 [Final follow-up verification metadata](product-experience-remediation-2026-09-14/review-verification.json)
 records source hashes, image, clean-checkout totals, production journeys and final loading
 samples. Repository delivery remains squash merge only after current-head `check`, `test`,
-`e2e` and `image` pass; the PR's check history records those immutable runs. LIVE-01 remains
-blocked, independently of CodeRabbit/CI results.
+`e2e` and `image` pass; the PR's check history records those immutable runs. LIVE-01 was still blocked at that verification point, independently of CodeRabbit/CI
+results. Its subsequently authorized live campaign is recorded in the finding above.
 
 ### Production loading comparison
 
@@ -525,8 +543,9 @@ The CSS zoom capture is separately labeled and does not substitute for browser z
   [setup-required refusal](product-experience-2026-09-14/remediation/onboarding-production-refusal.png).
 
 All **13 independently verifiable findings are closed** with the per-finding dispositions
-above. **LIVE-01 remains explicitly unresolved** with its owner authorization/access/model/
-budget prerequisites and exact next command. Browser retrieval compatibility and live
-coverage, identity/extraction quality and full Calendar/timezone behavior remain unvalidated.
+above. **LIVE-01 was explicitly unresolved at the end of the original remediation**. The later
+model-specific campaign replaces its authorization blocker with measured live outcomes
+and a precise remaining disposition in the linked record. Its bounded retrieval evidence
+does not imply universal coverage or Calendar/timezone validation.
 Disposable baseline/final Compose app/relay containers and networks were brought down after
 verification. Branch/PR delivery does not activate or deploy the app against the business Workspace.
