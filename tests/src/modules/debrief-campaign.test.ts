@@ -929,6 +929,30 @@ describe("campaign runner and extraction executor", () => {
     expect(report.missing).toHaveLength(0);
   });
 
+  it("retains partial extraction but fails a slot with an unavailable required section", async () => {
+    const corpus = writeCorpus({ goldens: 1 });
+    const { manifest } = buildPlan({ goldens: 1, corpus, models: [MODELS[0]] });
+    const executor = extractionExecutor(corpus, tempDir("partial-campaign-"), async () => ({
+      ...extractionRun(),
+      sections: validatedDebriefSections().map((section) =>
+        section.name === "decisions"
+          ? { ...section, state: "failed", reason: "Provider refused decision verification" }
+          : section,
+      ),
+    }));
+    const outcome = await executor.execute(manifest.slots[0]);
+    expect(outcome.status).toBe("failed");
+    expect(outcome.reason).toContain("decisions");
+    const retained: unknown = JSON.parse(readFileSync(outcome.artifactPath!, "utf8"));
+    expect(retained).toMatchObject({
+      valid: false,
+      sections: expect.arrayContaining([
+        expect.objectContaining({ name: "decisions", state: "failed" }),
+      ]),
+      raw: { summary: "summary" },
+    });
+  });
+
   it("records where and why a slot failed when the extraction names its stage (#363)", async () => {
     const corpus = writeCorpus({ goldens: 1 });
     const { manifest } = buildPlan({ goldens: 1, corpus, models: [MODELS[0]] });
