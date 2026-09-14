@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MeetingBriefIndex } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "./client";
 import { meetingsApi } from "./clients/meetings";
@@ -17,49 +17,87 @@ export function useMeetingIndex(
   prepare: (occurrenceKey: string) => Promise<unknown> = meetingsApi.prepareMeetingBriefNow,
 ) {
   const [index, setIndex] = useState<MeetingBriefIndex | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const readGeneration = useRef(0);
+  const readingRef = useRef(false);
+  const preparingRef = useRef(false);
+  const lifecycle = useRef(0);
 
   const refresh = useCallback(async () => {
-    setBusy(true);
-    setError(null);
+    const generation = ++readGeneration.current;
+    readingRef.current = true;
+    setReading(true);
     try {
-      setIndex(await fetch());
+      const next = await fetch();
+      if (generation !== readGeneration.current) return;
+      setIndex(next);
+      setReadError(null);
     } catch (err) {
-      setError(errorMessage(err));
+      if (generation === readGeneration.current) setReadError(errorMessage(err));
     } finally {
-      setBusy(false);
+      if (generation === readGeneration.current) {
+        readingRef.current = false;
+        setReading(false);
+      }
     }
   }, [fetch]);
 
   /** The Module's manual Run: prepare an occurrence now, then re-project. */
   const prepareNow = useCallback(
     async (occurrenceKey: string) => {
-      setBusy(true);
-      setError(null);
+      // A ref closes the interval before React renders disabled controls.
+      if (preparingRef.current) return;
+      const generation = lifecycle.current;
+      preparingRef.current = true;
+      setPreparing(true);
+      setPrepareError(null);
       try {
         await prepare(occurrenceKey);
-        setIndex(await fetch());
+        if (generation === lifecycle.current) await refresh();
       } catch (err) {
-        setError(errorMessage(err));
+        if (generation === lifecycle.current) setPrepareError(errorMessage(err));
       } finally {
-        setBusy(false);
+        if (generation === lifecycle.current) {
+          preparingRef.current = false;
+          setPreparing(false);
+        }
       }
     },
-    [fetch, prepare],
+    [refresh, prepare],
   );
 
+  const invalidatePending = useCallback(() => {
+    ++readGeneration.current;
+    ++lifecycle.current;
+  }, []);
+
   useEffect(() => {
+    preparingRef.current = false;
+    setPreparing(false);
     void refresh();
-  }, [refresh]);
+    return invalidatePending;
+  }, [refresh, invalidatePending]);
 
   useEffect(() => {
     if (!index) return;
     const hasPending = index.briefs.some((b) => b.delivery?.status === "pending");
     if (!hasPending && index.upcoming.length === 0) return;
-    const id = window.setInterval(() => void refresh(), 5000);
+    const id = window.setInterval(() => {
+      // Slow connections must not accumulate overlapping background requests.
+      if (!readingRef.current && !preparingRef.current) void refresh();
+    }, 5000);
     return () => window.clearInterval(id);
   }, [index, refresh]);
 
-  return { index, error, busy, refresh, prepareNow };
+  return {
+    index,
+    // A successful read cannot establish that a failed preparation succeeded.
+    error: prepareError ?? readError,
+    busy: reading || preparing,
+    refresh,
+    prepareNow,
+  };
 }
