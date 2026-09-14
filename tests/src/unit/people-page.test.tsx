@@ -152,3 +152,37 @@ describe("PeoplePage against a fake PeopleClient", () => {
     expect(calls[1]).toEqual(["ada", false]);
   });
 });
+
+describe("People search recovery", () => {
+  it("ignores an older search response and its error after the filters change", async () => {
+    const initial = Promise.withResolvers<PersonProfile[]>();
+    const filtered = Promise.withResolvers<PersonProfile[]>();
+    const client = fakePeopleClient((_query, archived) =>
+      archived ? filtered.promise : initial.promise,
+    );
+    const container = await mountPage(client);
+    await act(async () => {
+      container.querySelector<HTMLInputElement>("#people-archived")!.click();
+    });
+    await act(async () => filtered.resolve([profileFixture({ fullName: "Current result" })]));
+    await act(async () => initial.resolve([profileFixture({ fullName: "Obsolete result" })]));
+    expect(container.textContent).toContain("Current result");
+    expect(container.textContent).not.toContain("Obsolete result");
+  });
+
+  it("offers a retry after an initial failure instead of claiming to keep loading", async () => {
+    const people = vi
+      .fn<PeopleClient["people"]>()
+      .mockRejectedValueOnce(new Error("Connection unavailable"))
+      .mockResolvedValueOnce([profileFixture({ fullName: "Recovered profile" })]);
+    const container = await mountPage(fakePeopleClient(people));
+    expect(container.textContent).not.toContain("Loading…");
+    const retry = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Retry",
+    );
+    expect(retry).toBeDefined();
+    await act(async () => retry!.click());
+    expect(container.textContent).toContain("Recovered profile");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+});

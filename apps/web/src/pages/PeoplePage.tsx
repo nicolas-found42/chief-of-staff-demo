@@ -1,5 +1,5 @@
 import { PersonDossierSearch } from "./PersonDossierSearch";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { PersonProfile } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
@@ -20,18 +20,30 @@ export function PeoplePage({ client = peopleApi }: { client?: PeopleClient }) {
   const [includeArchived, setIncludeArchived] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [busy, setBusy] = useState(true);
+  const generation = useRef(0);
   const load = useCallback(async () => {
+    const request = ++generation.current;
+    setBusy(true);
+    setError(null);
+    setProfiles(null);
     try {
-      setProfiles(await client.people(query, includeArchived));
-      setError(null);
+      const result = await client.people(query, includeArchived);
+      if (request === generation.current) setProfiles(result);
     } catch (err) {
-      setError(errorMessage(err));
+      if (request === generation.current) setError(errorMessage(err));
+    } finally {
+      if (request === generation.current) setBusy(false);
     }
   }, [client, includeArchived, query]);
 
+  const invalidate = useCallback(() => {
+    generation.current++;
+  }, []);
   useEffect(() => {
     void load();
-  }, [load]);
+    return invalidate;
+  }, [load, invalidate]);
 
   return (
     <>
@@ -39,12 +51,15 @@ export function PeoplePage({ client = peopleApi }: { client?: PeopleClient }) {
         Person Profiles
       </h1>
       <p className="muted">
-        Durable, evidence-backed records of people, owned by the Workspace rather than by the
-        workflow that first met them.
+        Find the right person, review what their sources establish, and prepare for your next
+        conversation.
       </p>
       {error && (
         <p className="banner-error" role="alert">
-          {error}
+          {error}{" "}
+          <button type="button" disabled={busy} onClick={() => void load()}>
+            Retry
+          </button>
         </p>
       )}
       <div className="field-row runs-toolbar">
@@ -74,7 +89,9 @@ export function PeoplePage({ client = peopleApi }: { client?: PeopleClient }) {
       </div>
       <PersonDossierSearch profiles={profiles ?? []} />
       {profiles === null ? (
-        <p className="muted">Loading…</p>
+        <p className="muted" role="status">
+          {busy ? "Loading Profiles…" : "Profiles are unavailable. Retry to load this search."}
+        </p>
       ) : profiles.length === 0 ? (
         <p className="muted">
           {query ? "No Profiles match that search." : "No Profiles yet — create the first one."}

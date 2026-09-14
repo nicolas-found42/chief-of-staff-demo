@@ -5,12 +5,27 @@ import { PersonDossierStore } from "../../../apps/server/src/person-profile/doss
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, test } from "vitest";
+import { beforeAll, afterAll, expect, test, vi } from "vitest";
 import {
   PersonDossierPanel,
   type DossierClient,
 } from "../../../apps/web/src/pages/PersonDossierPanel";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+// jsdom has no top layer; browser journeys verify focus, Escape and inertness.
+beforeAll(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+    configurable: true,
+    value: vi.fn(),
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", {
+    configurable: true,
+    value: vi.fn(),
+  });
+});
+afterAll(() => {
+  Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
+  Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
+});
 test("a public-only person has a separate empty Relationship history tab while research is queued", async () => {
   const container = document.createElement("div");
   document.body.append(container);
@@ -216,6 +231,86 @@ test("a claim grounded in an archived capture shows the capture date and its bou
        having to open the retained source behind it. */
     expect(container.textContent).toContain("archived capture 2024-05-23");
     expect(container.textContent).toContain("2014-08-01 to 2024-05-23");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("dossier tabs use a single tab stop and arrow keys move selection", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(createElement(PersonDossierPanel, { profileId: "maya", client: makeClient() })),
+    );
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    expect(tabs.filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
+    await act(async () => {
+      tabs[0].focus();
+      tabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    });
+    expect(tabs.at(-1)?.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tabs.at(-1));
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("a source opens immediately and closing it prevents a late response reopening it", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "dossier-source-ui-"));
+  const store = new PersonDossierStore(directory);
+  const source = store.retainSource({
+    url: "https://example.com/source",
+    title: "Delayed source",
+    author: null,
+    publishedAt: null,
+    retrievedAt: "2026-09-14",
+    text: "Synthetic retained text",
+    family: "example.com",
+    sourceClass: "primary-artifact",
+    visibility: "public",
+    completeness: "full",
+    access: "retrieved",
+    acquisition: "public-web",
+  });
+  const dossier = store.publish("maya", 0, {
+    sourceIds: [source.id],
+    claims: [],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  });
+  const pending = Promise.withResolvers<typeof source>();
+  const client = makeClient();
+  client.read = async () => ({ dossier, research: null });
+  client.source = () => pending.promise;
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(createElement(PersonDossierPanel, { profileId: "maya", client })),
+    );
+    await act(async () =>
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "Sources")!.click(),
+    );
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((b) => b.textContent === "Inspect retained source 1")!
+        .click(),
+    );
+    const close = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Close source",
+    );
+    expect(close).toBeDefined();
+    await act(async () => close!.click());
+    await act(async () => pending.resolve(source));
+    expect(container.querySelector('[aria-label="Retained source"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();
