@@ -1,0 +1,97 @@
+{
+  "name": "found42-remediation-final",
+  "networks": {
+    "default": {
+      "name": "found42-remediation-final_default",
+      "ipam": {}
+    }
+  },
+  "services": {
+    "app": {
+      "build": {
+        "context": "/Users/Nicolas/Documents/github/chief-of-staff-demo",
+        "dockerfile": "Dockerfile"
+      },
+      "command": null,
+      "depends_on": {
+        "relay": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "entrypoint": null,
+      "environment": {
+        "RELAY_BASE_URL": "http://relay:4318",
+        "SEARXNG_URL": "",
+        "PERSON_RESEARCH_ROR_DATA": ""
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4317/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ],
+        "timeout": "3s",
+        "interval": "10s",
+        "retries": 5,
+        "start_period": "10s"
+      },
+      "image": "found42-remediation-final-app",
+      "mem_limit": "2147483648",
+      "memswap_limit": "2147483648",
+      "networks": {
+        "default": null
+      },
+      "pids_limit": 512,
+      "ports": [
+        {
+          "target": 4317,
+          "published": "44527",
+          "host_ip": "127.0.0.1",
+          "protocol": "tcp"
+        }
+      ],
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/var/folders/vj/z460ltg56p122lsl4_s8pd140000gp/T/found42-remediation-final-workspace-bimwiujc",
+          "target": "/app/workspace"
+        }
+      ]
+    },
+    "relay": {
+      "build": {
+        "context": "/Users/Nicolas/Documents/github/chief-of-staff-demo",
+        "dockerfile": "relay/Dockerfile"
+      },
+      "command": null,
+      "entrypoint": null,
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4318/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ],
+        "timeout": "3s",
+        "interval": "10s",
+        "retries": 5,
+        "start_period": "5s"
+      },
+      "image": "found42-remediation-final-relay",
+      "networks": {
+        "default": null
+      },
+      "ports": [
+        {
+          "target": 4318,
+          "published": "44528",
+          "host_ip": "127.0.0.1",
+          "protocol": "tcp"
+        }
+      ],
+      "restart": "no"
+    }
+  }
+}

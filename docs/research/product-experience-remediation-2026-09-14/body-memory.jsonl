@@ -1,0 +1,12 @@
+{"mode":"before","kind":"text","node":"v26.8.1","outcome":"rejected","sentBytes":104857600,"baselineRss":67026944,"peakRss":424247296,"deltaRss":357220352}
+{"mode":"before","kind":"text","node":"v26.8.1","outcome":"rejected","sentBytes":104857600,"baselineRss":67125248,"peakRss":421756928,"deltaRss":354631680}
+{"mode":"before","kind":"text","node":"v26.8.1","outcome":"rejected","sentBytes":104857600,"baselineRss":67043328,"peakRss":422035456,"deltaRss":354992128}
+{"mode":"before","kind":"bytes","node":"v26.8.1","outcome":"rejected","sentBytes":104857600,"baselineRss":67239936,"peakRss":421773312,"deltaRss":354533376}
+{"mode":"before","kind":"bytes","node":"v26.8.1","outcome":"rejected","sentBytes":104857600,"baselineRss":67223552,"peakRss":421134336,"deltaRss":353910784}
+{"mode":"before","kind":"bytes","node":"v26.8.1","outcome":"rejected","sentBytes":104857600,"baselineRss":67125248,"peakRss":422887424,"deltaRss":355762176}
+{"mode":"after","kind":"text","node":"v26.8.1","outcome":"rejected","sentBytes":5046272,"baselineRss":67010560,"peakRss":86851584,"deltaRss":19841024}
+{"mode":"after","kind":"text","node":"v26.8.1","outcome":"rejected","sentBytes":5111808,"baselineRss":67485696,"peakRss":87080960,"deltaRss":19595264}
+{"mode":"after","kind":"text","node":"v26.8.1","outcome":"rejected","sentBytes":5046272,"baselineRss":67076096,"peakRss":86605824,"deltaRss":19529728}
+{"mode":"after","kind":"bytes","node":"v26.8.1","outcome":"rejected","sentBytes":5111808,"baselineRss":67239936,"peakRss":92307456,"deltaRss":25067520}
+{"mode":"after","kind":"bytes","node":"v26.8.1","outcome":"rejected","sentBytes":5111808,"baselineRss":67092480,"peakRss":91209728,"deltaRss":24117248}
+{"mode":"after","kind":"bytes","node":"v26.8.1","outcome":"rejected","sentBytes":5046272,"baselineRss":67141632,"peakRss":91848704,"deltaRss":24707072}

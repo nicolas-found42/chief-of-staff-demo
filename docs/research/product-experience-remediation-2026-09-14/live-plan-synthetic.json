@@ -1,0 +1,23 @@
+{
+  "command": [
+    "pnpm",
+    "exec",
+    "tsx",
+    "scripts/run-validation-campaign.mts",
+    "--plan-only",
+    "--provider",
+    "mock",
+    "--models",
+    "synthetic/mock",
+    "--corpus",
+    "/var/folders/vj/z460ltg56p122lsl4_s8pd140000gp/T/found42-synthetic-campaign-_ohcuk7d/corpus",
+    "--out",
+    "/var/folders/vj/z460ltg56p122lsl4_s8pd140000gp/T/found42-synthetic-campaign-_ohcuk7d/output",
+    "--campaign-id",
+    "remediation-synthetic-plan"
+  ],
+  "exitCode": 0,
+  "stdout": "frozen manifest at /var/folders/vj/z460ltg56p122lsl4_s8pd140000gp/T/found42-synthetic-campaign-_ohcuk7d/output/manifest.json\ncampaign remediation-synthetic-plan (baseline, frozen 2026-09-14T17:38:28.318Z)\nplanned 1 slots: golden 1, incident 0, brief 0 \u2014 corpus revision 8373d19b951e\n  synthetic/mock: 1 slot(s)\nbudgets: campaign $0.00, operation $2.00\n",
+  "stderr": "",
+  "fixture": "entirely synthetic; no private corpus read"
+}

@@ -1,0 +1,67 @@
+{
+  "measuredAt": "2026-09-14T17:55:56.660793+00:00",
+  "startingHead": "6417005b6e29482c7aed90bf76945aa6818dfbc2",
+  "imageId": "sha256:1a0640d93006a326b2f01bb6edf141354ae130cd3d9f7f7082d5901ba799383b",
+  "imageTag": "found42-remediation-final-app",
+  "codeState": "working tree; source checksums identify measured inputs",
+  "sourceSha256": {
+    "apps/server/src/source-adapters/browser.ts": "08b68f8a520df65cb69479da8507be0b5478be35b447d5070fd7dcee5cdb93ab",
+    "apps/server/src/source-adapters/browser-network.ts": "615a8faccbaabc7222cf0be0560e32a6fbe1543bec582dda6f9d2ab67a8cff2e",
+    "apps/server/src/source-adapters/source-body.ts": "7b90f3b3b8ef2aa862ca0f23bc31870400c2959f607031092d43f9c92774cf5e",
+    "apps/server/src/source-adapters/http.ts": "84bee646a971aee9f7d4f3fe78f6d973918fed6cda2b5887826a3523e0f45c63",
+    "scripts/browser-network-sandbox.c": "3b3b18f4cfd329a8faa29df8da5324d0d559c5120716caf82c329ca96c4f1912",
+    "scripts/browser-safety-probe.mjs": "8d06c4c067793162aefec2d449019fd66ebf833d1dee6592d190641108cc752d",
+    "Dockerfile": "9dbb1d48380b7330319e58fabddbdc1571f7d71bccf6976f5c41aa4e6a0a907e",
+    "docker-compose.yml": "a70d9fb16ed9500eb36aa8ebccd8cdbfa92c4a05b7d65b3be020e77005e711b6"
+  },
+  "isolation": {
+    "network": "none",
+    "controlledHosts": ["private-dns.example:127.0.0.1"],
+    "mounts": ["scripts/browser-safety-probe.mjs read-only"],
+    "businessWorkspaceMounted": false,
+    "distOverlay": false,
+    "memoryBytes": 2147483648,
+    "memorySwapBytes": 2147483648,
+    "pidsLimit": 512
+  },
+  "command": "docker run --rm --network none --add-host private-dns.example:127.0.0.1 --memory 2g --memory-swap 2g --pids-limit 512 --mount type=bind,src=<repo>/scripts/browser-safety-probe.mjs,dst=/app/scripts/browser-safety-probe.mjs,readonly found42-remediation-final-app node scripts/browser-safety-probe.mjs",
+  "runtime": {
+    "node": "v24.20.0",
+    "sandbox": "Browser IPv4/IPv6 TCP/UDP denied; Unix IPC available."
+  },
+  "result": {
+    "passed": [
+      "allowed HTML and JavaScript rendering",
+      "IPv4, IPv6, mapped initial targets rejected",
+      "actual socket DNS private answer rejected before fixture",
+      "forbidden redirect rejected before destination",
+      "forbidden subresource rejected before destination",
+      "WebSocket closed and Service Worker blocked",
+      "oversized broker response rejected",
+      "JavaScript-expanded DOM rejected before Node receives HTML",
+      "five redirect repetitions retain final document origin, body and 404 status",
+      "document redirect loop stopped by the shared deadline or twenty-hop ceiling",
+      "slow producer canceled at the shared 15 second deadline",
+      "unrouted Chromium direct TCP bypass denied by kernel; destination count zero",
+      "positive control: original unguarded Chromium reaches the same controlled fixture"
+    ],
+    "forbiddenDestinationRequests": 0,
+    "positiveControlRequests": 1,
+    "memory": {
+      "rss": 141127680,
+      "heapTotal": 56213504,
+      "heapUsed": 52381280,
+      "external": 4516527,
+      "arrayBuffers": 345966
+    },
+    "containerPeakBytes": 630218752,
+    "containerLimitBytes": 2147483648
+  },
+  "limits": [
+    "Public response bodies are MockAgent substitutes; Chromium rendering and sandbox are real.",
+    "Private DNS resolves through actual production dispatcher to the dedicated controlled loopback fixture.",
+    "Memory peak covers the isolated synthetic browser probe, not a busy app workload.",
+    "Document loops can reach the shared 15-second deadline before the 20-hop ceiling due to Chromium navigation throttling.",
+    "No live provider, private service, business corpus, or paid evaluation was contacted."
+  ]
+}
