@@ -412,7 +412,7 @@ function wireJsonSchema(source: WireSchema): JsonObject {
   }) as JsonObject;
   /* OpenAI strict json_schema rejects the $schema key zod-to-json-schema adds. */
   delete converted.$schema;
-  return stripLengthCeilings(converted) as JsonObject;
+  return stripDecodeHostileKeywords(converted) as JsonObject;
 }
 
 /**
@@ -475,19 +475,43 @@ const SCHEMA_VALUED = new Set([
  * touch. Sourcery caught the first on PR #304; the second was the same bug one
  * position over.
  */
-function stripLengthCeilings(node: unknown): unknown {
-  if (Array.isArray(node)) return node.map(stripLengthCeilings);
+/**
+ * Schema keywords the upstream's constrained decoding cannot serve, dropped
+ * from every outgoing wire schema while the caller's own Zod schema keeps
+ * enforcing them at validation time.
+ *
+ * `maxLength` cost the whole call: the pinned route ran past 45 seconds and
+ * returned an upstream 502, and the same request without it answered in 4.4
+ * seconds (#304).
+ *
+ * `pattern` is worse — it empties the reply rather than slowing it. Measured
+ * live on `inception/mercury-2.5` while diagnosing #418: the dossier Extraction
+ * shape under a forced tool call returned HTTP 200, `finish_reason: "stop"`, no
+ * `content`, no `tool_calls` and no reported usage, 3 runs of 3; the identical
+ * request with the schema's 20 `pattern` keywords removed answered with a
+ * populated tool call, 3 of 3. Bisected against a 54-character prompt, so
+ * neither document size nor output budget is implicated: a plain array
+ * answered, `maxItems` answered, and a top-level scalar's own `pattern`
+ * answered. Only `pattern` in a subschema position emptied the reply.
+ *
+ * Both are constraints the answer must still satisfy; dropping them here moves
+ * the check from decode time to validation time rather than relaxing it.
+ */
+const DECODE_HOSTILE_KEYWORDS = new Set(["maxLength", "pattern"]);
+
+function stripDecodeHostileKeywords(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripDecodeHostileKeywords);
   if (!isUnknownRecord(node)) return node;
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(node)) {
-    if (key === "maxLength") continue;
+    if (DECODE_HOSTILE_KEYWORDS.has(key)) continue;
     if (SCHEMA_NAME_MAPS.has(key) && isUnknownRecord(value)) {
       out[key] = Object.fromEntries(
-        Object.entries(value).map(([name, sub]) => [name, stripLengthCeilings(sub)]),
+        Object.entries(value).map(([name, sub]) => [name, stripDecodeHostileKeywords(sub)]),
       );
       continue;
     }
-    out[key] = SCHEMA_VALUED.has(key) ? stripLengthCeilings(value) : value;
+    out[key] = SCHEMA_VALUED.has(key) ? stripDecodeHostileKeywords(value) : value;
   }
   return out;
 }

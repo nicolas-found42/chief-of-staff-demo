@@ -2549,6 +2549,82 @@ describe("providers", () => {
       expect(namedField.properties.note.maxLength).toBeUndefined();
     },
   );
+
+  /* A `pattern` in a subschema position empties the answer outright, and is the
+     same class of provider constrained-decoding defect as the `maxLength` case
+     above. Measured live on `inception/mercury-2.5` while diagnosing #418: the
+     dossier Extraction shape under a forced tool call returned HTTP 200 with
+     `finish_reason: "stop"`, no `content`, no `tool_calls` and no reported
+     usage, 3 runs of 3 — and the byte-identical request with the schema's 20
+     `pattern` keywords removed answered with a populated tool call, 3 of 3.
+
+     Bisected one keyword at a time against a 54-character prompt, so neither
+     document size nor output budget is involved: a plain array of strings
+     answered, `maxItems` answered, and a top-level scalar carrying its own
+     `pattern` answered. Only `pattern` beneath `items` emptied the reply. That
+     is why it is stripped in this walk rather than at the call site.
+
+     The bound is not lost: the caller's own Zod schema still rejects a value
+     the pattern would have refused, so it moves from decode time to validation
+     time, exactly as the ceiling above does.
+
+     A field the caller actually named `pattern` is data, not a keyword, and has
+     to survive with its own subschema walked. */
+  it.each(["response_format", "forced_tool_call"] as const)(
+    "drops the pattern keyword from the %s wire schema without touching names or other bounds",
+    async (binding) => {
+      declarations.push(
+        binding === "forced_tool_call"
+          ? declaring("tools", "tool_choice")
+          : declaring("response_format"),
+      );
+      const answer = { sourceIds: ["abc"], scores: [1], pattern: { note: "n" } };
+      responses.push(
+        binding === "forced_tool_call"
+          ? { sse: sseToolCallCompletion(JSON.stringify(answer)) }
+          : { sse: sseChatCompletion(JSON.stringify(answer)) },
+      );
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: `some/pattern-${binding}`, apiKey: "ork" },
+        "/nonexistent/mock-result.json",
+      );
+      const parsed = await complete({
+        system: "S",
+        user: "U",
+        ...(binding === "forced_tool_call"
+          ? { preferredBinding: "forced_tool_call" as const }
+          : {}),
+        schema: z.strictObject({
+          sourceIds: z.array(z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/)).max(1000),
+          scores: z.array(z.number().int().min(0).max(3)).max(60),
+          /* A caller field whose name collides with the keyword. */
+          pattern: z.strictObject({ note: z.string().regex(/^n$/) }),
+        }),
+      });
+      expect(parsed).toEqual(answer);
+
+      const body = calls[0].body;
+      const sentSchema = (
+        binding === "forced_tool_call"
+          ? (body.tools as { function: { parameters: unknown } }[])[0].function.parameters
+          : (body.response_format as { json_schema: { schema: unknown } }).json_schema.schema
+      ) as Record<string, Record<string, Record<string, unknown>>>;
+      const properties = sentSchema.properties;
+
+      /* The keyword is gone from the subschema position that emptied the reply... */
+      expect((properties.sourceIds.items as Record<string, unknown>).pattern).toBeUndefined();
+      /* ...and the bounds measured innocent are untouched. */
+      expect(properties.sourceIds.maxItems).toBe(1000);
+      expect(properties.scores.items).toMatchObject({ minimum: 0, maximum: 3 });
+      /* The caller's own `pattern` field survives, and its subschema is still
+         walked rather than skipped. */
+      const namedPattern = properties.pattern as unknown as {
+        properties: { note: Record<string, unknown> };
+      };
+      expect(namedPattern.properties.note.type).toBe("string");
+      expect(namedPattern.properties.note.pattern).toBeUndefined();
+    },
+  );
 });
 
 /**
