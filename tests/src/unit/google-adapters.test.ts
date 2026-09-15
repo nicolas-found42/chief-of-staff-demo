@@ -129,6 +129,12 @@ const config: AppConfig = {
   drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
   ollama: { baseUrl: "http://127.0.0.1:11434" },
   search: {},
+  dossierExtractionPolicy: {
+    version: 1,
+    outputTokenCeiling: 8192,
+    requestedEffort: "low",
+    shapeStrategy: "full",
+  },
   modules: {
     "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
     "idea-engine": { spreadsheetId: "", spreadsheetUrl: "", prompts: {} },

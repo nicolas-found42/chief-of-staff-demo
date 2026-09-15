@@ -1,9 +1,11 @@
 import type {
+  DossierExtractionPolicy,
   PersonDossier,
   PersonProfile,
   PersonResearchAttempt,
   PersonResearchCoverageArea,
   PersonResearchOperationOutcome,
+  PersonResearchReadiness,
   PersonSourceDocument,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson, ModelConfigurationIdentity } from "../llm/providers.js";
@@ -110,6 +112,23 @@ export interface PersonProfilesCompositionDeps {
    */
   completeClaims?: () => CompleteJson;
   /**
+   * Dossier extraction's (E1) own Settings purpose (issue #418, T2). Absent
+   * falls back to `complete`, the same no-op default `completeClaims` above
+   * uses: the split changes no resolved request until this purpose carries
+   * its own override.
+   */
+  completeDossier?: () => CompleteJson;
+  /**
+   * Dossier extraction's effective request policy (issue #418, T2/T4): the
+   * output-token ceiling, requested reasoning effort, shape strategy and
+   * policy version the extraction call and its reuse key must agree on.
+   * Read per operation, like `completeDossier` above, so a Settings edit
+   * lands without a restart. Absent leaves every extraction request exactly
+   * as it was before this policy existed — the benchmark and most
+   * composition tests, which supply no policy today.
+   */
+  dossierExtractionPolicy?: () => DossierExtractionPolicy;
+  /**
    * The research planner's model access, on its own Settings purpose. Absent
    * means the operation expands from collected evidence only.
    */
@@ -143,6 +162,16 @@ export interface PersonProfilesCompositionDeps {
   render?: BrowserRenderer;
   /** Whether research may dispatch at all; false while the migration gate holds. */
   researchEnabled: () => boolean;
+  /**
+   * Truthful readiness of the research pipeline (issue #418, T3), richer
+   * than the boolean above: `initializing` while a startup or refresh
+   * window has not yet produced a determinate answer, `setup-required` or
+   * `disabled` when it has and research cannot run, `ready` otherwise. When
+   * absent, it is derived from {@link researchEnabled} alone (`ready` or a
+   * generic `setup-required`), which keeps every existing caller that never
+   * supplies it — the benchmark, and most composition tests — unaffected.
+   */
+  researchReadiness?: () => PersonResearchReadiness;
   /** Lowercased participant emails of the Meetings close enough to prepare for. */
   upcomingParticipantEmails?: () => string[];
   /** Present only in the hermetic browser suite; the Shell decides that. */
@@ -220,14 +249,20 @@ export function composePersonProfiles(
         }
       : publicHttpFetchBytes);
 
+  /* Dossier extraction (E1) runs on its own configured purpose (issue #418,
+     T2), defaulting to the same `complete` every other caller of this
+     dependency already resolves — the ADR-0093 `completeClaims` default is
+     the precedent, and it keeps every existing composition/benchmark caller
+     that passes no `completeDossier` unaffected. */
+  const completeDossier = deps.completeDossier ?? deps.complete;
   const research = new PersonResearch({
     dossiers,
     people: profiles,
     search: deps.search,
-    complete: (request) => deps.complete()(request),
+    complete: (request) => completeDossier()(request),
     operationModels: () => {
       const plan = deps.researchTestPorts?.plan ?? deps.plan?.();
-      const complete = deps.researchTestPorts?.complete ?? deps.complete();
+      const complete = deps.researchTestPorts?.complete ?? completeDossier();
       const configuration: ModelConfigurationIdentity | undefined = complete.configuration;
       /* The resolved provider/model/baseUrl, opaque and stable for as long
          as the binding is unchanged — the identity validated Extraction Part
@@ -244,6 +279,9 @@ export function composePersonProfiles(
     /* Rollback switch for validated Extraction Part reuse (#381, R1):
        versioned, and off without invalidating anything already stored. */
     reuseExtractionParts: process.env.PERSON_PROFILE_EXTRACTION_REUSE !== "0",
+    ...(deps.dossierExtractionPolicy
+      ? { dossierExtractionPolicy: deps.dossierExtractionPolicy }
+      : {}),
     /* The planner runs on its own configured purpose, so a Workspace can give
        planning a different model from extraction without either becoming the
        other's fallback. When no planner is configured the operation expands
@@ -283,11 +321,22 @@ export function composePersonProfiles(
     ...(deps.researchTestPorts ?? {}),
   });
 
+  /* Falls back to the boolean-only readiness every existing caller (the
+     benchmark, most composition tests) already supplies, so this stays
+     compatible without requiring every one of them to adopt the richer
+     shape (issue #418, T3). */
+  const researchReadiness: () => PersonResearchReadiness =
+    deps.researchReadiness ??
+    (() =>
+      deps.researchEnabled()
+        ? { state: "ready", reason: "ready" }
+        : { state: "setup-required", reason: "provider-not-configured" });
+
   const queue = new PersonResearchQueue({
     workspaceDir: deps.workspaceDir,
     people: profiles,
     research,
-    enabled: deps.researchEnabled,
+    readiness: researchReadiness,
     /* One pair per Confirmed Identity Decision, in the order the Catalog
        promises — so the revision is stable by construction rather than by a
        sort applied here. */

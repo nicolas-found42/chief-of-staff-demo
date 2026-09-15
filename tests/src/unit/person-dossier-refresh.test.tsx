@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, expect, test, vi } from "vitest";
-import type { PersonDossier } from "@chief-of-staff-demo/shared";
+import type { PersonDossier, PersonResearchProfileSummary } from "@chief-of-staff-demo/shared";
 import {
   PersonDossierPanel,
   type DossierClient,
@@ -35,7 +35,9 @@ function client(): DossierClient {
       schemaVersion: 1,
       day: "2026-09-14",
       usedCalls: 0,
-      jobs: [],
+      totalJobs: 0,
+      byState: {},
+      running: 0,
       settings: {
         paused: false,
         concurrency: 1,
@@ -47,6 +49,27 @@ function client(): DossierClient {
         refreshHours: 168,
       },
     })),
+    summary: vi.fn<DossierClient["summary"]>(async () => null),
+    diagnostics: vi.fn<DossierClient["diagnostics"]>(async () => null),
+  };
+}
+function research(
+  overrides: Partial<PersonResearchProfileSummary> = {},
+): PersonResearchProfileSummary {
+  return {
+    schemaVersion: 1,
+    profileId: "maya",
+    readiness: { state: "ready", reason: "ready" },
+    state: "queued",
+    queuedAt: "2026-09-14",
+    updatedAt: "2026-09-14",
+    nextAt: "2026-09-14",
+    calls: 0,
+    sources: 0,
+    attempts: 0,
+    detail: "Waiting for automatic research.",
+    diagnostics: { totalAttempts: 0, byCode: {}, sample: [], truncated: false },
+    ...overrides,
   };
 }
 let mounted: { root: Root; container: HTMLDivElement } | null = null;
@@ -127,22 +150,65 @@ test("successful action refresh cannot erase independent history failures", asyn
   expect(container.textContent).toContain("History unavailable");
 });
 
-test("an action refresh cannot be overwritten by an older poll", async () => {
+test("normal polling requests only the summary and does not re-read the dossier", async () => {
   vi.useFakeTimers();
   const api = client();
-  const pending = Promise.withResolvers<ReturnType<typeof view>>();
+  const read = vi.fn<DossierClient["read"]>(async () => ({
+    ...view(),
+    research: research({ attempts: 0 }),
+  }));
+  const summary = vi.fn<DossierClient["summary"]>(async () => research({ attempts: 0 }));
+  api.read = read;
+  api.summary = summary;
+  const container = await mount(api);
+  expect(read).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
+  expect(summary).toHaveBeenCalledTimes(1);
+  // Unchanged live counters: no reason to re-read the dossier, and the poll
+  // itself is side-effect-free — it never calls the enqueuing dossier route.
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("Queued for research");
+});
+
+test("a poll noticing forward progress triggers exactly one reactive dossier refresh", async () => {
+  vi.useFakeTimers();
+  const api = client();
+  const researching = research({ state: "researching", attempts: 1, calls: 1, sources: 1 });
+  const read = vi
+    .fn<DossierClient["read"]>()
+    .mockResolvedValueOnce({ ...view(), research: research({ attempts: 0 }) })
+    .mockResolvedValue({ ...view(), research: researching });
+  const summary = vi.fn<DossierClient["summary"]>(async () => researching);
+  api.read = read;
+  api.summary = summary;
+  const container = await mount(api);
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("Queued for research");
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
+  expect(summary).toHaveBeenCalledTimes(1);
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("Researching");
+});
+
+test("a stale summary poll cannot overwrite a fresher action refresh", async () => {
+  vi.useFakeTimers();
+  const api = client();
+  const pendingSummary = Promise.withResolvers<Awaited<ReturnType<DossierClient["summary"]>>>();
   api.read = vi
     .fn<DossierClient["read"]>()
     .mockResolvedValueOnce(view())
-    .mockReturnValueOnce(pending.promise)
     .mockResolvedValue(view(3, "New evidence"));
+  api.summary = vi.fn<DossierClient["summary"]>(() => pendingSummary.promise);
   const container = await mount(api);
+  // Starts the poll tick's summary fetch, left pending.
   await act(async () => vi.advanceTimersByTimeAsync(4000));
   await click(container, "Prioritise research");
   expect(container.textContent).toContain("New evidence");
-  await act(async () => pending.resolve(view(2, "Old poll evidence")));
+  await act(async () =>
+    pendingSummary.resolve(research({ state: "researching", attempts: 1, calls: 1, sources: 1 })),
+  );
   expect(container.textContent).toContain("New evidence");
-  expect(container.textContent).not.toContain("Old poll evidence");
+  expect(container.textContent).not.toContain("Researching");
 });
 
 test("changing revision hides old claims while historical evidence loads", async () => {

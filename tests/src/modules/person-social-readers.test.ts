@@ -238,3 +238,56 @@ describe("mastodon reader attribution", () => {
     expect(refusal?.observed?.status).toBe(401);
   });
 });
+
+describe("linkedin html reader identity", () => {
+  /**
+   * A profile URL's slug abbreviates the name ("joseceresc" for Jose
+   * Cervantes Escamilla); the page the URL serves names the person fully in
+   * its <title> even to an anonymous reader. The reader carries that title
+   * into the text extraction reads, so a profile URL-only dossier can
+   * resolve its proper name from the page the owner pointed at.
+   */
+  const html = `<!doctype html><html><head><title>Jane Q Doe - Airbnb | LinkedIn</title></head>
+<body><main><article><p>Jane Q Doe leads operations at Airbnb in New York.</p>
+<p>She previously scaled clinical operations across three markets.</p></article></main></body></html>`;
+  it("carries the document title into the text extraction reads", async () => {
+    const recorder = new ResearchAttemptRecorder("operation-linkedin-title");
+    const fetch: ReaderPorts["fetch"] = async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: html,
+    });
+    const result = await readPersonSource(
+      "https://www.linkedin.com/in/janeqdoe/",
+      "",
+      ports(recorder, fetch),
+    );
+    expect(result.access).toBe("retrieved");
+    expect(result.route).toBe("html-reader");
+    expect(result.text).toContain("Page title: Jane Q Doe - Airbnb | LinkedIn");
+    expect(result.text).toContain("Jane Q Doe leads operations at Airbnb in New York.");
+  });
+
+  it("still reports an empty article as empty, title or not", async () => {
+    const recorder = new ResearchAttemptRecorder("operation-linkedin-title-empty");
+    const fetch: ReaderPorts["fetch"] = async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: "<!doctype html><html><head><title>Jane Q Doe | LinkedIn</title></head><body></body></html>",
+    });
+    const result = await readPersonSource(
+      "https://www.linkedin.com/in/janeqdoe/",
+      "",
+      ports(recorder, fetch),
+    );
+    expect(result.access).not.toBe("retrieved");
+  });
+});

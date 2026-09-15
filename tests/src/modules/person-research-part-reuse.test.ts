@@ -2,7 +2,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PersonProfile, PersonResearchCheckpoint } from "@chief-of-staff-demo/shared";
+import type {
+  DossierExtractionPolicy,
+  ModelAttemptEvent,
+  PersonProfile,
+  PersonResearchCheckpoint,
+} from "@chief-of-staff-demo/shared";
 import type { CompleteJson, CompletionRequest } from "../../../apps/server/src/llm/providers.js";
 import {
   PersonResearch,
@@ -135,7 +140,13 @@ function fakeModel(failing: Set<string> = new Set()) {
 function research(
   deps: { dossiers: PersonDossierStore; people: WorkspacePersonProfiles },
   model: ReturnType<typeof fakeModel>,
-  options: { text?: string; identity?: string | null; seeds?: boolean; reuse?: boolean } = {},
+  options: {
+    text?: string;
+    identity?: string | null;
+    seeds?: boolean;
+    reuse?: boolean;
+    policy?: DossierExtractionPolicy;
+  } = {},
 ) {
   return new PersonResearch({
     dossiers: deps.dossiers,
@@ -149,7 +160,47 @@ function research(
       ...(options.identity === null ? {} : { identity: options.identity ?? "fake:model-a" }),
     }),
     ...(options.reuse === undefined ? {} : { reuseExtractionParts: options.reuse }),
+    ...(options.policy ? { dossierExtractionPolicy: () => options.policy! } : {}),
   });
+}
+
+/** A complete, valid dossier-extraction policy, overridable per test. */
+function policy(overrides: Partial<DossierExtractionPolicy> = {}): DossierExtractionPolicy {
+  return {
+    version: 1,
+    outputTokenCeiling: 8192,
+    requestedEffort: "low",
+    shapeStrategy: "full",
+    ...overrides,
+  };
+}
+
+/**
+ * A fake model that, on top of answering, reports a succeeded wire attempt
+ * through `retry.onAttempt` — the hook the real provider boundary uses to
+ * tell the caller which Result Shape Binding actually answered (spec #418
+ * §6's checkpoint provenance). The other fixtures in this file never
+ * exercise that hook, which is exactly why their checkpoints carry no
+ * `binding`.
+ */
+function fakeModelReportingBinding(binding: ModelAttemptEvent["binding"]) {
+  const asked: string[] = [];
+  const complete = vi.fn(async (request: CompletionRequest) => {
+    const { part, text } = askedPart(request);
+    asked.push(part);
+    request.retry?.onAttempt({
+      attempt: 1,
+      binding,
+      provider: "openrouter",
+      model: "model-a",
+      outcome: "succeeded",
+      diagnostic: null,
+      delayMs: 0,
+      stoppedReason: null,
+    });
+    return answer(part, text);
+  });
+  return { asked, complete };
 }
 
 /** Runs the operation once against a document whose last part fails. */
@@ -495,5 +546,120 @@ describe("privacy", () => {
     expect(fx.dossiers.extractionParts(fx.person.id)).toHaveLength(3);
     fx.dossiers.privacyDelete(fx.person.id);
     expect(fx.dossiers.extractionParts(fx.person.id)).toEqual([]);
+  });
+});
+
+/**
+ * Reuse keyed on the effective dossier-extraction policy (spec #418, T4,
+ * §6): the gap found after T1 merged was that nothing carried
+ * `outputTokenCeiling`/`describeResultShape`/the requested effort from
+ * `AppConfig.dossierExtractionPolicy` onto the wire or into the reuse key.
+ * These cases pin the connection, its reuse sensitivity, and the checkpoint
+ * provenance a later fallback rung (T7) will populate.
+ */
+describe("the effective extraction policy (spec #418 §6)", () => {
+  it("carries the policy's output ceiling, requested effort and shape description on the wire", async () => {
+    const fx = fixture();
+    const model = fakeModel();
+    await research(fx, model, {
+      text: TWO_PART_TEXT,
+      policy: policy({ outputTokenCeiling: 4096, requestedEffort: "medium" }),
+    }).run(fx.person, researchAllowance());
+    expect(model.complete).toHaveBeenCalled();
+    for (const call of model.complete.mock.calls) {
+      const request = call[0];
+      expect(request.outputTokenCeiling).toBe(4096);
+      expect(request.reasoningEffort).toBe("medium");
+      expect(request.describeResultShape).toBe(true);
+    }
+  });
+
+  it("sends no ceiling, effort or shape description when no policy is configured", async () => {
+    const fx = fixture();
+    const model = fakeModel();
+    await research(fx, model, { text: TWO_PART_TEXT }).run(fx.person, researchAllowance());
+    for (const call of model.complete.mock.calls) {
+      const request = call[0];
+      expect(request.outputTokenCeiling).toBeUndefined();
+      expect(request.reasoningEffort).toBeUndefined();
+      expect(request.describeResultShape).toBeUndefined();
+    }
+  });
+
+  /*
+   * `version` and `shapeStrategy` are single-valued today (`z.literal(1)`,
+   * `EXTRACTION_SHAPE_STRATEGIES = ["full"]`) — there is no second real
+   * value yet to swap in through a validly-typed policy. Their sensitivity
+   * is already pinned generically, independent of what values the schema
+   * currently allows, by `tests/src/unit/extraction-parts.test.ts`.
+   */
+  it.each<[string, DossierExtractionPolicy]>([
+    ["the output token ceiling", policy({ outputTokenCeiling: 4096 })],
+    ["the requested reasoning effort", policy({ requestedEffort: "high" })],
+  ])("misses every part when only %s changes", async (_label, changed) => {
+    const fx = fixture();
+    const base = policy();
+    const first = fakeModel(new Set(["2/2"]));
+    let checkpoint: PersonResearchCheckpoint | undefined;
+    await research(fx, first, { text: TWO_PART_TEXT, policy: base }).run(
+      fx.person,
+      researchAllowance({
+        saveCheckpoint: (value) => {
+          checkpoint = value;
+        },
+      }),
+    );
+    expect(fx.dossiers.extractionParts(fx.person.id)).toHaveLength(1);
+    /* `changed` differs from `base` in exactly the one named field. */
+    const model = fakeModel();
+    const outcome = await resume(fx, model, checkpoint!, { policy: changed });
+    expect(model.asked).toEqual(["1/2", "2/2"]);
+    expect(outcome.operation.modelCallsReused ?? 0).toBe(0);
+  });
+
+  it("hits on resume when the effective policy is unchanged", async () => {
+    const fx = fixture();
+    const same = policy({ outputTokenCeiling: 4096, requestedEffort: "medium" });
+    const first = fakeModel(new Set(["2/2"]));
+    let checkpoint: PersonResearchCheckpoint | undefined;
+    await research(fx, first, { text: TWO_PART_TEXT, policy: same }).run(
+      fx.person,
+      researchAllowance({
+        saveCheckpoint: (value) => {
+          checkpoint = value;
+        },
+      }),
+    );
+    const resumed = fakeModel();
+    const outcome = await resume(fx, resumed, checkpoint!, { policy: same });
+    expect(resumed.asked).toEqual(["2/2"]);
+    expect(outcome.operation.modelCallsReused).toBe(1);
+  });
+
+  it("records the resolved binding and marks a freshly extracted part as a primary-model result", async () => {
+    const fx = fixture();
+    const model = fakeModelReportingBinding("response_format");
+    await research(fx, model, { text: TWO_PART_TEXT }).run(fx.person, researchAllowance());
+    const checkpoints = fx.dossiers.extractionParts(fx.person.id);
+    expect(checkpoints).toHaveLength(2);
+    for (const checkpoint of checkpoints) {
+      expect(checkpoint.binding).toBe("response_format");
+    }
+  });
+
+  it("leaves binding unset when the boundary never reports an attempt", async () => {
+    /* The other fixtures in this file (`fakeModel`) never call
+       `retry.onAttempt`, exactly like a caller that receives no wire
+       telemetry at all — the checkpoint still writes, and its provenance is
+       correctly unknown rather than guessed. */
+    const fx = fixture();
+    const { checkpoint } = await interruptedFirstRun(fx, TWO_PART_TEXT, "2/2");
+    const stored = fx.dossiers.extractionParts(fx.person.id);
+    expect(stored).toHaveLength(1);
+    expect(stored[0].binding).toBeUndefined();
+    /* A legacy-shaped checkpoint (no binding at all, as written
+       before this field existed) still replays as a hit — provenance is
+       additive, never a new reuse requirement. */
+    void checkpoint;
   });
 });

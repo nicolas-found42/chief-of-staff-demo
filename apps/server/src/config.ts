@@ -80,6 +80,15 @@ function defaultConfig(): AppConfig {
     },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
     search: {},
+    dossierExtractionPolicy: {
+      version: 1,
+      // Selected by spec #418 T8's live probe manifest; see the evidence
+      // comment on DossierExtractionPolicySchema's own default in
+      // packages/shared/src/schemas.ts.
+      outputTokenCeiling: 65536,
+      requestedEffort: "low",
+      shapeStrategy: "full",
+    },
     modules: {
       "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
       "idea-engine": { spreadsheetId: "", spreadsheetUrl: "", prompts: {} },
@@ -130,11 +139,36 @@ function seedClaimsPurpose(models: AppConfig["models"]): AppConfig["models"] {
   return seeded;
 }
 
+/**
+ * Dossier extraction's purpose (issue #418, T2) is a no-op split from
+ * `personResearch`, the same shape as `seedClaimsPurpose` above: a Workspace
+ * that already overrode `personResearch` before this purpose existed must
+ * keep answering dossier extraction with that same model, not silently fall
+ * back to the provider default the moment the split lands. Seeded once,
+ * persisted, and never re-seeded once `personDossierExtraction` carries its
+ * own value (including one explicitly set back to empty) — the seed is a
+ * persisted starting point, not a live fallback that would follow a later
+ * `personResearch` change and defeat the point of separating the two.
+ */
+function seedDossierExtractionPurpose(models: AppConfig["models"]): AppConfig["models"] {
+  if (!models) return models;
+  const seeded: NonNullable<AppConfig["models"]> = {};
+  for (const [provider, purposes] of Object.entries(models)) {
+    seeded[provider as keyof typeof seeded] =
+      purposes.personResearch && purposes.personDossierExtraction === undefined
+        ? { ...purposes, personDossierExtraction: purposes.personResearch }
+        : purposes;
+  }
+  return seeded;
+}
+
 function normalize(config: AppConfig): AppConfig {
   return {
     ...config,
     model: config.model === "" ? DEFAULT_MODELS[config.provider] : config.model,
-    ...(config.models ? { models: seedClaimsPurpose(config.models) } : {}),
+    ...(config.models
+      ? { models: seedDossierExtractionPurpose(seedClaimsPurpose(config.models)) }
+      : {}),
   };
 }
 
@@ -311,6 +345,18 @@ export class ConfigStore {
       return;
     }
     this.config = { ...current, google: { ...current.google, hasExpiredBefore: true } };
+    this.persist();
+  }
+
+  /**
+   * Dossier extraction's request policy (issue #418, T2). Its own method
+   * rather than a `PUT /api/config` field, like the Tasks policies above:
+   * the output ceiling and fallback are chosen by the pipeline that consumes
+   * them, not posted wholesale by a settings form.
+   */
+  setDossierExtractionPolicy(next: AppConfig["dossierExtractionPolicy"]): void {
+    const current = this.get();
+    this.config = { ...current, dossierExtractionPolicy: next };
     this.persist();
   }
 

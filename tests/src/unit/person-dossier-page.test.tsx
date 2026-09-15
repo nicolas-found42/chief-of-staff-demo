@@ -6,6 +6,7 @@ import { PersonDossierStore } from "../../../apps/server/src/person-profile/doss
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeAll, afterAll, expect, test, vi } from "vitest";
+import type { PersonResearchProfileSummary } from "@chief-of-staff-demo/shared";
 import {
   PersonDossierPanel,
   type DossierClient,
@@ -52,22 +53,22 @@ test("a public-only person has a separate empty Relationship history tab while r
 });
 
 function makeClient(): DossierClient {
+  const research: NonNullable<Awaited<ReturnType<DossierClient["summary"]>>> = {
+    schemaVersion: 1,
+    profileId: "maya",
+    readiness: { state: "ready", reason: "ready" },
+    state: "queued",
+    queuedAt: "2026-09-05",
+    updatedAt: "2026-09-05",
+    nextAt: "2026-09-05",
+    calls: 0,
+    sources: 0,
+    attempts: 0,
+    detail: "Waiting for automatic research.",
+    diagnostics: { totalAttempts: 0, byCode: {}, sample: [], truncated: false },
+  };
   return {
-    read: async () => ({
-      dossier: null,
-      research: {
-        profileId: "maya",
-        state: "queued",
-        reasons: ["created"],
-        queuedAt: "2026-09-05",
-        updatedAt: "2026-09-05",
-        nextAt: "2026-09-05",
-        calls: 0,
-        sources: 0,
-        attempts: 0,
-        detail: "Waiting for automatic research.",
-      },
-    }),
+    read: async () => ({ dossier: null, research }),
     source: async () => {
       throw new Error("No source requested");
     },
@@ -79,7 +80,9 @@ function makeClient(): DossierClient {
       schemaVersion: 1,
       day: "2026-09-05",
       usedCalls: 0,
-      jobs: [],
+      totalJobs: 0,
+      byState: {},
+      running: 0,
       settings: {
         paused: false,
         concurrency: 1,
@@ -92,8 +95,189 @@ function makeClient(): DossierClient {
       },
     }),
     configure: async () => {},
+    summary: async () => research,
+    diagnostics: async () => null,
   };
 }
+
+/** A minimal, schema-valid summary for one T9 rendering scenario. */
+function researchFixture(
+  overrides: Partial<PersonResearchProfileSummary> = {},
+): PersonResearchProfileSummary {
+  return {
+    schemaVersion: 1,
+    profileId: "maya",
+    readiness: { state: "ready", reason: "ready" },
+    state: "queued",
+    queuedAt: "2026-09-05",
+    updatedAt: "2026-09-05",
+    nextAt: "2026-09-05",
+    calls: 0,
+    sources: 0,
+    attempts: 0,
+    detail: "Waiting for automatic research.",
+    diagnostics: { totalAttempts: 0, byCode: {}, sample: [], truncated: false },
+    ...overrides,
+  };
+}
+
+async function mountWithResearch(research: PersonResearchProfileSummary) {
+  const client = makeClient();
+  client.read = async () => ({ dossier: null, research });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(PersonDossierPanel, { profileId: "maya", client }));
+  });
+  return { container, root };
+}
+
+test("a setup-required blocker names the missing owner confirmation and links to Settings", async () => {
+  const { container, root } = await mountWithResearch(
+    researchFixture({
+      readiness: {
+        state: "setup-required",
+        reason: "owner-not-confirmed",
+        nextAction: { label: "Open Settings", href: "/settings" },
+      },
+    }),
+  );
+  try {
+    expect(container.textContent).toContain("Research setup required");
+    expect(container.textContent).toContain("owner has not yet confirmed");
+    const link = container.querySelector<HTMLAnchorElement>("a[href='/settings']");
+    expect(link?.textContent).toBe("Open Settings");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("initializing renders distinctly from setup-required and never asks to repeat onboarding", async () => {
+  const { container, root } = await mountWithResearch(
+    researchFixture({
+      readiness: { state: "initializing", reason: "owner-identity-unresolved" },
+    }),
+  );
+  try {
+    expect(container.textContent).toContain("Confirming workspace setup");
+    expect(container.textContent).not.toContain("Research setup required");
+    // Temporary and retryable: no Settings action is offered for a state
+    // that resolves on its own (#417 F7).
+    expect(container.querySelector("a[href='/settings']")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("a previous conclusion stays visible as labeled history and is never shown as the current operation's failure", async () => {
+  const { container, root } = await mountWithResearch(
+    researchFixture({
+      state: "researching",
+      calls: 3,
+      sources: 2,
+      attempts: 2,
+      currentOperationId: "op-b",
+      currentOperationRevision: 2,
+      detail: "Research is in progress.",
+      // T5 leaves `decisive`/`operationRevision` carrying operation A's data
+      // while B runs; the panel must not read them as B's outcome.
+      operationRevision: 1,
+      decisive: {
+        operationId: "op-a",
+        profileId: "maya",
+        stage: "extraction",
+        disposition: "interrupted",
+        classification: "transport-failure",
+        cause: "observed",
+        reason: "A transport or provider-side failure interrupted extraction.",
+        recoveryAttempts: 0,
+        completedUnits: 0,
+        incompleteUnits: 1,
+        recordedAt: "2026-09-04T00:00:00Z",
+      },
+      previousConclusion: {
+        operationId: "op-a",
+        revision: 1,
+        conclusion: "interrupted",
+        finishedAt: "2026-09-04T00:00:00Z",
+        detail: "A transport or provider-side failure interrupted extraction.",
+      },
+    }),
+  );
+  try {
+    expect(container.textContent).toContain("Researching");
+    expect(container.textContent).not.toContain("Research interrupted");
+    expect(container.textContent).toContain("Previous research attempt");
+    expect(container.textContent).toContain("transport or provider-side failure");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("empty-answer copy explains the model returned no usable answer and that evidence is retained", async () => {
+  const { container, root } = await mountWithResearch(
+    researchFixture({
+      state: "empty",
+      decisive: {
+        operationId: "op-1",
+        profileId: "maya",
+        stage: "extraction",
+        disposition: "completed",
+        classification: "no-usable-model-answer",
+        cause: "observed",
+        reason:
+          "The model returned no usable extraction answer; retained evidence is preserved and pending work continues.",
+        recoveryAttempts: 0,
+        completedUnits: 0,
+        incompleteUnits: 1,
+        recordedAt: "2026-09-05T00:00:00Z",
+      },
+    }),
+  );
+  try {
+    expect(container.textContent).toContain("No usable extraction answer");
+    expect(container.textContent).toContain("retained evidence is preserved");
+    expect(container.textContent).not.toContain("No matched evidence found");
+    expect(container.textContent.toLowerCase()).not.toContain("provider");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("a legitimate no-supported-facts result reads differently from a no-usable-model-answer result", async () => {
+  const { container, root } = await mountWithResearch(
+    researchFixture({
+      state: "empty",
+      decisive: {
+        operationId: "op-1",
+        profileId: "maya",
+        stage: "extraction",
+        disposition: "completed",
+        classification: "no-supported-facts",
+        cause: "observed",
+        reason:
+          "Extraction validated successfully and found no facts it could support about this person.",
+        recoveryAttempts: 0,
+        completedUnits: 1,
+        incompleteUnits: 0,
+        recordedAt: "2026-09-05T00:00:00Z",
+      },
+    }),
+  );
+  try {
+    expect(container.textContent).toContain("No supported facts found");
+    expect(container.textContent).toContain("validated successfully");
+    expect(container.textContent).not.toContain("No usable extraction answer");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
 
 test.each(["supported", "contested"] as const)(
   "private-only %s evidence stays inspectable without inventing public history",

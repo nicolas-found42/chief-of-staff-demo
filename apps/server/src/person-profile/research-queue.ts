@@ -1,15 +1,22 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   PersonResearchSettingsSchema,
   PersonResearchStatusSchema,
   type PersonResearchSettings,
   type PersonResearchStatus,
+  type PersonResearchAggregateStatus,
   type PersonResearchJob,
   type PersonResearchOperationOutcome,
+  type PersonResearchReadiness,
+  type PersonResearchEnqueueDecision,
+  type PersonResearchProfileSummary,
+  type PersonResearchDiagnosticsPage,
 } from "@chief-of-staff-demo/shared";
 import type { WorkspacePersonProfiles } from "./profiles.js";
 import type { PersonResearch } from "./research.js";
+import { buildProfileSummary, pagedDiagnostics } from "./research-summary.js";
 
 /** The settings an owner edit actually names; the rest keep their live values. */
 export type PersonResearchSettingsPatch = {
@@ -42,7 +49,10 @@ export class PersonResearchQueue {
       people: WorkspacePersonProfiles;
       research: PersonResearch;
       now?: () => Date;
-      enabled: () => boolean;
+      /** Truthful readiness of the pipeline itself (issue #418, T3), apart
+       * from this queue's own administrative pause — {@link readiness}
+       * folds the two together for every consumer. */
+      readiness: () => PersonResearchReadiness;
       upcomingProfileIds?: () => string[];
       evidenceRevision?: (profileId: string) => string;
     },
@@ -90,6 +100,22 @@ export class PersonResearchQueue {
    * `status()` deep-clones every job in the queue — so reading one Profile's
    * coverage cloned all of them. The lookup is named here instead (#231).
    */
+  /**
+   * Truthful readiness for the automatic/queued research pipeline (issue
+   * #418, T3): what the caller reports about the Workspace, provider and
+   * owner confirmation, with this queue's own administrative pause folded
+   * in. Pausing overrides only an otherwise-`"ready"` readiness, so a real
+   * setup problem is never hidden behind "paused". Side-effect-free.
+   */
+  readiness(): PersonResearchReadiness {
+    const base = this.deps.readiness();
+    if (base.state === "ready" && this.state.settings.paused)
+      return { state: "paused", reason: "administratively-paused" };
+    return base;
+  }
+  private isReady(): boolean {
+    return this.readiness().state === "ready";
+  }
   operation(profileId: string): PersonResearchOperationOutcome | null {
     this.rollDay();
     const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
@@ -108,6 +134,57 @@ export class PersonResearchQueue {
     const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
     return job ? structuredClone(job) : null;
   }
+  /**
+   * The compact per-profile summary a normal poll reads (issue #418, T5,
+   * spec §7): readiness, current state, the in-flight operation's identity
+   * and revision, bounded counters, the durable decisive summary, and any
+   * superseded conclusion as its own labeled history — never the whole
+   * queue, a full attempt ledger, or a checkpoint. Built on {@link job},
+   * itself already the named one-Profile lookup (#231), so this never clones
+   * more than one job. Side-effect-free: never enqueues.
+   */
+  summary(profileId: string): PersonResearchProfileSummary | null {
+    const job = this.job(profileId);
+    if (!job) return null;
+    return buildProfileSummary({ job, readiness: this.readiness() });
+  }
+  /**
+   * One page of an operation's full attempt ledger (spec §7): bounded to 50
+   * entries, cursor-paged, source-free, and named by the operation it came
+   * from. Read on explicit demand from the summary's `detailHref`, never
+   * embedded in it. Side-effect-free: never enqueues.
+   */
+  diagnostics(
+    profileId: string,
+    options?: { cursor?: string },
+  ): PersonResearchDiagnosticsPage | null {
+    const operation = this.operation(profileId);
+    if (!operation) return null;
+    return pagedDiagnostics(operation, options?.cursor);
+  }
+  /**
+   * An independently bounded queue-wide projection (issue #418, T5, spec
+   * §7), for the rare consumer that genuinely needs queue-wide counts.
+   * Computed from counts alone — never a clone of every job — so it stays
+   * cheap regardless of queue size, unlike {@link status} which deep-clones
+   * everything. This is what `/api/people/research/status` now returns
+   * instead of the whole-queue blob the dossier panel used to poll every
+   * cycle (#417 F4).
+   */
+  aggregate(): PersonResearchAggregateStatus {
+    this.rollDay();
+    const byState: Record<string, number> = {};
+    for (const job of this.state.jobs) byState[job.state] = (byState[job.state] ?? 0) + 1;
+    return {
+      schemaVersion: 1,
+      day: this.state.day,
+      usedCalls: this.state.usedCalls,
+      settings: { ...this.state.settings },
+      totalJobs: this.state.jobs.length,
+      byState,
+      running: this.running.size,
+    };
+  }
   configure(input: PersonResearchSettingsPatch): PersonResearchStatus {
     /* A patch names only the settings the owner changed: an absent key leaves
        the live value alone, so an unrelated edit cannot re-assert `paused` and
@@ -123,13 +200,24 @@ export class PersonResearchQueue {
     this.save();
     return this.status();
   }
+  /**
+   * Decide what happens to one Profile's automatic research (issue #418,
+   * T3). Used to return `void` and no-op silently in four distinct
+   * situations — not ready, missing/inactive Profile, already active, and
+   * deferred by backoff — leaving every caller to report success regardless
+   * (#417 F1). Every path now returns a typed, exhaustive decision that
+   * names the queued or active work an `accepted`/`already-active` result
+   * refers to.
+   */
   enqueue(
     profileId: string,
     reason: "created" | "meeting" | "explicit" | "viewed" | "backfill" | "refresh" | "evidence",
-  ): void {
-    if (!this.deps.enabled()) return;
+  ): PersonResearchEnqueueDecision {
+    const readiness = this.readiness();
+    if (readiness.state !== "ready") return { kind: "rejected-readiness", profileId, readiness };
     const profile = this.deps.people.get(profileId);
-    if (!profile || profile.archivedAt !== null || profile.mergedInto) return;
+    if (!profile || profile.archivedAt !== null || profile.mergedInto)
+      return { kind: "inactive-profile", profileId };
     const old = this.state.jobs.find((j) => j.profileId === profileId);
     const now = this.now();
     if (old) {
@@ -138,7 +226,7 @@ export class PersonResearchQueue {
         delete old.checkpoint;
       if (old.state === "researching" || old.state === "queued" || old.state === "paused") {
         this.save();
-        return;
+        return { kind: "already-active", profileId, jobState: old.state };
       }
       const ageHours = (Date.parse(now) - Date.parse(old.updatedAt)) / 3600000;
       const urgent =
@@ -148,7 +236,7 @@ export class PersonResearchQueue {
         (reason === "viewed" && ageHours >= 48);
       if (!urgent && old.nextAt > now) {
         this.save();
-        return;
+        return { kind: "deferred", profileId, nextAt: old.nextAt };
       }
       old.state = "queued";
       if (old.operation?.conclusion !== "bounded" && old.operation?.conclusion !== "interrupted")
@@ -175,6 +263,7 @@ export class PersonResearchQueue {
         detail: "Waiting for automatic research.",
       });
     this.save();
+    return { kind: "accepted", profileId, jobState: "queued" };
   }
   remove(profileId: string): void {
     this.state.jobs = this.state.jobs.filter((j) => j.profileId !== profileId);
@@ -213,7 +302,7 @@ export class PersonResearchQueue {
   }
 
   async tick(profileId?: string): Promise<void> {
-    if (!this.deps.enabled() || this.state.settings.paused) return;
+    if (!this.isReady()) return;
     this.rollDay();
     for (const profile of this.deps.people.search()) {
       if (profileId !== undefined && profile.id !== profileId) continue;
@@ -270,23 +359,51 @@ export class PersonResearchQueue {
       !job.lastHistoricalAt ||
       Date.parse(this.now()) - Date.parse(job.lastHistoricalAt) >=
         (this.state.settings.historicalRefreshHours ?? 720) * 3600000;
+    /*
+     * The operation identity this dispatch runs under (issue #418, T5, spec
+     * §7; #417 F5), minted here rather than left to `research.run()` to
+     * generate internally: resuming a checkpoint keeps its operationId, a
+     * fresh dispatch mints one before the first await, so live progress can
+     * be scoped to it from the moment `researching` is set — never showing a
+     * DIFFERENT, already-settled operation's conclusion as this one's own.
+     */
+    const operationId = job.checkpoint?.operationId ?? randomUUID();
     const active = () =>
-      this.deps.enabled() &&
-      !this.state.settings.paused &&
+      this.isReady() &&
       generation === this.generation &&
       this.state.jobs.includes(job) &&
+      job.currentOperationId === operationId &&
       JSON.stringify(this.deps.people.get(job.profileId)) === fingerprint &&
       this.deps.evidenceRevision?.(profile.id) === evidenceRevision;
     const started = Date.now();
     job.startedAt = this.now();
+    /* A terminal conclusion under a DIFFERENT operationId is superseded, not
+       overwritten: it moves into its own labeled historical area so a caller
+       can never mistake this operation's live progress for that one's
+       failure (#417 F5). Resuming the SAME operationId (a checkpoint) is not
+       a supersession and keeps its existing merge semantics untouched. */
+    if (job.operation && job.operation.operationId !== operationId) {
+      job.previousConclusion = {
+        operationId: job.operation.operationId,
+        revision: job.operationRevision ?? 0,
+        conclusion: job.operation.conclusion,
+        finishedAt: job.operation.finishedAt,
+        detail: job.detail,
+        ...(job.operation.decisiveExtraction ? { decisive: job.operation.decisiveExtraction } : {}),
+      };
+    }
     job.state = "researching";
     job.attempts += 1;
+    job.currentOperationId = operationId;
+    job.currentOperationRevision = job.attempts;
+    job.detail = "Research is in progress.";
     job.updatedAt = this.now();
     this.running.add(job.profileId);
     this.save();
     try {
       const settings = this.state.settings;
       const result = await this.deps.research.run(profile, {
+        operationId,
         scope: historical ? "full" : "current",
         maxModelCalls: Math.max(1, settings.profileCalls - job.calls),
         maxRequests: Math.max(1, settings.profileCalls * 8),
@@ -318,11 +435,16 @@ export class PersonResearchQueue {
           return true;
         },
       });
+      /* A newer operation already superseded this one's identity on this job
+         (issue #418, T5, spec §7): this is a late or out-of-order response
+         from an older generation, and it must never overwrite the newer
+         operation's live progress or conclusion. Bookkeeping in `finally`
+         still runs; nothing about the job's research state does. */
+      if (job.currentOperationId !== operationId) return;
       const ownUpdate =
         result.publishedProfileRevision !== undefined &&
         this.deps.people.get(job.profileId)?.revision === result.publishedProfileRevision &&
-        this.deps.enabled() &&
-        !this.state.settings.paused &&
+        this.isReady() &&
         generation === this.generation &&
         this.state.jobs.includes(job);
       if (!active() && !ownUpdate) {
@@ -337,6 +459,7 @@ export class PersonResearchQueue {
             job.detail = "Profile or evidence changed; stale results were stopped.";
           } else {
             this.retainOperation(job, result.operation);
+            job.operationRevision = job.currentOperationRevision;
             job.diagnostics = result.diagnostics;
 
             job.state = "interrupted";
@@ -354,6 +477,7 @@ export class PersonResearchQueue {
 
         job.diagnostics = result.diagnostics;
         this.retainOperation(job, result.operation);
+        job.operationRevision = job.currentOperationRevision;
         job.detail = result.detail;
         /* A completed operation clears its traversal: the next run is a
            refresh of changed evidence, not the second half of this one. */

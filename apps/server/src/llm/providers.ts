@@ -119,6 +119,26 @@ export interface CompletionRequest {
    */
   preferredMinThroughput?: number;
   /**
+   * The total-completion output ceiling this call must not exceed, mapped to
+   * whichever parameter the resolved adapter and route actually accept —
+   * never the same literal sent to every provider, never a second
+   * conflicting alias, and never a reasoning-only budget standing in for the
+   * whole completion. Distinct from `outputReserveTokens` below, which only
+   * sizes a budget reservation and never reaches the wire. An OpenRouter
+   * model whose declared capability cannot honor this ceiling fails before
+   * any wire dispatch rather than silently falling back to an unstated
+   * upstream default or trimming the request to fit (spec #418 §2).
+   */
+  outputTokenCeiling?: number | undefined;
+  /**
+   * Ask every binding — not only `prompt_only`, which always does — to
+   * restate the Result Shape's semantics in the system instructions: the one
+   * conforming result for `response_format`, the named tool's conforming
+   * arguments for `forced_tool_call`. Off by default so a caller that never
+   * opts in keeps its exact existing prompt (spec #418 §2, §4).
+   */
+  describeResultShape?: boolean | undefined;
+  /**
    * Route policy governing data retention and approved endpoints (#341, #356, MWR-051).
    */
   routePolicy?: TranscriptRoutePolicy | undefined;
@@ -212,6 +232,10 @@ interface RequestDeadline {
      when no effort level is sent. Assigned once per call beside the
      resolution above; the central stamp reads it like the rest list. */
   reasoningEffort?: string | undefined;
+  /* The thinking depth the caller asked for, before resolution, on the same
+     call this `reasoningEffort` was resolved for (spec #418 §2). Assigned
+     alongside it; undefined wherever `reasoningEffort` is never resolved. */
+  requestedReasoningEffort?: string | undefined;
   /* Assigned by the provider on a succeeded wire response, before the
      central success report is written, so the succeeded attempt carries the
      token/cost/fingerprint facts the wire reported. */
@@ -388,7 +412,7 @@ function wireJsonSchema(source: WireSchema): JsonObject {
   }) as JsonObject;
   /* OpenAI strict json_schema rejects the $schema key zod-to-json-schema adds. */
   delete converted.$schema;
-  return stripLengthCeilings(converted) as JsonObject;
+  return stripDecodeHostileKeywords(converted) as JsonObject;
 }
 
 /**
@@ -451,19 +475,43 @@ const SCHEMA_VALUED = new Set([
  * touch. Sourcery caught the first on PR #304; the second was the same bug one
  * position over.
  */
-function stripLengthCeilings(node: unknown): unknown {
-  if (Array.isArray(node)) return node.map(stripLengthCeilings);
+/**
+ * Schema keywords the upstream's constrained decoding cannot serve, dropped
+ * from every outgoing wire schema while the caller's own Zod schema keeps
+ * enforcing them at validation time.
+ *
+ * `maxLength` cost the whole call: the pinned route ran past 45 seconds and
+ * returned an upstream 502, and the same request without it answered in 4.4
+ * seconds (#304).
+ *
+ * `pattern` is worse — it empties the reply rather than slowing it. Measured
+ * live on `inception/mercury-2.5` while diagnosing #418: the dossier Extraction
+ * shape under a forced tool call returned HTTP 200, `finish_reason: "stop"`, no
+ * `content`, no `tool_calls` and no reported usage, 3 runs of 3; the identical
+ * request with the schema's 20 `pattern` keywords removed answered with a
+ * populated tool call, 3 of 3. Bisected against a 54-character prompt, so
+ * neither document size nor output budget is implicated: a plain array
+ * answered, `maxItems` answered, and a top-level scalar's own `pattern`
+ * answered. Only `pattern` in a subschema position emptied the reply.
+ *
+ * Both are constraints the answer must still satisfy; dropping them here moves
+ * the check from decode time to validation time rather than relaxing it.
+ */
+const DECODE_HOSTILE_KEYWORDS = new Set(["maxLength", "pattern"]);
+
+function stripDecodeHostileKeywords(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripDecodeHostileKeywords);
   if (!isUnknownRecord(node)) return node;
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(node)) {
-    if (key === "maxLength") continue;
+    if (DECODE_HOSTILE_KEYWORDS.has(key)) continue;
     if (SCHEMA_NAME_MAPS.has(key) && isUnknownRecord(value)) {
       out[key] = Object.fromEntries(
-        Object.entries(value).map(([name, sub]) => [name, stripLengthCeilings(sub)]),
+        Object.entries(value).map(([name, sub]) => [name, stripDecodeHostileKeywords(sub)]),
       );
       continue;
     }
-    out[key] = SCHEMA_VALUED.has(key) ? stripLengthCeilings(value) : value;
+    out[key] = SCHEMA_VALUED.has(key) ? stripDecodeHostileKeywords(value) : value;
   }
   return out;
 }
@@ -1239,6 +1287,31 @@ function readGeminiText(reply: ModelReply, answer: AnswerContainer): string {
   throw unusableShape(reply, answer);
 }
 
+/**
+ * The token facts known about a failed reply, read the same way a succeeded
+ * one's usage is (spec #418 §4): a `length` finish carrying a populated
+ * `outputTokens` says the model spent its ceiling, and the same finish with
+ * no usage at all says nothing about why generation stopped short.
+ */
+function knownUsage(
+  provider: ProviderId,
+  payload: unknown,
+): { inputTokens: number | null; outputTokens: number | null; costUsd: number | null } | null {
+  const facts =
+    provider === "anthropic"
+      ? anthropicUsage(payload)
+      : provider === "gemini"
+        ? geminiUsage(payload)
+        : openAiUsage(payload);
+  return (
+    facts && {
+      inputTokens: facts.inputTokens,
+      outputTokens: facts.outputTokens,
+      costUsd: facts.costUsd,
+    }
+  );
+}
+
 function unusableShape(reply: ModelReply, answer: AnswerContainer): ModelBoundaryError {
   return modelBoundaryFailure({
     call: reply.call,
@@ -1247,6 +1320,7 @@ function unusableShape(reply: ModelReply, answer: AnswerContainer): ModelBoundar
     body: reply.response.text,
     payload: reply.payload,
     answer,
+    usage: knownUsage(reply.call.provider, reply.payload),
   });
 }
 
@@ -1286,8 +1360,19 @@ async function openaiComplete(
       /* Best-effort reproducibility: hosted inference stays non-deterministic
          even with a seed, so the fingerprint is recorded beside it. */
       ...(request.seed !== undefined ? { seed: request.seed } : {}),
+      ...(request.outputTokenCeiling !== undefined
+        ? { max_tokens: request.outputTokenCeiling }
+        : {}),
       messages: [
-        { role: "system", content: request.system },
+        {
+          role: "system",
+          content: shapedSystem(
+            "response_format",
+            request.system,
+            schema,
+            request.describeResultShape,
+          ),
+        },
         { role: "user", content: request.user },
       ],
       response_format: {
@@ -1315,8 +1400,11 @@ async function anthropicComplete(
     { "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
     {
       model: cfg.model,
-      max_tokens: 8192,
-      system: request.system,
+      /* Anthropic requires this field on every call; an explicit ceiling
+         becomes the value sent, and the prior hardcoded default remains the
+         fallback for a caller that supplies none (spec #418 §2). */
+      max_tokens: request.outputTokenCeiling ?? 8192,
+      system: shapedSystem("forced_tool_call", request.system, schema, request.describeResultShape),
       messages: [{ role: "user", content: request.user }],
       tools: [
         {
@@ -1347,11 +1435,25 @@ async function geminiComplete(
     url,
     {},
     {
-      systemInstruction: { parts: [{ text: request.system }] },
+      systemInstruction: {
+        parts: [
+          {
+            text: shapedSystem(
+              "response_format",
+              request.system,
+              responseSchema,
+              request.describeResultShape,
+            ),
+          },
+        ],
+      },
       contents: [{ role: "user", parts: [{ text: request.user }] }],
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema,
+        ...(request.outputTokenCeiling !== undefined
+          ? { maxOutputTokens: request.outputTokenCeiling }
+          : {}),
       },
     },
     deadline,
@@ -1362,14 +1464,47 @@ async function geminiComplete(
 }
 
 /**
+ * One authoritative wording of the Result Shape's semantics, worded for
+ * whichever binding a call actually used (spec #418 §4): the field
+ * descriptions travel inside the schema itself, so only which container
+ * holds the answer — and how firmly the provider enforces it — differs.
+ */
+function resultShapeInstruction(binding: ResultShapeBinding, schema: JsonObject): string {
+  const rendered = JSON.stringify(schema, null, 2);
+  if (binding === "response_format")
+    return `Return the one result conforming to this schema:\n${rendered}`;
+  if (binding === "forced_tool_call")
+    return `Call the "save_extraction" tool with arguments conforming to this schema:\n${rendered}`;
+  return `Return exactly one JSON object matching this schema, and nothing else — no prose, no markdown fences, no fields beyond it:\n${rendered}`;
+}
+
+/**
  * The prompt-only binding has no provider-side shape constraint, so the Result
  * Shape itself travels in the prompt: the field descriptions alone leave the
  * model without the schema. Provider-constrained bindings keep the Module's
  * prompt verbatim — the shape rides in response_format or in the tool's
- * parameters.
+ * parameters — unless the caller opts into stating it in words too.
  */
 function promptOnlySystem(system: string, schema: JsonObject): string {
-  return `${system}\n\nReturn exactly one JSON object matching this schema, and nothing else — no prose, no markdown fences, no fields beyond it:\n${JSON.stringify(schema, null, 2)}`;
+  return `${system}\n\n${resultShapeInstruction("prompt_only", schema)}`;
+}
+
+/**
+ * The system text actually sent for one binding. `prompt_only` always states
+ * the Result Shape's semantics — it is the only thing constraining the
+ * answer. `response_format`/`forced_tool_call` add them only when the caller
+ * opts in via `describeResultShape`; unset, they send the caller's system
+ * text unchanged, exactly as before that option existed (spec #418 §2, §4).
+ */
+function shapedSystem(
+  binding: ResultShapeBinding,
+  system: string,
+  schema: JsonObject,
+  describeResultShape: boolean | undefined,
+): string {
+  if (binding === "prompt_only") return promptOnlySystem(system, schema);
+  if (!describeResultShape) return system;
+  return `${system}\n\n${resultShapeInstruction(binding, schema)}`;
 }
 
 /** The OpenAI-shaped chat-completion body that asks for one Result Shape Binding. */
@@ -1385,13 +1520,13 @@ function chatCompletionBody(
     messages: [
       {
         role: "system",
-        content:
-          binding === "prompt_only" ? promptOnlySystem(request.system, schema) : request.system,
+        content: shapedSystem(binding, request.system, schema, request.describeResultShape),
       },
       { role: "user", content: request.user },
     ],
   };
   if (request.temperature !== undefined) body.temperature = request.temperature;
+  if (request.outputTokenCeiling !== undefined) body.max_tokens = request.outputTokenCeiling;
   /* Best-effort reproducibility, OpenAI family only: the other wires have no
      seed parameter, and Anthropic's is a fixed zero by another name. */
   if (request.seed !== undefined && (cfg.provider === "openai" || cfg.provider === "openrouter"))
@@ -1533,10 +1668,20 @@ function clearRests(model: string): void {
  * `chosen` is what the model declared support for, or `null` when there is no
  * declaration to read — which is not the same as declaring no support, and is
  * the only case that permits the ordinary refusal step-down.
+ *
+ * `parameters` is the raw declaration `chosen`/`ladder` were built from, kept
+ * alongside them so a recovery step that must ask "is the NEXT binding
+ * explicitly declared" (spec #418 §4) can ask the declaration directly
+ * instead of inferring it from ladder membership — the ladder includes a
+ * binding one position past `chosen` unconditionally, declared or not
+ * (`declaredBindings` below), which is right for the existing refusal
+ * step-down but wrong for a recovery that must not optimistically dispatch
+ * to an unsupported binding. `null` when there is no declaration to read.
  */
 interface DeclaredBindings {
   chosen: ResultShapeBinding | null;
   ladder: readonly ResultShapeBinding[];
+  parameters: Set<string> | null;
 }
 
 /** Whether a declaration covers one binding. Prompt-only asks nothing of the provider. */
@@ -1598,6 +1743,12 @@ async function openAiCompatibleComplete(
         )
       : undefined;
   deadline.reasoningEffort = reasoningEffort;
+  /* The low-effort intent or an explicit override, before resolution — spec
+     #418 §2's gap: only the effective value above used to survive anywhere. */
+  deadline.requestedReasoningEffort =
+    cfg.provider === "openrouter"
+      ? (request.reasoningEffort ?? DEFAULT_REASONING_EFFORT)
+      : undefined;
   const reasoning: { exclude: true; effort?: string } | null =
     cfg.provider === "openrouter"
       ? {
@@ -1837,12 +1988,47 @@ async function openAiCompatibleComplete(
          they keep their report (ADR-0074). */
       const diagnostic = modelBoundaryDiagnostic(error);
       if (cfg.provider === "openrouter") restFailedRoute(cfg.model, diagnostic ?? null);
+      /* `response_format`'s answer container is always exactly `{role,
+         content}` — `role` is boilerplate this seam fills in itself (never
+         read off the wire, see the streamed-message reconstruction above),
+         never the model's own answer. So "empty everywhere" in the sense
+         that matters — no substantive answer arrived at all, as opposed to
+         one that arrived in the wrong shape — reads as "content" not among
+         the populated fields, exactly the negation of the populated-prose
+         case just below. Trying `response_format` again cannot do better
+         than that; spec #418 §4 permits exactly one step out of it —
+         response_format to forced_tool_call, and only there — but only when
+         the next binding is a fact the declaration states rather than an
+         optimistic guess: `ladder[index + 1] === "forced_tool_call"` is true
+         whenever `forced_tool_call` has not already been spent in this walk
+         (the ladder never revisits a binding, and `declaredBindings` always
+         places it one step after a `response_format` start regardless of
+         declaration — see the comment on `DeclaredBindings` above), and
+         `declares(declared.parameters, "forced_tool_call")` is the explicit
+         declaration check that ladder membership alone does not give: an
+         unread or absent declaration proves nothing, and "nothing" is not
+         "supported" (spec #418 §4's "ineligible recovery, not optimistically
+         dispatched"). Refusals, admission denials, malformed tool-call
+         arguments and every other HTTP-200 anomaly never reach this branch at
+         all — they classify as something other than `unusable_shape`, or
+         (ADR-0074) they keep their report at the tool binding on purpose. */
+      const contentPopulated =
+        diagnostic?.classification === "unusable_shape" &&
+        diagnostic.populatedFields.some((field) => field.endsWith(".content"));
+      const emptyEverywhereForcedToolCallRecoverable =
+        diagnostic?.classification === "unusable_shape" &&
+        call.binding === "response_format" &&
+        !contentPopulated &&
+        ladder[index + 1] === "forced_tool_call" &&
+        declared.parameters !== null &&
+        declares(declared.parameters, "forced_tool_call");
       const shapeRecoverable =
         (diagnostic?.classification === "answer_not_json" && call.binding === "response_format") ||
-        (diagnostic?.classification === "unusable_shape" &&
-          /* An answer that is empty everywhere is not going to be better at
-             the next binding, and keeps its report. */
-          diagnostic.populatedFields.some((field) => field.endsWith(".content")));
+        /* A populated field that is not the binding's own content is not
+           going to be better at the next binding either, and keeps its
+           report — the empty-everywhere case above is the one exception. */
+        contentPopulated ||
+        emptyEverywhereForcedToolCallRecoverable;
       if (index < ladder.length - 1 && !deadline.signal.aborted && shapeRecoverable) {
         deadline.reportAttempt({
           outcome: "retrying",
@@ -2049,16 +2235,29 @@ export function resolveReasoningEffort(
  * rebuilt per attempt, so the cache cannot live in its closure. The promise is
  * cached rather than its result so that concurrent Stages share one lookup.
  */
-const openrouterDeclarations = new Map<string, Promise<Set<string> | null>>();
+const openrouterDeclarations = new Map<string, Promise<DeclaredCapabilities | null>>();
 
 /**
- * The `supported_parameters` an OpenRouter model declares, or `null` when the
- * declaration cannot be read — which is not the same as declaring no support.
+ * What one OpenRouter model declares about its own capacity: the union of
+ * `supported_parameters` across every route (as before), plus the lowest
+ * per-route `max_completion_tokens` among routes that declare one — the
+ * conservative bound, since routing may hand a call to any declared route
+ * (spec #418 §2). `null` when the endpoint declares no numeric ceiling at
+ * all, which is not the same as declaring an unbounded one.
+ */
+interface DeclaredCapabilities {
+  parameters: Set<string>;
+  maxCompletionTokens: number | null;
+}
+
+/**
+ * `null` means the declaration cannot be read at all — which is not the same
+ * as declaring no support or no capacity.
  */
 function openrouterDeclaredParameters(
   cfg: LlmConfig,
   deadline: RequestDeadline,
-): Promise<Set<string> | null> {
+): Promise<DeclaredCapabilities | null> {
   const cached = openrouterDeclarations.get(cfg.model);
   if (cached) return cached;
   const pending = fetchDeclaredParameters(cfg, deadline.signal);
@@ -2069,7 +2268,7 @@ function openrouterDeclaredParameters(
 async function fetchDeclaredParameters(
   cfg: LlmConfig,
   signal: AbortSignal,
-): Promise<Set<string> | null> {
+): Promise<DeclaredCapabilities | null> {
   try {
     const response = await fetch(`https://openrouter.ai/api/v1/models/${cfg.model}/endpoints`, {
       headers: { authorization: `Bearer ${cfg.apiKey}` },
@@ -2082,26 +2281,33 @@ async function fetchDeclaredParameters(
   }
 }
 
-function readDeclaredParameters(payload: unknown): Set<string> | null {
+function readDeclaredParameters(payload: unknown): DeclaredCapabilities | null {
   if (typeof payload !== "object" || payload === null || !("data" in payload)) return null;
   const data = payload.data;
   if (typeof data !== "object" || data === null || !("endpoints" in data)) return null;
   if (!isUnknownArray(data.endpoints)) return null;
-  const declared = new Set<string>();
+  const parameters = new Set<string>();
+  let maxCompletionTokens: number | null = null;
   for (const endpoint of data.endpoints) {
-    if (
-      typeof endpoint !== "object" ||
-      endpoint === null ||
-      !("supported_parameters" in endpoint) ||
-      !isUnknownArray(endpoint.supported_parameters)
-    ) {
-      continue;
+    if (typeof endpoint !== "object" || endpoint === null) continue;
+    if ("supported_parameters" in endpoint && isUnknownArray(endpoint.supported_parameters)) {
+      for (const parameter of endpoint.supported_parameters) {
+        if (typeof parameter === "string") parameters.add(parameter);
+      }
     }
-    for (const parameter of endpoint.supported_parameters) {
-      if (typeof parameter === "string") declared.add(parameter);
+    if (
+      "max_completion_tokens" in endpoint &&
+      typeof endpoint.max_completion_tokens === "number" &&
+      Number.isInteger(endpoint.max_completion_tokens) &&
+      endpoint.max_completion_tokens > 0
+    ) {
+      maxCompletionTokens =
+        maxCompletionTokens === null
+          ? endpoint.max_completion_tokens
+          : Math.min(maxCompletionTokens, endpoint.max_completion_tokens);
     }
   }
-  return declared.size > 0 ? declared : null;
+  return parameters.size > 0 ? { parameters, maxCompletionTokens } : null;
 }
 
 /**
@@ -2126,7 +2332,7 @@ function declaredBindings(
   declared: Set<string> | null,
   preferred?: CompletionRequest["preferredBinding"],
 ): DeclaredBindings {
-  if (!declared) return { chosen: null, ladder: RESULT_SHAPE_BINDINGS };
+  if (!declared) return { chosen: null, ladder: RESULT_SHAPE_BINDINGS, parameters: null };
   const chosen: ResultShapeBinding =
     preferred === "forced_tool_call" && declares(declared, "forced_tool_call")
       ? "forced_tool_call"
@@ -2144,6 +2350,7 @@ function declaredBindings(
         (binding, index) => binding !== chosen && (index > from || declares(declared, binding)),
       ),
     ],
+    parameters: declared,
   };
 }
 
@@ -2153,13 +2360,32 @@ async function openrouterComplete(
   schema: JsonObject,
   deadline: RequestDeadline,
 ): Promise<unknown> {
+  const capabilities = await openrouterDeclaredParameters(cfg, deadline);
+  const declared = declaredBindings(capabilities?.parameters ?? null, request.preferredBinding);
+  /* Fail before any wire dispatch rather than send a ceiling the declaration
+     says this model cannot honor, or silently drop it to an unstated
+     upstream default (spec #418 §2). A capability read that came back empty
+     says nothing either way, so an unreadable declaration leaves the
+     ceiling unchecked, exactly like an unreadable binding declaration does. */
+  if (request.outputTokenCeiling !== undefined && capabilities) {
+    const supportsCeiling = capabilities.parameters.has("max_tokens");
+    const withinCapacity =
+      capabilities.maxCompletionTokens === null ||
+      request.outputTokenCeiling <= capabilities.maxCompletionTokens;
+    if (!supportsCeiling || !withinCapacity) {
+      throw modelBoundaryFailure({
+        call: modelCall(cfg, declared.chosen ?? "response_format"),
+        classification: "output_ceiling_unsupported",
+      });
+    }
+  }
   return openAiCompatibleComplete(
     "https://openrouter.ai/api/v1/chat/completions",
     { authorization: `Bearer ${cfg.apiKey}` },
     cfg,
     request,
     schema,
-    declaredBindings(await openrouterDeclaredParameters(cfg, deadline), request.preferredBinding),
+    declared,
     deadline,
     true,
   );
@@ -2183,7 +2409,7 @@ function ollamaComplete(
     cfg,
     request,
     schema,
-    { chosen: null, ladder: RESULT_SHAPE_BINDINGS },
+    { chosen: null, ladder: RESULT_SHAPE_BINDINGS, parameters: null },
     deadline,
     false,
   );
@@ -2238,6 +2464,9 @@ async function withinRequestCeiling<T>(
       ...(deadline.providerIgnore !== undefined ? { providerIgnore: deadline.providerIgnore } : {}),
       ...(deadline.reasoningEffort !== undefined
         ? { reasoningEffort: deadline.reasoningEffort }
+        : {}),
+      ...(deadline.requestedReasoningEffort !== undefined
+        ? { requestedReasoningEffort: deadline.requestedReasoningEffort }
         : {}),
       /* Usage facts describe the wire response of one succeeded attempt; a
          retrying or failed attempt has none to report. */
@@ -2364,6 +2593,15 @@ export function makeCompleteJson(
   };
   const complete = async (request: CompletionRequest): Promise<unknown> => {
     const full = wireJsonSchema(request.schema);
+    /* Sizing only: the caller's own `request.system` stays untouched
+       everywhere else, since the real per-attempt binding — and so the real
+       wording — is not known until dispatch (spec #418 §4). This uses the
+       adapter's default starting binding and the full (uncompacted) schema,
+       which is never smaller than what actually goes on the wire, so the
+       reservation below never undercounts these instructions. */
+    const reservationSystem = request.describeResultShape
+      ? `${request.system}\n\n${resultShapeInstruction(initialCall(cfg).binding, full)}`
+      : request.system;
     const operationId = request.operationId;
     /* Measurement attribution (#381): the timeline names the operation a
        call is budgeted under, or the one it is traced to, and the call site
@@ -2453,7 +2691,7 @@ export function makeCompleteJson(
       reservation = context.budgetLedger.reserve({
         operationId,
         model: cfg.model,
-        system: request.system,
+        system: reservationSystem,
         user: request.user,
         schema: request.schema,
         outputReserveTokens: request.outputReserveTokens,

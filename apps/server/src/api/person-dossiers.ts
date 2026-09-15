@@ -18,9 +18,13 @@ export function registerPersonDossierApi(
     history?: (profileId: string) => PersonRelationshipRecord[];
   },
 ): void {
+  /* The bounded per-profile summary (issue #418, T5, spec §7), not the whole
+     PersonResearchJob: the dossier response used to carry the unbounded
+     research-job payload (full attempt ledger, checkpoint, visited-lead
+     lists) alongside the dossier itself (#417 F4). */
   const view = (id: string) => ({
     dossier: deps.dossiers.get(id),
-    research: deps.queue.job(id),
+    research: deps.queue.summary(id),
   });
   app.get<{ Params: { profileId: string; revision: string } }>(
     "/api/people/:profileId/dossier/revisions/:revision",
@@ -66,7 +70,10 @@ export function registerPersonDossierApi(
     if (!input.success) return reply.code(400).send({ error: "invalid-dossier-query" });
     return queries.search(input.data);
   });
-  app.get("/api/people/research/status", async () => deps.queue.status());
+  /* The independently bounded queue-wide projection (issue #418, T5, spec
+     §7), not the whole-queue clone `status()` deep-copies every job for
+     (#417 F4): this route is what the dossier panel polled every cycle. */
+  app.get("/api/people/research/status", async () => deps.queue.aggregate());
   app.patch("/api/people/research/settings", async (request, reply) => {
     const parsed = PersonResearchSettingsSchema.partial().strict().safeParse(request.body);
     if (!parsed.success)
@@ -77,15 +84,43 @@ export function registerPersonDossierApi(
     /* The queue owns the merge onto its live settings; sending it a whole
        object here would re-assert `paused` on every unrelated edit and cancel
        in-flight research for a changed refresh interval (#207). */
-    return deps.queue.configure(parsed.data);
+    deps.queue.configure(parsed.data);
+    return deps.queue.aggregate();
   });
+  app.get<{ Params: { profileId: string }; Querystring: { cursor?: string } }>(
+    "/api/people/:profileId/research/summary",
+    async (request, reply) => {
+      const id = request.params.profileId;
+      if (!deps.people.get(id)) return reply.code(404).send({ error: "profile-not-found" });
+      /* Side-effect-free (issue #418, T5, spec §7): this is what normal
+         polling reads instead of the dossier route, and it never enqueues. */
+      return { summary: deps.queue.summary(id) };
+    },
+  );
+  app.get<{ Params: { profileId: string }; Querystring: { cursor?: string } }>(
+    "/api/people/:profileId/research/diagnostics",
+    async (request, reply) => {
+      const id = request.params.profileId;
+      if (!deps.people.get(id)) return reply.code(404).send({ error: "profile-not-found" });
+      /* Paged, source-free operation detail on explicit demand (spec §7);
+         side-effect-free like the summary route. */
+      return deps.queue.diagnostics(
+        id,
+        request.query.cursor === undefined ? {} : { cursor: request.query.cursor },
+      );
+    },
+  );
   app.get<{ Params: { profileId: string } }>(
     "/api/people/:profileId/dossier",
     async (request, reply) => {
       const id = request.params.profileId;
       if (!deps.people.get(id)) return reply.code(404).send({ error: "profile-not-found" });
-      deps.queue.enqueue(id, "viewed");
-      return view(id);
+      /* A dossier read stays a read (issue #418, T3): the viewed-Profile
+         scheduling side effect is retained, but its decision is exposed
+         rather than turning a readable dossier into an error — even when
+         research is not ready to accept it. */
+      const researchDecision = deps.queue.enqueue(id, "viewed");
+      return { ...view(id), researchDecision };
     },
   );
   app.post<{ Params: { profileId: string } }>(
@@ -96,8 +131,28 @@ export function registerPersonDossierApi(
       if (!person) return reply.code(404).send({ error: "profile-not-found" });
       if (person.archivedAt || person.mergedInto)
         return reply.code(409).send({ error: "profile-inactive" });
-      deps.queue.enqueue(id, "explicit");
-      return reply.code(202).send(view(id));
+      const decision = deps.queue.enqueue(id, "explicit");
+      /* 202 only when work is genuinely queued or already accepted (issue
+         #418, T3; #417 F1): every other decision names why nothing was
+         accepted instead of a false-positive "prioritised" response. */
+      if (decision.kind === "accepted" || decision.kind === "already-active")
+        return reply.code(202).send({ ...view(id), researchDecision: decision });
+      if (decision.kind === "rejected-readiness") {
+        const { readiness } = decision;
+        return readiness.state === "initializing"
+          ? reply.code(503).send({ error: "research-initializing", readiness })
+          : reply.code(409).send({
+              error: "research-disabled",
+              readiness,
+              ...(readiness.nextAction ? { nextAction: readiness.nextAction } : {}),
+            });
+      }
+      if (decision.kind === "inactive-profile")
+        return reply.code(409).send({ error: "profile-inactive" });
+      /* "deferred" cannot occur for the "explicit" reason this route always
+         sends — it is always urgent — but every decision is handled rather
+         than assumed. */
+      return reply.code(200).send({ ...view(id), researchDecision: decision });
     },
   );
   app.post<{ Params: { profileId: string; sourceId: string } }>(

@@ -1,3 +1,4 @@
+import { z } from "zod/v3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,8 @@ const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+const PlanUserSchema = z.object({ person: z.object({ name: z.string().nullable() }) });
 test("automatic research retains a full page and publishes exact grounded work before returning", async () => {
   const root = mkdtempSync(join(tmpdir(), "research-"));
   roots.push(root);
@@ -839,4 +842,128 @@ test("a part that fails at the model boundary fails the document and keeps the l
   expect(urlLead.disposition).toBe("interrupted");
   expect(dossiers.get(person.id)?.claims ?? []).toHaveLength(0);
   expect(outcome.operation.conclusion).not.toBe("interrupted");
+});
+
+test("a profile URL-only dossier resolves the proper name from the page it serves, and later searches use it", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-linkedin-name-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ profileUrls: ["https://www.linkedin.com/in/joseceresc/"] });
+  const dossiers = new PersonDossierStore(root);
+  const searchCalls: { query: string; fullName: string | null }[] = [];
+  const plannerNames: (string | null)[] = [];
+  const html = `<!doctype html><html><head><title>Jane Q Doe - Airbnb | LinkedIn</title></head>
+<body><main><article><p>Jane Q Doe leads operations at Airbnb in New York.</p></article></main></body></html>`;
+  const research = new PersonResearch({
+    people,
+    dossiers,
+    search: async (query, request) => {
+      searchCalls.push({ query, fullName: request?.fullName ?? null });
+      return [];
+    },
+    fetch: async (url) => ({
+      url,
+      status: url.includes("linkedin.com") ? 200 : 404,
+      contentType: "text/html; charset=utf-8",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: url.includes("linkedin.com") ? html : "",
+    }),
+    complete: async () => ({
+      fullName: "Jane Q Doe",
+      employer: "Airbnb",
+      sourceClass: "self-report",
+      author: null,
+      publishedAt: null,
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+    plan: async (request) => {
+      plannerNames.push(PlanUserSchema.parse(JSON.parse(request.user)).person.name);
+      return {
+        queries: ["Jane Q Doe operations career"],
+        urls: [],
+        targetCoverage: [],
+        remainingQuestions: [],
+      };
+    },
+  });
+  await research.run(person, researchAllowance({ maxModelCalls: 4, maxMilliseconds: 20000 }));
+  /* The page the profile URL serves named the person, so the extraction's
+     proper name reaches the planner and every later discovery search in the
+     same run — not only the durable fact applied at the end. */
+  expect(plannerNames.length).toBeGreaterThan(0);
+  expect(plannerNames[0]).toBe("Jane Q Doe");
+  expect(searchCalls.length).toBeGreaterThan(0);
+  for (const call of searchCalls) expect(call.fullName).toBe("Jane Q Doe");
+  expect(people.get(person.id)?.fullName).toBe("Jane Q Doe");
+});
+
+test("the profile's own URL is read before any search the operation runs", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-linkedin-first-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({
+    fullName: "Jose Ceres",
+    profileUrls: ["https://www.linkedin.com/in/joseceresc/"],
+  });
+  const dossiers = new PersonDossierStore(root);
+  const events: string[] = [];
+  const research = new PersonResearch({
+    people,
+    dossiers,
+    search: async (query) => {
+      events.push(`search:${query}`);
+      return [];
+    },
+    fetch: async (url) => {
+      events.push(`fetch:${url}`);
+      return {
+        url,
+        status: url.includes("linkedin.com") ? 200 : 404,
+        contentType: "text/html; charset=utf-8",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: url.includes("linkedin.com")
+          ? `<!doctype html><html><head><title>Jane Q Doe | LinkedIn</title></head><body><article><p>Jane Q Doe leads operations at Airbnb.</p></article></body></html>`
+          : "",
+      };
+    },
+    complete: async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "self-report",
+      author: null,
+      publishedAt: null,
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+    plan: async () => ({
+      queries: ["Jose Ceres biography role career"],
+      urls: [],
+      targetCoverage: [],
+      remainingQuestions: [],
+    }),
+  });
+  await research.run(person, researchAllowance({ maxModelCalls: 4, maxMilliseconds: 20000 }));
+  /* The handle abbreviates the name; the page it serves carries the person.
+     Queries wait one round while the Profile's own URL is still unread. */
+  const firstSearch = events.findIndex((event) => event.startsWith("search:"));
+  const profileUrlRead = events.findIndex((event) => event.includes("linkedin.com"));
+  expect(profileUrlRead).toBeGreaterThanOrEqual(0);
+  expect(firstSearch).toBeGreaterThan(profileUrlRead);
 });

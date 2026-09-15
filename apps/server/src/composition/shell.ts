@@ -2,7 +2,11 @@ import { DateTime } from "luxon";
 import { registerMeetingReadTestRoutes } from "../meetings/testRuntime.js";
 import { MeetingRead } from "../meetings/read.js";
 import { weeklyMeetingSources } from "../meetings/weekly-sources.js";
-import type { PersonRelationshipRecord } from "@chief-of-staff-demo/shared";
+import type {
+  PersonRelationshipRecord,
+  PersonResearchNextAction,
+  PersonResearchReadiness,
+} from "@chief-of-staff-demo/shared";
 import { registerPersonDossierApi } from "../api/person-dossiers.js";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -302,6 +306,13 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      resolved request today and lets a Settings override tune it alone
      later. */
   const peopleClaimsCompleteJson = () => completeForPurpose("personProfileClaims");
+  /* Dossier extraction (E1) is the other no-op purpose split from
+     `personResearch` (issue #418, T2): resolving through its own purpose,
+     seeded once from each Workspace's prior effective `personResearch`
+     selection, changes no resolved request today and lets a Settings
+     override tune it alone later, independently of claim extraction (C1)
+     above. */
+  const peopleDossierCompleteJson = () => completeForPurpose("personDossierExtraction");
   /* One shared PublicSearch instance for every consumer: one home IP shares
      every provider's rate limits, so the query cache and the per-provider
      cooldowns must be app-wide rather than per consumer — three separate
@@ -318,6 +329,43 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     diagnostics: publicSearchDiagnostics,
     ...(searxngUrl !== undefined ? { searxngUrl } : {}),
   });
+  const settingsNextAction: PersonResearchNextAction = {
+    label: "Open Settings",
+    href: "/settings",
+  };
+  /**
+   * Truthful readiness of automatic Person Research (issue #418, T3;
+   * #417 F1/F3/F7), following contentResearch's own `readiness(kind)`
+   * closure below rather than inventing a second vocabulary. Referenced by
+   * `personProfilesProduct` below, and (like `ownerOnboarding` itself)
+   * evaluated only once invoked, well after every name here is bound.
+   */
+  const personResearchReadiness = (): PersonResearchReadiness => {
+    if (migrationGate.isActive())
+      return { state: "initializing", reason: "workspace-initializing" };
+    const current = configStore.getForPurpose("personResearch");
+    const demo = process.env.ENABLE_TEST_SEED === "1" || process.env.DEMO_MODE === "1";
+    if (current.provider === "mock")
+      return demo
+        ? { state: "ready", reason: "ready" }
+        : { state: "disabled", reason: "mock-provider-inactive", nextAction: settingsNextAction };
+    if (current.provider !== "ollama" && !current.apiKey.trim())
+      return {
+        state: "setup-required",
+        reason: "provider-not-configured",
+        nextAction: settingsNextAction,
+      };
+    const owner = ownerOnboarding.confirmationStatus();
+    if (owner === "unresolved")
+      return { state: "initializing", reason: "owner-identity-unresolved" };
+    if (owner === "absent")
+      return {
+        state: "setup-required",
+        reason: "owner-not-confirmed",
+        nextAction: settingsNextAction,
+      };
+    return { state: "ready", reason: "ready" };
+  };
   /* Person Profiles (ADR-0042, ADR-0062): the Workspace's dossiers, their
      automatic research, and the public-web identity resolver, composed as
      their own product. The Shell hands over the Workspace directory, the
@@ -330,6 +378,12 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     search: publicSearch,
     complete: peopleCompleteJson,
     completeClaims: peopleClaimsCompleteJson,
+    completeDossier: peopleDossierCompleteJson,
+    /* Read fresh per operation, like the purposes above, so a Settings edit
+       to the ceiling/effort/strategy lands without a restart (spec #418
+       §2, §6 — the gap found after T1 merged: T1 and T2 each landed their
+       half, but nothing carried the value between them until now). */
+    dossierExtractionPolicy: () => configStore.get().dossierExtractionPolicy,
     plan: () => completeForPurpose("researchPlanning"),
     confirmedTranscripts: (profileId) =>
       transcriptIdentityService.confirmedMentions(profileId).flatMap((mention) => {
@@ -351,16 +405,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       transcriptIdentityService
         .confirmedMentions(profileId)
         .some((mention) => mention.transcriptId === transcriptId),
-    researchEnabled: () => {
-      if (migrationGate.isActive()) return false;
-      const current = configStore.getForPurpose("personResearch");
-      const demo = process.env.ENABLE_TEST_SEED === "1" || process.env.DEMO_MODE === "1";
-      if (current.provider === "mock") return demo;
-      return (
-        (current.provider === "ollama" || Boolean(current.apiKey.trim())) &&
-        ownerOnboarding.confirmed() !== null
-      );
-    },
+    /* Kept for every consumer of the plain boolean; derived from the same
+       readiness computation below so the two can never drift apart. */
+    researchEnabled: () => personResearchReadiness().state === "ready",
+    researchReadiness: personResearchReadiness,
     upcomingParticipantEmails: () =>
       meetings
         .list()

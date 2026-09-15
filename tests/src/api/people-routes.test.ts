@@ -22,6 +22,9 @@ import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile
 import { openRuns } from "../../../apps/server/src/runs";
 import { TranscriptCatalogStore } from "../../../apps/server/src/transcript-catalog/store";
 import { ContentResearchStore } from "../../../apps/server/src/modules/content-research/store";
+import { PersonResearchQueue } from "../../../apps/server/src/person-profile/research-queue";
+import { PersonResearch } from "../../../apps/server/src/person-profile/research";
+import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store";
 
 /**
  * The product namespace `/api/people/*` (spec #117): the same observable
@@ -865,5 +868,52 @@ describe("/api/people/:profileId lifecycle over the production registry", () => 
       ],
       remoteProviderOperations: 0,
     });
+  });
+});
+
+/**
+ * Profile creation succeeds even while research is blocked (issue #418, T3;
+ * #417 F1) — a separate, self-contained fixture with a real queue wired in,
+ * since the suite above never composes one.
+ */
+describe("creation while research is blocked", () => {
+  it("still returns 201 and carries the rejected-readiness decision separately", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cos-people-routes-research-"));
+    const blockedApp = fastify();
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const queue = new PersonResearchQueue({
+      workspaceDir: root,
+      people,
+      research: new PersonResearch({
+        dossiers: new PersonDossierStore(root),
+        search: async () => [],
+        complete: async () => ({}),
+      }),
+      readiness: () => ({ state: "setup-required", reason: "owner-not-confirmed" }),
+    });
+    registerPeopleApi(blockedApp, {
+      people,
+      resolver: new PersonProfileResolver({ store: new PersonProfileStore(root), sources: [] }),
+      research: queue,
+    });
+    await blockedApp.ready();
+    try {
+      const response = await blockedApp.inject({
+        method: "POST",
+        url: "/api/people",
+        payload: { fullName: "Grace Hopper", primaryEmail: "grace@example.com" },
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject({
+        fullName: "Grace Hopper",
+        research: { kind: "rejected-readiness" },
+      });
+      expect(queue.status().jobs).toHaveLength(0);
+    } finally {
+      await blockedApp.close();
+    }
   });
 });

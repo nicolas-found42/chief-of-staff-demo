@@ -58,9 +58,13 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
     try {
       const input: PersonProfileCreateInput = request.body ?? {};
       const profile = people.create(input);
-      ctx.research?.enqueue(profile.id, "created");
+      /* Profile creation succeeds regardless of research readiness (issue
+         #418, T3; #417 F1): the enqueue decision rides along separately
+         rather than the response promising background work that was not
+         actually accepted. */
+      const research = ctx.research?.enqueue(profile.id, "created");
       reply.code(201);
-      return profile;
+      return { ...profile, ...(research ? { research } : {}) };
     } catch (error) {
       if (error instanceof PersonProfileValidationError) {
         reply.code(400);
@@ -91,8 +95,15 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
         mode === "accept"
           ? people.ensureIdentifier(body.identifier)
           : await ctx.resolver.preview(signals);
-      if (mode === "accept") ctx.research?.enqueue(profile.id, "created");
-      return { profile, signals, existing: people.get(profile.id) !== null };
+      /* Accepting the lookup still succeeds while research is blocked
+         (issue #418, T3); the decision rides along separately. */
+      const research = mode === "accept" ? ctx.research?.enqueue(profile.id, "created") : undefined;
+      return {
+        profile,
+        signals,
+        existing: people.get(profile.id) !== null,
+        ...(research ? { research } : {}),
+      };
     } catch (error) {
       if (error instanceof PersonIdentifierError) {
         reply.code(400);
@@ -131,9 +142,12 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
       };
     }
     if (ctx.research) {
-      ctx.research.enqueue(profileId, "explicit");
-      reply.code(202);
-      return { profile, signals: null, existing: true };
+      const decision = ctx.research.enqueue(profileId, "explicit");
+      /* 202 only when work was genuinely queued or already accepted (issue
+         #418, T3) — never a promise of background work that was not. */
+      const accepted = decision.kind === "accepted" || decision.kind === "already-active";
+      reply.code(accepted ? 202 : 200);
+      return { profile, signals: null, existing: true, research: decision };
     }
     const enriched = await ctx.resolver.resolve({
       emails: profile.emails,

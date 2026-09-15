@@ -22,6 +22,7 @@ function capacityFailure(): ModelBoundaryError {
     populatedFields: [],
     emptyFields: [],
     timeoutMs: null,
+    usage: null,
   });
 }
 

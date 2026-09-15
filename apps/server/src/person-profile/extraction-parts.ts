@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod/v3";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { PersonDossierContentSchema } from "@chief-of-staff-demo/shared";
+import { PersonDossierContentSchema, RESULT_SHAPE_BINDINGS } from "@chief-of-staff-demo/shared";
 
 /**
  * What one Extraction Part asks the model for: a dossier slice plus the
@@ -54,6 +54,15 @@ export const ExtractionPartCheckpointSchema = z.object({
   part: z.string().max(20),
   transcriptId: z.string().max(160).optional(),
   recordedAt: z.string().max(40),
+  /**
+   * Provenance of the answer this checkpoint holds (spec #418 §6): the
+   * Result Shape Binding that actually answered. Optional, so a checkpoint
+   * written before the field existed still parses — its provenance stays
+   * `undefined` (unknown) rather than an invented value, and it is served
+   * exactly as before under its own key. Absent also covers an answer the
+   * boundary reported no attempt for; absent means unknown, never guessed.
+   */
+  binding: z.enum(RESULT_SHAPE_BINDINGS).optional(),
   result: ExtractionSchema,
 });
 export type ExtractionPartCheckpoint = z.infer<typeof ExtractionPartCheckpointSchema>;
@@ -73,6 +82,17 @@ const EXTRACTION_WIRE_SCHEMA = JSON.stringify(
  * identity and provenance context — the result shape, and the request
  * options. Content alone never keys a hit; a change to any one of these is a
  * miss by construction rather than by a rule someone has to remember.
+ *
+ * `options` is also where the effective dossier-extraction policy rides
+ * (spec #418 §6): its version, shape/slice strategy, output-token ceiling,
+ * requested reasoning effort and shape-description setting are all
+ * request-affecting, so a budget, effort, strategy or policy-version change
+ * invalidates only the parts that actually depended on the changed value —
+ * never the whole store. The key uses the *requested* effort, not the value
+ * a provider resolves it to: which advertised level a model supports is
+ * learned asynchronously against a capability catalogue at dispatch time,
+ * after this key is computed, so it cannot be a key input. The resolved
+ * effort is instead recorded per attempt on `ModelAttemptEvent.reasoningEffort`.
  */
 export function extractionPartKey(input: {
   operationId: string;

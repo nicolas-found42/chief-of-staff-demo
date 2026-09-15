@@ -42,6 +42,14 @@ export const MODEL_PURPOSES = {
      of dossier extraction (E1) without either becoming the other's
      fallback. */
   personProfileClaims: "Person profile claim extraction",
+  /* Dossier extraction's (E1) own purpose (issue #418, T2), split out of
+     `personResearch` the same way `personProfileClaims` (C1) was: the
+     one-time migration in `config.ts` copies each Workspace's effective
+     prior `personResearch` selection in, so introducing this purpose alone
+     changes no resolved request. From here the two can be tuned apart —
+     neither becomes the other's fallback, and this purpose is never a
+     generic-inheritance path to a fallback model (spec #418 §2). */
+  personDossierExtraction: "Person dossier extraction",
   researchPlanning: "Person research planning",
   evaluationJudge: "Research evaluation judge",
   contentGeneration: "Content outlines and drafts",
@@ -54,6 +62,7 @@ export type ModelPurpose = keyof typeof MODEL_PURPOSES;
 const PurposeModelsSchema = z.strictObject({
   personResearch: z.string().max(200).optional(),
   personProfileClaims: z.string().max(200).optional(),
+  personDossierExtraction: z.string().max(200).optional(),
   researchPlanning: z.string().max(200).optional(),
   evaluationJudge: z.string().max(200).optional(),
   contentGeneration: z.string().max(200).optional(),
@@ -63,6 +72,34 @@ const PurposeModelsSchema = z.strictObject({
   meetingDebrief: z.string().max(200).optional(),
 });
 const ModelsSchema = z.record(ProviderIdSchema, PurposeModelsSchema);
+
+/**
+ * Dossier extraction's (E1) shape strategy (spec #418 §§2, 5). Only `"full"`
+ * exists today — the current, unchanged complete Extraction request; a
+ * sliced strategy is added by a later ticket. Part of request/reuse identity
+ * and benchmark conditions once more than one member exists.
+ */
+export const EXTRACTION_SHAPE_STRATEGIES = ["full"] as const;
+export type ExtractionShapeStrategy = (typeof EXTRACTION_SHAPE_STRATEGIES)[number];
+
+/**
+ * Dossier extraction's (E1) request policy (spec #418 §2): read alongside
+ * its Settings purpose above rather than folded into it — a purpose override
+ * changes which model answers, this changes how the request to that model is
+ * shaped. Additive and versioned like the promotion record below, so a later
+ * policy change is an explicit version bump with its own default handling,
+ * never a silent reinterpretation of a stored value.
+ *
+ */
+export const DossierExtractionPolicySchema = z.strictObject({
+  version: z.literal(1),
+  /** Positive, bounded total-completion ceiling. Never an unspecified upstream default. */
+  outputTokenCeiling: z.number().int().positive(),
+  /** Requested effort, resolved through ADR-0096's nearest-advertised-level resolver. */
+  requestedEffort: z.string().max(200),
+  shapeStrategy: z.enum(EXTRACTION_SHAPE_STRATEGIES),
+});
+export type DossierExtractionPolicy = z.infer<typeof DossierExtractionPolicySchema>;
 
 /**
  * The automatic-promotion release restriction and the owner's explicit
@@ -234,6 +271,36 @@ export const ConfigSchema = z.strictObject({
       searxngUrl: z.string().optional(),
     })
     .default({}),
+  /**
+   * Dossier extraction's (E1) request policy (spec #418 §2). Its own field
+   * rather than folded into `models`: that map only ever holds a purpose's
+   * resolved model string, never how a request to it is shaped.
+   */
+  dossierExtractionPolicy: DossierExtractionPolicySchema.default({
+    version: 1,
+    /* Selected by spec #418 T8's live probe manifest
+       (docs/research/person-extraction-probes-2026-09-15.json), replacing
+       the unprobed 8192 placeholder. 65536 is `inception/mercury-2.5`'s own
+       declared per-route completion ceiling (mercury-capabilities-evidence.md;
+       read live via the capability fetch T1 already wires up), well inside
+       its 260,000-token context window and the ledger's separate context
+       check. The probe's one live success (response_format, deliberately
+       forced for the recovery cell — see the forced_tool_call finding below)
+       used only 2,249 of 65,536 output tokens on the densest fixture, so the
+       ceiling never bound the observed answer; there is no cost or latency
+       reason to choose a smaller candidate, and a larger real dossier keeps
+       the same headroom. Every ceiling candidate tested (8192-equivalent via
+       "existing-full", 16384, 65536) behaved identically on the
+       forced_tool_call binding this policy prefers. The ceiling was never the
+       variable that mattered: the binding's own failure was a `pattern`
+       keyword in a subschema position, stripped at the wire in #418, and no
+       candidate ceiling changed that outcome either way. */
+    outputTokenCeiling: 65536,
+    /* The existing low-effort intent (spec #418 §2), matching
+       `DEFAULT_REASONING_EFFORT` in the LLM boundary. */
+    requestedEffort: "low",
+    shapeStrategy: "full",
+  }),
   /**
    * Each Module's own configuration, namespaced under the Module rather than
    * joining the Shell's settings as more top-level keys — so a Module's

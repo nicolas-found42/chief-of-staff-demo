@@ -57,14 +57,18 @@ export class OwnerOnboarding {
 
   /**
    * Shell-called: the connected Google account changed, so hold the new one.
-   * A changed or dropped identity voids any confirmation that was pinned for
-   * the previous identity.
+   * Only an actively connected *different* identity voids a durable
+   * confirmation. Losing the live connection — including a transient read at
+   * startup, before `refreshConnectedIdentity` has ever settled (issue #418,
+   * T3 / #417 F3/F7) — is not evidence the confirmed owner changed, so it is
+   * never grounds to erase what is on disk; `confirmationStatus()` is how a
+   * caller distinguishes that indeterminate window from a genuine change.
    */
   setConnectedIdentity(email: string | null): void {
     const next = email?.trim().toLowerCase() ?? null;
     this.connectedEmail = next;
     const stored = this.read();
-    if (stored && stored.confirmedForGoogleEmail !== next) {
+    if (stored && next !== null && stored.confirmedForGoogleEmail !== next) {
       this.write(null);
     }
   }
@@ -91,6 +95,41 @@ export class OwnerOnboarding {
     if (!stored) return null;
     if (stored.confirmedForGoogleEmail !== this.connectedEmail) return null;
     return stored;
+  }
+
+  /**
+   * The durable confirmation loaded independently of the transient
+   * connected-identity refresh (issue #418, T3): the file on disk, or null,
+   * with no comparison against `connectedEmail`. What `confirmed()` compares
+   * against, exposed for a caller that needs to reason about the two
+   * separately instead of only their already-collapsed agreement.
+   */
+  durableConfirmation(): ConfirmedOwnerReference | null {
+    return this.read();
+  }
+
+  /**
+   * Three-way answer for a consumer (research readiness, in particular) that
+   * must not mistake "no determinate status yet" for "identity confirmed
+   * absent or changed" (issue #418, T3; #417 F3/F7):
+   *
+   * - `"confirmed"` — the durable reference matches the connected identity,
+   *   exactly what `confirmed() !== null` already means.
+   * - `"unresolved"` — a durable reference exists on disk, but the connected
+   *   identity is not currently known (disconnected, unconfigured, expired,
+   *   or simply not yet read this process). That is not proof the owner
+   *   changed; a genuine reconnect settles it back to `"confirmed"` without
+   *   ever having touched the file (`setConnectedIdentity` no longer erases
+   *   it on a null read).
+   * - `"absent"` — no durable reference exists at all, or one exists for a
+   *   *different*, actively connected identity. Both are a genuine "go
+   *   confirm the owner Profile in Settings" — never bypassed from here.
+   */
+  confirmationStatus(): "confirmed" | "unresolved" | "absent" {
+    if (this.confirmed()) return "confirmed";
+    const stored = this.read();
+    if (!stored) return "absent";
+    return this.connectedEmail === null ? "unresolved" : "absent";
   }
 
   outwardOwnerEmail(): string | null {

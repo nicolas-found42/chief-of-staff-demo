@@ -157,13 +157,17 @@ interface CompositeEntry {
  * `array` validates every element, indexed by position, which is structure. A
  * `record` holds free keys by the schema's own definition, so a key there is
  * recognized by construction and only its value is validated. A `scalar` is a
- * leaf: nothing can be nested inside one.
+ * leaf: nothing can be nested inside one. A `nullable` is the schema's own
+ * nullable channel around a non-scalar shape — `null` itself is always
+ * accepted, and a populated value is validated against `inner`. Unlike a
+ * bare `scalar`, it still fails closed on structure `inner` does not declare.
  */
 type CompositeShape =
   | { kind: "object"; keys: Record<string, CompositeShape> }
   | { kind: "array"; elements: CompositeShape }
   | { kind: "record"; values: CompositeShape }
-  | { kind: "scalar" };
+  | { kind: "scalar" }
+  | { kind: "nullable"; inner: CompositeShape };
 
 /** One `config.json` or `relay.json` table value. */
 type TableEntry = CategoryName | RemoteRecordName | CompositeEntry;
@@ -299,6 +303,7 @@ const PURPOSE_MODELS: CompositeShape = {
   keys: {
     personResearch: SCALAR,
     personProfileClaims: SCALAR,
+    personDossierExtraction: SCALAR,
     researchPlanning: SCALAR,
     evaluationJudge: SCALAR,
     contentGeneration: SCALAR,
@@ -386,6 +391,24 @@ const CONFIG_KEYS: Record<string, TableEntry> = {
   }),
   "ollama.baseUrl": "non-auth-workflow-configuration",
   "search.searxngUrl": "non-auth-workflow-configuration",
+  /* Dossier extraction's request policy (issue #418, T2): the output ceiling,
+     requested effort, shape strategy and an optional explicit fallback
+     provider/model, none of which names a remote record or holds a
+     credential — the fallback names a provider/model pair only, answered
+     through the Workspace's existing configured access. */
+  dossierExtractionPolicy: composite("non-auth-workflow-configuration", {
+    kind: "object",
+    keys: {
+      version: SCALAR,
+      outputTokenCeiling: SCALAR,
+      requestedEffort: SCALAR,
+      shapeStrategy: SCALAR,
+      fallback: {
+        kind: "nullable",
+        inner: { kind: "object", keys: { provider: SCALAR, model: SCALAR } },
+      },
+    },
+  }),
   "modules.youtube-trends.channels": composite("youtube-channels", {
     kind: "array",
     elements: {
@@ -691,6 +714,10 @@ function validateComposite(
         validateComposite(value, shape.values, `${key}.${child}`, entry, findings);
       return;
     }
+    case "nullable":
+      if (node === null) return;
+      validateComposite(node, shape.inner, key, entry, findings);
+      return;
   }
 }
 

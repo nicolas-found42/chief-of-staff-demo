@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
+import type { PersonResearchReadiness } from "@chief-of-staff-demo/shared";
 import { PersonResearchQueue } from "../../../apps/server/src/person-profile/research-queue.js";
 import { PersonResearch } from "../../../apps/server/src/person-profile/research.js";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
@@ -27,7 +28,13 @@ test("queue coalesces creation requests and counts failed calls without deferrin
     complete: async () => ({}),
   });
   let now = new Date("2026-09-05T12:00:00Z");
-  const deps = { workspaceDir: root, people, research, now: () => now, enabled: () => true };
+  const deps = {
+    workspaceDir: root,
+    people,
+    research,
+    now: () => now,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  };
   const first = new PersonResearchQueue(deps);
   first.configure({ paused: false });
   first.enqueue(person.id, "created");
@@ -63,7 +70,7 @@ test("one named lookup returns one Profile's queue record", () => {
     workspaceDir: root,
     people,
     research,
-    enabled: () => true,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
   });
   queue.enqueue(person.id, "created");
   const job = queue.job(person.id);
@@ -76,6 +83,291 @@ test("one named lookup returns one Profile's queue record", () => {
   job!.state = "researching";
   expect(queue.job(person.id)?.state).toBe("queued");
   expect(queue.job("no-such-profile")).toBeNull();
+});
+
+test("summary()/diagnostics()/aggregate() are bounded, one-profile, checkpoint-free, and side-effect-free", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-summary-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const other = people.create({ primaryEmail: "other@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [{ url: "https://example.com/maya", title: "Maya", snippet: "" }],
+    fetch: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: "maya@example.com built Atlas.",
+    }),
+    complete: async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.enqueue(person.id, "created");
+  queue.enqueue(other.id, "created");
+  await queue.tick();
+
+  expect(queue.summary("no-such-profile")).toBeNull();
+  const summary = queue.summary(person.id);
+  expect(summary?.profileId).toBe(person.id);
+  expect(summary?.state).toBe("empty");
+  // Named one-profile lookup, not a whole-queue clone: nothing about the
+  // other Profile's job leaks in, and no checkpoint or full attempt ledger
+  // is embedded (#417 F4, spec §7).
+  expect(summary).not.toHaveProperty("checkpoint");
+  expect(JSON.stringify(summary)).not.toContain(other.id);
+  expect(Buffer.byteLength(JSON.stringify(summary), "utf8")).toBeLessThanOrEqual(16 * 1024);
+
+  const page = queue.diagnostics(person.id);
+  expect(page).not.toBeNull();
+  expect(page?.entries.length).toBeLessThanOrEqual(50);
+  expect(page?.operationId).toBe(summary?.decisive?.operationId ?? page?.operationId);
+  expect(queue.diagnostics("no-such-profile")).toBeNull();
+
+  const aggregate = queue.aggregate();
+  expect(aggregate.totalJobs).toBe(2);
+  expect(aggregate.byState.empty).toBe(1);
+  expect(aggregate.byState.queued).toBe(1);
+  expect(aggregate).not.toHaveProperty("jobs");
+
+  // Side-effect-free: reading the summary/diagnostics/aggregate must never
+  // enqueue new work or change any job's state.
+  expect(queue.job(person.id)?.state).toBe("empty");
+  expect(queue.job(other.id)?.state).toBe("queued");
+});
+
+/**
+ * Typed enqueue decisions (issue #418, T3): `enqueue()` used to return void
+ * and no-op silently in four distinct situations (#417 F1). Every path now
+ * returns an honest, exhaustive decision.
+ */
+test("enqueue() returns a typed accepted decision naming the queued work", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  expect(queue.enqueue(person.id, "created")).toEqual({
+    kind: "accepted",
+    profileId: person.id,
+    jobState: "queued",
+  });
+});
+
+test("enqueue() reports already-active work instead of silently coalescing it", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.enqueue(person.id, "created");
+  expect(queue.enqueue(person.id, "viewed")).toEqual({
+    kind: "already-active",
+    profileId: person.id,
+    jobState: "queued",
+  });
+});
+
+test("enqueue() defers a non-urgent reason still inside the existing job's backoff window", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  let now = new Date("2026-09-05T12:00:00Z");
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    now: () => now,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.enqueue(person.id, "created");
+  await queue.tick();
+  now = new Date("2026-09-05T12:00:01Z");
+  /* "viewed" is only urgent once the existing job has aged 48h; freshly
+     completed, its refresh backoff is still well in the future. */
+  const decision = queue.enqueue(person.id, "viewed");
+  expect(decision.kind).toBe("deferred");
+  if (decision.kind === "deferred") {
+    expect(decision.profileId).toBe(person.id);
+    expect(Date.parse(decision.nextAt)).toBeGreaterThan(Date.parse(now.toISOString()));
+  }
+});
+
+test("enqueue() rejects on readiness, carrying the actual blocker, without touching the queue", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const readiness = {
+    state: "setup-required" as const,
+    reason: "owner-not-confirmed" as const,
+    nextAction: { label: "Open Settings", href: "/settings" },
+  };
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => readiness,
+  });
+  expect(queue.enqueue(person.id, "explicit")).toEqual({
+    kind: "rejected-readiness",
+    profileId: person.id,
+    readiness,
+  });
+  expect(queue.status().jobs).toHaveLength(0);
+});
+
+test("enqueue() rejects on the queue's own administrative pause via readiness()", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.configure({ paused: true });
+  expect(queue.enqueue(person.id, "explicit")).toEqual({
+    kind: "rejected-readiness",
+    profileId: person.id,
+    readiness: { state: "paused", reason: "administratively-paused" },
+  });
+});
+
+test("enqueue() reports inactive-profile for an archived Profile and for one that does not exist", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  people.archive(person.id);
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  expect(queue.enqueue(person.id, "explicit")).toEqual({
+    kind: "inactive-profile",
+    profileId: person.id,
+  });
+  expect(queue.enqueue("person_absent", "explicit")).toEqual({
+    kind: "inactive-profile",
+    profileId: "person_absent",
+  });
+});
+
+test("queue.readiness() reports paused only over an otherwise-ready readiness", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const setupRequired: PersonResearchReadiness = {
+    state: "setup-required",
+    reason: "provider-not-configured",
+  };
+  let base: PersonResearchReadiness = { state: "ready", reason: "ready" };
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => base,
+  });
+  expect(queue.readiness()).toEqual(base);
+  queue.configure({ paused: true });
+  expect(queue.readiness()).toEqual({ state: "paused", reason: "administratively-paused" });
+  /* A genuine setup problem is never hidden behind "paused". */
+  base = setupRequired;
+  expect(queue.readiness()).toEqual(setupRequired);
 });
 
 test.each(["archive", "correction", "merge", "privacy", "pause", "gate", "stop", "evidence"])(
@@ -114,7 +406,10 @@ test.each(["archive", "correction", "merge", "privacy", "pause", "gate", "stop",
       workspaceDir: root,
       people,
       research,
-      enabled: () => enabled,
+      readiness: () =>
+        enabled
+          ? { state: "ready" as const, reason: "ready" as const }
+          : { state: "setup-required" as const, reason: "provider-not-configured" as const },
       evidenceRevision: () => evidence,
     });
     queue.enqueue(person.id, "created");
@@ -156,7 +451,7 @@ test("repeated enqueues and absent removes do not rewrite the queue state file",
     people,
     research,
     now: () => now,
-    enabled: () => true,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
   });
   queue.enqueue(person.id, "created");
   const stateFile = join(root, "person-research.json");
@@ -233,7 +528,12 @@ test("resumes the retained document after interruption during extraction without
       };
     },
   });
-  const deps = { workspaceDir: root, people, research, enabled: () => true };
+  const deps = {
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  };
   const first = new PersonResearchQueue(deps);
   first.enqueue(person.id, "created");
   const work = first.tick();
@@ -301,7 +601,13 @@ test("continuous research finishes pending extraction before daily rollover", as
       };
     },
   });
-  const deps = { workspaceDir: root, people, research, now: () => now, enabled: () => true };
+  const deps = {
+    workspaceDir: root,
+    people,
+    research,
+    now: () => now,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  };
   const queue = new PersonResearchQueue(deps);
   queue.configure({ profileCalls: 3 });
   queue.enqueue(person.id, "created");
@@ -368,7 +674,7 @@ test("SIGKILL during extraction resumes durable evidence and remaining calls in 
       workspaceDir: root,
       people,
       research,
-      enabled: () => true,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
     });
     /* One model call was reserved before the process died; the retained
        document and that reservation both survive into the new owner. */
@@ -411,7 +717,7 @@ test("aged backfill wins fairly while concurrent ticks enforce configured concur
     people,
     research,
     now: () => now,
-    enabled: () => true,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
   });
   queue.configure({ concurrency: 1 });
   queue.enqueue(older.id, "backfill");
@@ -467,6 +773,182 @@ test.each(["the instance that removed it", "an instance still holding it"])(
   },
 );
 
+/**
+ * Issue #418, T5, spec §7; #417 F5: starting a new operation must never
+ * present a prior settled conclusion as its own live progress or failure.
+ */
+test("a new operation's live progress never shows the prior operation's conclusion, which stays available as labeled history", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-history-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  let pauseNextSearch = false;
+  const started = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<void>();
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => {
+      if (pauseNextSearch) {
+        pauseNextSearch = false;
+        started.resolve();
+        await gate.promise;
+      }
+      return [{ url: "https://example.com/maya", title: "Maya", snippet: "" }];
+    },
+    fetch: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: "maya@example.com built Atlas.",
+    }),
+    complete: async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.enqueue(person.id, "created");
+  await queue.tick();
+  const jobA = queue.job(person.id);
+  /* A "completed" operation clears its checkpoint (#228), so the NEXT
+     dispatch mints a genuinely new operation identity rather than resuming
+     this one -- the scenario spec §7 asks for. */
+  expect(jobA?.operation?.conclusion).toBe("completed");
+  expect(jobA?.checkpoint).toBeUndefined();
+  const operationAId = jobA?.operation?.operationId;
+  const detailA = jobA?.detail;
+  expect(operationAId).toBeTruthy();
+
+  pauseNextSearch = true;
+  queue.enqueue(person.id, "explicit");
+  const running = queue.tick(person.id);
+  await started.promise;
+
+  const mid = queue.job(person.id);
+  expect(mid?.state).toBe("researching");
+  expect(mid?.currentOperationId).toBeTruthy();
+  expect(mid?.currentOperationId).not.toBe(operationAId);
+  /* The defining fix (#417 F5): an active operation's own `detail` is
+     neutral progress, never the previous operation's terminal conclusion. */
+  expect(mid?.detail).toBe("Research is in progress.");
+  expect(mid?.detail).not.toBe(detailA);
+  expect(mid?.previousConclusion).toMatchObject({
+    operationId: operationAId,
+    conclusion: "completed",
+    detail: detailA,
+  });
+
+  const midSummary = queue.summary(person.id);
+  expect(midSummary?.state).toBe("researching");
+  expect(midSummary?.detail).toBe("Research is in progress.");
+  expect(midSummary?.previousConclusion?.operationId).toBe(operationAId);
+
+  gate.resolve();
+  await running;
+  const jobB = queue.job(person.id);
+  expect(jobB?.operation?.operationId).not.toBe(operationAId);
+  /* A's conclusion is still there, just no longer sitting in `detail`. */
+  expect(jobB?.previousConclusion?.operationId).toBe(operationAId);
+});
+
+test("restart preserves the decisive summary and the previous-conclusion history (issue #418, T5)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-restart-history-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  let pauseNextSearch = false;
+  const started = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<void>();
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => {
+      if (pauseNextSearch) {
+        pauseNextSearch = false;
+        started.resolve();
+        await gate.promise;
+      }
+      return [{ url: "https://example.com/maya", title: "Maya", snippet: "" }];
+    },
+    fetch: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: "maya@example.com built Atlas.",
+    }),
+    complete: async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.enqueue(person.id, "created");
+  await queue.tick();
+  const operationAId = queue.job(person.id)?.operation?.operationId;
+  expect(queue.job(person.id)?.operation?.decisiveExtraction?.classification).toBe(
+    "no-supported-facts",
+  );
+
+  pauseNextSearch = true;
+  queue.enqueue(person.id, "explicit");
+  const running = queue.tick(person.id);
+  await started.promise;
+  // Simulate a process restart while operation B is still in flight: a new
+  // queue instance loads the durable file directly, never resolving B.
+  const restarted = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  const restartedJob = restarted.job(person.id);
+  /* Shutdown demotes "researching" back to "queued" exactly as before this
+     change (#228); the new fields survive that demotion untouched. */
+  expect(restartedJob?.state).toBe("queued");
+  expect(restartedJob?.operation?.decisiveExtraction?.classification).toBe("no-supported-facts");
+  expect(restartedJob?.previousConclusion?.operationId).toBe(operationAId);
+  expect(restartedJob?.currentOperationId).not.toBe(operationAId);
+  gate.resolve();
+  await running;
+});
+
 /** One Workspace, two Profiles, and the deps every queue instance shares. */
 function shared(label: string) {
   const root = mkdtempSync(join(tmpdir(), `research-queue-${label}-`));
@@ -486,7 +968,12 @@ function shared(label: string) {
     root,
     kept,
     dropped,
-    deps: { workspaceDir: root, people, research, enabled: () => true },
+    deps: {
+      workspaceDir: root,
+      people,
+      research,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+    },
   };
 }
 

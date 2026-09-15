@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type {
   PersonDossier,
   PersonSourceDocument,
-  PersonResearchStatus,
+  PersonResearchAggregateStatus,
 } from "@chief-of-staff-demo/shared";
 import {
   PersonDossierPanel,
@@ -48,7 +48,12 @@ function client(): DossierClient {
       research: null,
     })),
     settings: vi.fn(async () =>
-      fromPartial<PersonResearchStatus>({ settings: { paused: false }, jobs: [] }),
+      fromPartial<PersonResearchAggregateStatus>({
+        settings: { paused: false },
+        totalJobs: 0,
+        byState: {},
+        running: 0,
+      }),
     ),
     history: vi.fn(async () => []),
     analysis: vi.fn(async () => null),
@@ -56,6 +61,8 @@ function client(): DossierClient {
     research: vi.fn(),
     detach: vi.fn(),
     configure: vi.fn(),
+    summary: vi.fn(async () => null),
+    diagnostics: vi.fn(async () => null),
   };
 }
 async function click(text: string) {
@@ -136,6 +143,19 @@ test("a poll notices external detachment while the reader is pending", async () 
       }),
       research: null,
     }));
+    /* Normal polling reads only the bounded summary and never re-reads the
+       dossier on its own (issue #418, T9, spec §7): it re-reads only when
+       the summary's live counters show the operation moved. Advancing the
+       job's `attempts` is what turns this into a reactive full refresh,
+       which is what actually notices the external detachment. */
+    api.summary = vi.fn(async () =>
+      fromPartial<Awaited<ReturnType<DossierClient["summary"]>>>({
+        state: "researching",
+        attempts: 1,
+        calls: 0,
+        sources: 0,
+      }),
+    );
     await act(async () => vi.advanceTimersByTimeAsync(4000));
     expect(container.querySelector("dialog")).toBeNull();
     await act(async () =>
