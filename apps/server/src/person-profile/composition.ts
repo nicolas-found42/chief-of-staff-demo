@@ -110,6 +110,13 @@ export interface PersonProfilesCompositionDeps {
    */
   completeClaims?: () => CompleteJson;
   /**
+   * Dossier extraction's (E1) own Settings purpose (issue #418, T2). Absent
+   * falls back to `complete`, the same no-op default `completeClaims` above
+   * uses: the split changes no resolved request until this purpose carries
+   * its own override.
+   */
+  completeDossier?: () => CompleteJson;
+  /**
    * The research planner's model access, on its own Settings purpose. Absent
    * means the operation expands from collected evidence only.
    */
@@ -220,14 +227,20 @@ export function composePersonProfiles(
         }
       : publicHttpFetchBytes);
 
+  /* Dossier extraction (E1) runs on its own configured purpose (issue #418,
+     T2), defaulting to the same `complete` every other caller of this
+     dependency already resolves — the ADR-0093 `completeClaims` default is
+     the precedent, and it keeps every existing composition/benchmark caller
+     that passes no `completeDossier` unaffected. */
+  const completeDossier = deps.completeDossier ?? deps.complete;
   const research = new PersonResearch({
     dossiers,
     people: profiles,
     search: deps.search,
-    complete: (request) => deps.complete()(request),
+    complete: (request) => completeDossier()(request),
     operationModels: () => {
       const plan = deps.researchTestPorts?.plan ?? deps.plan?.();
-      const complete = deps.researchTestPorts?.complete ?? deps.complete();
+      const complete = deps.researchTestPorts?.complete ?? completeDossier();
       const configuration: ModelConfigurationIdentity | undefined = complete.configuration;
       /* The resolved provider/model/baseUrl, opaque and stable for as long
          as the binding is unchanged — the identity validated Extraction Part
