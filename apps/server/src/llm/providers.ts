@@ -119,6 +119,26 @@ export interface CompletionRequest {
    */
   preferredMinThroughput?: number;
   /**
+   * The total-completion output ceiling this call must not exceed, mapped to
+   * whichever parameter the resolved adapter and route actually accept —
+   * never the same literal sent to every provider, never a second
+   * conflicting alias, and never a reasoning-only budget standing in for the
+   * whole completion. Distinct from `outputReserveTokens` below, which only
+   * sizes a budget reservation and never reaches the wire. An OpenRouter
+   * model whose declared capability cannot honor this ceiling fails before
+   * any wire dispatch rather than silently falling back to an unstated
+   * upstream default or trimming the request to fit (spec #418 §2).
+   */
+  outputTokenCeiling?: number | undefined;
+  /**
+   * Ask every binding — not only `prompt_only`, which always does — to
+   * restate the Result Shape's semantics in the system instructions: the one
+   * conforming result for `response_format`, the named tool's conforming
+   * arguments for `forced_tool_call`. Off by default so a caller that never
+   * opts in keeps its exact existing prompt (spec #418 §2, §4).
+   */
+  describeResultShape?: boolean | undefined;
+  /**
    * Route policy governing data retention and approved endpoints (#341, #356, MWR-051).
    */
   routePolicy?: TranscriptRoutePolicy | undefined;
@@ -212,6 +232,10 @@ interface RequestDeadline {
      when no effort level is sent. Assigned once per call beside the
      resolution above; the central stamp reads it like the rest list. */
   reasoningEffort?: string | undefined;
+  /* The thinking depth the caller asked for, before resolution, on the same
+     call this `reasoningEffort` was resolved for (spec #418 §2). Assigned
+     alongside it; undefined wherever `reasoningEffort` is never resolved. */
+  requestedReasoningEffort?: string | undefined;
   /* Assigned by the provider on a succeeded wire response, before the
      central success report is written, so the succeeded attempt carries the
      token/cost/fingerprint facts the wire reported. */
@@ -1286,8 +1310,19 @@ async function openaiComplete(
       /* Best-effort reproducibility: hosted inference stays non-deterministic
          even with a seed, so the fingerprint is recorded beside it. */
       ...(request.seed !== undefined ? { seed: request.seed } : {}),
+      ...(request.outputTokenCeiling !== undefined
+        ? { max_tokens: request.outputTokenCeiling }
+        : {}),
       messages: [
-        { role: "system", content: request.system },
+        {
+          role: "system",
+          content: shapedSystem(
+            "response_format",
+            request.system,
+            schema,
+            request.describeResultShape,
+          ),
+        },
         { role: "user", content: request.user },
       ],
       response_format: {
@@ -1315,8 +1350,11 @@ async function anthropicComplete(
     { "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
     {
       model: cfg.model,
-      max_tokens: 8192,
-      system: request.system,
+      /* Anthropic requires this field on every call; an explicit ceiling
+         becomes the value sent, and the prior hardcoded default remains the
+         fallback for a caller that supplies none (spec #418 §2). */
+      max_tokens: request.outputTokenCeiling ?? 8192,
+      system: shapedSystem("forced_tool_call", request.system, schema, request.describeResultShape),
       messages: [{ role: "user", content: request.user }],
       tools: [
         {
@@ -1347,11 +1385,25 @@ async function geminiComplete(
     url,
     {},
     {
-      systemInstruction: { parts: [{ text: request.system }] },
+      systemInstruction: {
+        parts: [
+          {
+            text: shapedSystem(
+              "response_format",
+              request.system,
+              responseSchema,
+              request.describeResultShape,
+            ),
+          },
+        ],
+      },
       contents: [{ role: "user", parts: [{ text: request.user }] }],
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema,
+        ...(request.outputTokenCeiling !== undefined
+          ? { maxOutputTokens: request.outputTokenCeiling }
+          : {}),
       },
     },
     deadline,
@@ -1362,14 +1414,47 @@ async function geminiComplete(
 }
 
 /**
+ * One authoritative wording of the Result Shape's semantics, worded for
+ * whichever binding a call actually used (spec #418 §4): the field
+ * descriptions travel inside the schema itself, so only which container
+ * holds the answer — and how firmly the provider enforces it — differs.
+ */
+function resultShapeInstruction(binding: ResultShapeBinding, schema: JsonObject): string {
+  const rendered = JSON.stringify(schema, null, 2);
+  if (binding === "response_format")
+    return `Return the one result conforming to this schema:\n${rendered}`;
+  if (binding === "forced_tool_call")
+    return `Call the "save_extraction" tool with arguments conforming to this schema:\n${rendered}`;
+  return `Return exactly one JSON object matching this schema, and nothing else — no prose, no markdown fences, no fields beyond it:\n${rendered}`;
+}
+
+/**
  * The prompt-only binding has no provider-side shape constraint, so the Result
  * Shape itself travels in the prompt: the field descriptions alone leave the
  * model without the schema. Provider-constrained bindings keep the Module's
  * prompt verbatim — the shape rides in response_format or in the tool's
- * parameters.
+ * parameters — unless the caller opts into stating it in words too.
  */
 function promptOnlySystem(system: string, schema: JsonObject): string {
-  return `${system}\n\nReturn exactly one JSON object matching this schema, and nothing else — no prose, no markdown fences, no fields beyond it:\n${JSON.stringify(schema, null, 2)}`;
+  return `${system}\n\n${resultShapeInstruction("prompt_only", schema)}`;
+}
+
+/**
+ * The system text actually sent for one binding. `prompt_only` always states
+ * the Result Shape's semantics — it is the only thing constraining the
+ * answer. `response_format`/`forced_tool_call` add them only when the caller
+ * opts in via `describeResultShape`; unset, they send the caller's system
+ * text unchanged, exactly as before that option existed (spec #418 §2, §4).
+ */
+function shapedSystem(
+  binding: ResultShapeBinding,
+  system: string,
+  schema: JsonObject,
+  describeResultShape: boolean | undefined,
+): string {
+  if (binding === "prompt_only") return promptOnlySystem(system, schema);
+  if (!describeResultShape) return system;
+  return `${system}\n\n${resultShapeInstruction(binding, schema)}`;
 }
 
 /** The OpenAI-shaped chat-completion body that asks for one Result Shape Binding. */
@@ -1385,13 +1470,13 @@ function chatCompletionBody(
     messages: [
       {
         role: "system",
-        content:
-          binding === "prompt_only" ? promptOnlySystem(request.system, schema) : request.system,
+        content: shapedSystem(binding, request.system, schema, request.describeResultShape),
       },
       { role: "user", content: request.user },
     ],
   };
   if (request.temperature !== undefined) body.temperature = request.temperature;
+  if (request.outputTokenCeiling !== undefined) body.max_tokens = request.outputTokenCeiling;
   /* Best-effort reproducibility, OpenAI family only: the other wires have no
      seed parameter, and Anthropic's is a fixed zero by another name. */
   if (request.seed !== undefined && (cfg.provider === "openai" || cfg.provider === "openrouter"))
