@@ -18,6 +18,100 @@ export const ExtractionSchema = PersonDossierContentSchema.extend({
 export type Extraction = z.infer<typeof ExtractionSchema>;
 
 /**
+ * The three field-complete slice requests a `"sliced"` shape strategy (spec
+ * #418 §5) asks the same model for, in place of one full-shape request. Each
+ * is a disjoint responsibility over the same unchanged `ExtractionSchema`:
+ * identity/source metadata, grounded claims, and dossier structure (which
+ * refers to admitted claim identifiers, never invents its own). Combining
+ * one of each, in order, reproduces exactly the fields `ExtractionSchema`
+ * requires — nothing added, nothing dropped.
+ */
+export const EXTRACTION_SLICES = ["identity", "claims", "structure"] as const;
+export type ExtractionSlice = (typeof EXTRACTION_SLICES)[number];
+
+/** Identity/source metadata slice: the document-level facts, nothing else. */
+export const IdentitySliceSchema = ExtractionSchema.pick({
+  fullName: true,
+  employer: true,
+  sourceClass: true,
+  author: true,
+  publishedAt: true,
+});
+
+/**
+ * Grounded-claims slice: the complete claim records the validator requires.
+ * Loosely typed on the wire, like `parsePartial`'s own relaxed pre-validation
+ * shape (`research.ts`) — a record's real shape is enforced once, after
+ * every slice is merged, so a slice schema only needs to keep the model from
+ * answering fields that are not its responsibility.
+ */
+export const ClaimsSliceSchema = z.object({
+  claims: z.array(z.unknown()).max(2000),
+});
+
+/**
+ * Dossier-structure slice: works/expertise/connections/sections. These refer
+ * to claim identifiers admitted by the claims slice — the caller supplies
+ * those identifiers in the request; nothing here re-invents a claim.
+ */
+export const StructureSliceSchema = z.object({
+  works: z.array(z.unknown()).max(500),
+  expertise: z.array(z.unknown()).max(200),
+  connections: z.array(z.unknown()).max(1000),
+  sections: z.array(z.unknown()).max(8),
+});
+
+/**
+ * Merges the three slice answers into one raw object shaped like
+ * `ExtractionSchema`, ready for the same validation, grounding, attribution
+ * and dependent-record pruning every full-shape reply already goes through
+ * (`parsePartial`). Each slice's own fields are disjoint by schema, so this
+ * is a plain merge — a slice that answered with the wrong shape (or not at
+ * all) simply leaves its fields absent, which the downstream `.parse()`
+ * rejects exactly as it rejects any other malformed reply. Never invents a
+ * value for a missing slice.
+ */
+export function mergeExtractionSlices(
+  identity: unknown,
+  claims: unknown,
+  structure: unknown,
+): Record<string, unknown> {
+  const asRecord = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  return { ...asRecord(identity), ...asRecord(claims), ...asRecord(structure) };
+}
+
+/**
+ * Best-effort, non-throwing extraction of the identifiers a dossier-structure
+ * slice request may reference (spec #418 §5: "supply the minimum validated
+ * identifiers dependent slices need"). Read directly off the claims slice's
+ * raw reply, before grounding/attribution — final admission still runs once,
+ * on the merged result, in `parsePartial`; a claim referenced here that does
+ * not survive grounding drops its dependents there exactly as today's
+ * dependent-record pruning already does. Never widens what the structure
+ * slice is allowed to invent — it narrows what it may point at.
+ */
+export function draftClaimRefs(
+  claimsRaw: unknown,
+): { id: string; section: string; statement: string }[] {
+  const claims =
+    claimsRaw !== null &&
+    typeof claimsRaw === "object" &&
+    Array.isArray((claimsRaw as { claims?: unknown }).claims)
+      ? (claimsRaw as { claims: unknown[] }).claims
+      : [];
+  return claims.flatMap((claim) => {
+    if (claim === null || typeof claim !== "object") return [];
+    const { id, section, statement } = claim as Record<string, unknown>;
+    return typeof id === "string" && typeof section === "string" && typeof statement === "string"
+      ? [{ id, section, statement: statement.slice(0, 300) }]
+      : [];
+  });
+}
+
+/**
  * The reuse-key version (issue #381, R1). Bumping it is the rollback for the
  * key's own semantics: every checkpoint written under an older version is a
  * miss, nothing stored is rewritten, and no research has to be re-run.

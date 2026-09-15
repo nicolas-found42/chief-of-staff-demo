@@ -74,12 +74,19 @@ const PurposeModelsSchema = z.strictObject({
 const ModelsSchema = z.record(ProviderIdSchema, PurposeModelsSchema);
 
 /**
- * Dossier extraction's (E1) shape strategy (spec #418 §§2, 5). Only `"full"`
- * exists today — the current, unchanged complete Extraction request; a
- * sliced strategy is added by a later ticket. Part of request/reuse identity
- * and benchmark conditions once more than one member exists.
+ * Dossier extraction's (E1) shape strategy (spec #418 §§2, 5). `"full"` is
+ * the original, unchanged complete Extraction request; `"sliced"` (spec #418
+ * §5) asks the same model for the same unchanged Extraction across three
+ * field-complete slice requests (identity/source metadata, grounded claims,
+ * dossier structure) instead of one. Part of request/reuse identity and
+ * benchmark conditions.
+ *
+ * `"sliced"` is implemented but MUST NOT become the default — T8's live
+ * probes decide whether it is ever enabled; see
+ * `DossierExtractionPolicySchema.shapeStrategy`'s default below, which stays
+ * `"full"`.
  */
-export const EXTRACTION_SHAPE_STRATEGIES = ["full"] as const;
+export const EXTRACTION_SHAPE_STRATEGIES = ["full", "sliced"] as const;
 export type ExtractionShapeStrategy = (typeof EXTRACTION_SHAPE_STRATEGIES)[number];
 
 /**
