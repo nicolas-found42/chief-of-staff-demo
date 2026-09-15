@@ -107,3 +107,131 @@ describe("ConfigStore.getForPurpose", () => {
     expect(store.getForPurpose("personProfileClaims").model).toBe("research-model");
   });
 });
+
+describe("ConfigStore dossier-extraction purpose migration (issue #418, T2)", () => {
+  it("seeds dossier extraction from a pre-existing personResearch override exactly once, leaving planning and discovery untouched", () => {
+    const root = workspaceWithConfig("dossier-purpose-preexisting", {
+      provider: "openrouter",
+      model: "z-ai/glm-5.3-flash",
+      apiKey: "fixture-key",
+      // Set before `personDossierExtraction` existed: pre-upgrade, this model
+      // answered dossier extraction through `personResearch`.
+      models: {
+        openrouter: {
+          personResearch: "research-model",
+          personProfileClaims: "claims-model",
+          researchPlanning: "planning-model",
+        },
+      },
+    });
+    const store = new ConfigStore(join(root, "config.json"));
+    store.load();
+    // The prior effective dossier-extraction choice is preserved...
+    expect(store.getForPurpose("personDossierExtraction").model).toBe("research-model");
+    // ...and discovery-claim and planning choices are left exactly as they were.
+    expect(store.getForPurpose("personProfileClaims").model).toBe("claims-model");
+    expect(store.getForPurpose("researchPlanning").model).toBe("planning-model");
+    expect(store.getForPurpose("personResearch").model).toBe("research-model");
+
+    // The seed is persisted, not a live fallback: moving `personResearch`
+    // later must not carry dossier extraction along with it, and it must not
+    // re-track a later change either (a true one-time migration).
+    store.update({ models: { openrouter: { personResearch: "moved-later" } } });
+    expect(store.getForPurpose("personResearch").model).toBe("moved-later");
+    expect(store.getForPurpose("personDossierExtraction").model).toBe("research-model");
+  });
+
+  it("inherits the shared base model for dossier extraction when personResearch was never overridden", () => {
+    const root = workspaceWithConfig("dossier-purpose-inherited", {
+      provider: "openrouter",
+      model: "inception/mercury-2.5",
+      apiKey: "fixture-key",
+    });
+    const store = new ConfigStore(join(root, "config.json"));
+    store.load();
+    expect(store.getForPurpose("personDossierExtraction").model).toBe(
+      store.getForPurpose("personResearch").model,
+    );
+    expect(store.getForPurpose("personDossierExtraction").model).toBe("inception/mercury-2.5");
+  });
+
+  it("never re-seeds an explicitly-cleared dossier-extraction override", () => {
+    const root = workspaceWithConfig("dossier-purpose-cleared", {
+      provider: "openrouter",
+      model: "inception/mercury-2.5",
+      apiKey: "fixture-key",
+      models: {
+        openrouter: {
+          personResearch: "research-model",
+          // Explicitly cleared back to empty: distinct from `undefined`, and
+          // must never be re-seeded from `personResearch`.
+          personDossierExtraction: "",
+        },
+      },
+    });
+    const store = new ConfigStore(join(root, "config.json"));
+    store.load();
+    expect(store.getForPurpose("personDossierExtraction").model).toBe("inception/mercury-2.5");
+    expect(store.getForPurpose("personResearch").model).toBe("research-model");
+  });
+
+  it("lets a dossier-extraction override diverge from personResearch without moving it", () => {
+    const root = workspaceWithConfig("dossier-purpose-override", {
+      provider: "openrouter",
+      model: "inception/mercury-2.5",
+      apiKey: "fixture-key",
+    });
+    const store = new ConfigStore(join(root, "config.json"));
+    store.load();
+    store.update({
+      models: { openrouter: { personDossierExtraction: "z-ai/glm-5.3-flash" } },
+    });
+    expect(store.getForPurpose("personDossierExtraction").model).toBe("z-ai/glm-5.3-flash");
+    expect(store.getForPurpose("personResearch").model).toBe("inception/mercury-2.5");
+  });
+});
+
+describe("ConfigStore.dossierExtractionPolicy (issue #418, T2)", () => {
+  it("defaults to a positive bounded output ceiling, the existing low-effort intent, the full shape, and fallback disabled", () => {
+    const root = workspaceWithConfig("dossier-policy-default", {
+      provider: "openrouter",
+      model: "inception/mercury-2.5",
+      apiKey: "fixture-key",
+    });
+    const store = new ConfigStore(join(root, "config.json"));
+    const config = store.load();
+    expect(config.dossierExtractionPolicy).toEqual({
+      version: 1,
+      outputTokenCeiling: 8192,
+      requestedEffort: "low",
+      shapeStrategy: "full",
+      fallback: null,
+    });
+  });
+
+  it("keeps fallback disabled even after a dossier-extraction model override, and stays disabled until explicitly configured", () => {
+    const root = workspaceWithConfig("dossier-policy-no-inheritance", {
+      provider: "openrouter",
+      model: "inception/mercury-2.5",
+      apiKey: "fixture-key",
+    });
+    const store = new ConfigStore(join(root, "config.json"));
+    store.load();
+    store.update({
+      models: { openrouter: { personDossierExtraction: "z-ai/glm-5.3-flash" } },
+    });
+    expect(store.get().dossierExtractionPolicy.fallback).toBeNull();
+
+    store.setDossierExtractionPolicy({
+      version: 1,
+      outputTokenCeiling: 8192,
+      requestedEffort: "low",
+      shapeStrategy: "full",
+      fallback: { provider: "anthropic", model: "claude-sonnet-5" },
+    });
+    expect(store.get().dossierExtractionPolicy.fallback).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+    });
+  });
+});

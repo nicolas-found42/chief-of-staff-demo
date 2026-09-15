@@ -302,6 +302,13 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      resolved request today and lets a Settings override tune it alone
      later. */
   const peopleClaimsCompleteJson = () => completeForPurpose("personProfileClaims");
+  /* Dossier extraction (E1) is the other no-op purpose split from
+     `personResearch` (issue #418, T2): resolving through its own purpose,
+     seeded once from each Workspace's prior effective `personResearch`
+     selection, changes no resolved request today and lets a Settings
+     override tune it alone later, independently of claim extraction (C1)
+     above. */
+  const peopleDossierCompleteJson = () => completeForPurpose("personDossierExtraction");
   /* One shared PublicSearch instance for every consumer: one home IP shares
      every provider's rate limits, so the query cache and the per-provider
      cooldowns must be app-wide rather than per consumer — three separate
@@ -330,6 +337,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     search: publicSearch,
     complete: peopleCompleteJson,
     completeClaims: peopleClaimsCompleteJson,
+    completeDossier: peopleDossierCompleteJson,
     plan: () => completeForPurpose("researchPlanning"),
     confirmedTranscripts: (profileId) =>
       transcriptIdentityService.confirmedMentions(profileId).flatMap((mention) => {
