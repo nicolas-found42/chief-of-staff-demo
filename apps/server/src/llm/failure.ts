@@ -38,6 +38,16 @@ export interface ModelBoundaryFailureInput {
   /** The ceiling that fired, for `request_timeout`. */
   timeoutMs?: number;
   /**
+   * Token facts the provider reported alongside this failure, when known.
+   * Absent (or `null`) means the provider reported no usage — never that
+   * usage was zero.
+   */
+  usage?: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    costUsd: number | null;
+  } | null;
+  /**
    * The upstream a streaming response named before it stalled.
    *
    * A refusal body names its own upstream, but a stream that times out has no
@@ -217,6 +227,7 @@ export function modelBoundaryFailure(input: ModelBoundaryFailureInput): ModelBou
     populatedFields: fields.populated,
     emptyFields: fields.empty,
     timeoutMs: input.timeoutMs ?? null,
+    usage: input.usage ?? null,
   });
 }
 
@@ -345,6 +356,7 @@ const CLAUSES: Record<ModelBoundaryClassification, string> = {
   upstream_error: "the provider carried an upstream failure",
   unusable_shape: "the reply carried no answer where the binding puts it",
   answer_not_json: "the answer field does not hold JSON",
+  output_ceiling_unsupported: "the requested output ceiling cannot be honored on this route",
 };
 
 /** One sentence for a person reading a Run, built from the facts and nothing else. */

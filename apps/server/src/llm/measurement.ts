@@ -32,6 +32,8 @@ export function requestFingerprint(cfg: LlmConfig, request: CompletionRequest): 
         request.seed ?? null,
         request.compactWireNames ?? false,
         request.preferredMinThroughput ?? null,
+        request.outputTokenCeiling ?? null,
+        request.describeResultShape ?? false,
       ]),
     )
     .digest("hex");

@@ -39,6 +39,7 @@ describe("modelBrandProfileProposer", () => {
           populatedFields: [],
           emptyFields: [],
           timeoutMs: null,
+          usage: null,
         });
       }
       return VALID_SECTIONS;
