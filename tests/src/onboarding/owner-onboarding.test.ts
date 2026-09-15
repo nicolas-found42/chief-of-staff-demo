@@ -156,13 +156,15 @@ describe("identity change", () => {
     expect(onboarding.confirmed()).toBeNull();
   });
 
-  it("does not resurrect the confirmation by reconnecting the same account", () => {
-    confirmOwner();
+  it("recovers the confirmation once the same account reconnects after a disconnect (#418 T3, #417 F3)", () => {
+    const confirmed = confirmOwner();
 
     onboarding.setConnectedIdentity(null);
+    expect(onboarding.confirmed()).toBeNull();
+
     onboarding.setConnectedIdentity("ada@example.com");
 
-    expect(onboarding.confirmed()).toBeNull();
+    expect(onboarding.confirmed()).toEqual(confirmed);
   });
 });
 
@@ -192,16 +194,17 @@ describe("durability across restart", () => {
     expect(restarted.confirmed()).toBeNull();
   });
 
-  it("invalidates a stored confirmation when restart observes a disconnected identity", () => {
+  it("keeps the durable confirmation across a restart that first observes a disconnected identity (#418 T3, #417 F3)", () => {
     const profile = createProfile();
     onboarding.setConnectedIdentity("ada@example.com");
-    onboarding.confirm(profile.id);
+    const confirmed = onboarding.confirm(profile.id);
 
     const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
     restarted.setConnectedIdentity(null);
+    expect(restarted.confirmed()).toBeNull();
     restarted.setConnectedIdentity("ada@example.com");
 
-    expect(restarted.confirmed()).toBeNull();
+    expect(restarted.confirmed()).toEqual(confirmed);
   });
 
   it("stores no credential material in the confirmation record", () => {
@@ -254,10 +257,10 @@ describe("durability across restart", () => {
     expect(restarted.confirmed()).toEqual(confirmed);
   });
 
-  it("invalidates the persisted owner when cleared Google configuration is observed after restart", async () => {
+  it("preserves the durable owner when cleared Google configuration is observed after restart (#418 T3, #417 F3)", async () => {
     const profile = createProfile();
     onboarding.setConnectedIdentity("ada@example.com");
-    onboarding.confirm(profile.id);
+    const confirmed = onboarding.confirm(profile.id);
     const config = new ConfigStore(join(workspaceDir, "config.json"));
     config.load();
     config.update({ google: { clientId: "client-id", clientSecret: "client-secret" } });
@@ -268,26 +271,32 @@ describe("durability across restart", () => {
 
     await restarted.refreshConnectedIdentity(() => google.state());
 
+    /* No identity is connected at all here — that is not evidence the
+       confirmed owner changed (issue #418, T3; #417 F3/F7), so the durable
+       reference survives and a later reconnect to the SAME account recovers
+       it without asking the owner to reconfirm anything. */
     expect(restarted.confirmed()).toBeNull();
-    const afterInvalidation = new OwnerOnboarding({ people: profiles, workspaceDir });
-    afterInvalidation.setConnectedIdentity("ada@example.com");
-    expect(afterInvalidation.confirmed()).toBeNull();
+    expect(restarted.durableConfirmation()).toEqual(confirmed);
+    const afterReconnect = new OwnerOnboarding({ people: profiles, workspaceDir });
+    afterReconnect.setConnectedIdentity("ada@example.com");
+    expect(afterReconnect.confirmed()).toEqual(confirmed);
   });
 
   it.each(["disconnected", "expired"] as const)(
-    "invalidates the persisted owner when Google is explicitly %s",
+    "preserves the durable owner when Google is explicitly %s, and recovers it on reconnect (#418 T3, #417 F3)",
     async (state) => {
       const profile = createProfile();
       onboarding.setConnectedIdentity("ada@example.com");
-      onboarding.confirm(profile.id);
+      const confirmed = onboarding.confirm(profile.id);
       const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
 
       await restarted.refreshConnectedIdentity(async () => ({ state, email: null }));
 
       expect(restarted.confirmed()).toBeNull();
-      const afterInvalidation = new OwnerOnboarding({ people: profiles, workspaceDir });
-      afterInvalidation.setConnectedIdentity("ada@example.com");
-      expect(afterInvalidation.confirmed()).toBeNull();
+      expect(restarted.durableConfirmation()).toEqual(confirmed);
+      const afterReconnect = new OwnerOnboarding({ people: profiles, workspaceDir });
+      afterReconnect.setConnectedIdentity("ada@example.com");
+      expect(afterReconnect.confirmed()).toEqual(confirmed);
     },
   );
 
@@ -306,6 +315,54 @@ describe("durability across restart", () => {
     const afterInvalidation = new OwnerOnboarding({ people: profiles, workspaceDir });
     afterInvalidation.setConnectedIdentity("ada@example.com");
     expect(afterInvalidation.confirmed()).toBeNull();
+  });
+});
+
+describe("confirmationStatus (#418 T3, #417 F3/F7)", () => {
+  it("is absent when nothing has ever been confirmed", () => {
+    onboarding.setConnectedIdentity("ada@example.com");
+
+    expect(onboarding.confirmationStatus()).toBe("absent");
+    expect(onboarding.durableConfirmation()).toBeNull();
+  });
+
+  it("is confirmed once the connected identity matches the durable reference", () => {
+    const profile = createProfile();
+    onboarding.setConnectedIdentity("ada@example.com");
+    onboarding.confirm(profile.id);
+
+    expect(onboarding.confirmationStatus()).toBe("confirmed");
+  });
+
+  it("is unresolved — not absent — while a durable reference is on file but no live identity is known yet", () => {
+    const profile = createProfile();
+    onboarding.setConnectedIdentity("ada@example.com");
+    onboarding.confirm(profile.id);
+
+    /* A freshly constructed instance over the same Workspace, before its
+       first `refreshConnectedIdentity` (or any `setConnectedIdentity` call)
+       resolves — the literal startup window between the HTTP listener
+       starting and `shell.start()` completing (main.ts:24 vs :33). */
+    const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
+
+    expect(restarted.confirmationStatus()).toBe("confirmed");
+    /* The constructor itself already seeds the live identity from the
+       durable file, so this instance is confirmed before any refresh — the
+       ambiguity only shows up once a refresh reports no determinate
+       identity (below). */
+    restarted.setConnectedIdentity(null);
+    expect(restarted.confirmationStatus()).toBe("unresolved");
+    expect(restarted.durableConfirmation()).toMatchObject({ profileId: profile.id });
+  });
+
+  it("is absent once a genuinely different identity is actively connected", () => {
+    const profile = createProfile();
+    onboarding.setConnectedIdentity("ada@example.com");
+    onboarding.confirm(profile.id);
+
+    onboarding.setConnectedIdentity("someoneelse@example.com");
+
+    expect(onboarding.confirmationStatus()).toBe("absent");
   });
 });
 
