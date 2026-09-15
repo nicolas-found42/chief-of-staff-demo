@@ -47,7 +47,7 @@ import {
   MODEL_SMALL_REQUEST_TIMEOUT_MS,
   type ModelAttemptEvent,
   type ProviderId,
-} from "@chief-of-staff-demo/shared";
+} from "../packages/shared/src/index.js";
 import * as boundaryFixtures from "../tests/src/modules/person-research-extraction-boundary-fixtures.js";
 
 // zod-to-json-schema is a dependency of apps/server, not the repo root;
@@ -602,7 +602,14 @@ export async function runManifest(
 // ---------------------------------------------------------------------------
 
 const OUT_PATH = "docs/research/person-extraction-probes-2026-09-15.json";
-const RAW_ARTIFACT_DIR = "artifacts/person-benchmark";
+/*
+ * A dated subdirectory, not a loose file directly under
+ * artifacts/person-benchmark/: `.gitignore` ignores every subdirectory there
+ * except a short allow-list (diagnostics-2026-09-06/, etc.), while loose
+ * top-level files in that directory are tracked by default. This local copy
+ * is not meant to be committed, so it must live in an ignored subdirectory.
+ */
+const RAW_ARTIFACT_DIR = "artifacts/person-benchmark/extraction-probes-2026-09-15";
 
 export async function main(argv: string[]): Promise<number> {
   const confirmed = argv.includes("--confirm-live-spend");
