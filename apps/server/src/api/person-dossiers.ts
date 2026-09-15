@@ -18,9 +18,13 @@ export function registerPersonDossierApi(
     history?: (profileId: string) => PersonRelationshipRecord[];
   },
 ): void {
+  /* The bounded per-profile summary (issue #418, T5, spec §7), not the whole
+     PersonResearchJob: the dossier response used to carry the unbounded
+     research-job payload (full attempt ledger, checkpoint, visited-lead
+     lists) alongside the dossier itself (#417 F4). */
   const view = (id: string) => ({
     dossier: deps.dossiers.get(id),
-    research: deps.queue.job(id),
+    research: deps.queue.summary(id),
   });
   app.get<{ Params: { profileId: string; revision: string } }>(
     "/api/people/:profileId/dossier/revisions/:revision",
@@ -66,7 +70,10 @@ export function registerPersonDossierApi(
     if (!input.success) return reply.code(400).send({ error: "invalid-dossier-query" });
     return queries.search(input.data);
   });
-  app.get("/api/people/research/status", async () => deps.queue.status());
+  /* The independently bounded queue-wide projection (issue #418, T5, spec
+     §7), not the whole-queue clone `status()` deep-copies every job for
+     (#417 F4): this route is what the dossier panel polled every cycle. */
+  app.get("/api/people/research/status", async () => deps.queue.aggregate());
   app.patch("/api/people/research/settings", async (request, reply) => {
     const parsed = PersonResearchSettingsSchema.partial().strict().safeParse(request.body);
     if (!parsed.success)
@@ -77,8 +84,32 @@ export function registerPersonDossierApi(
     /* The queue owns the merge onto its live settings; sending it a whole
        object here would re-assert `paused` on every unrelated edit and cancel
        in-flight research for a changed refresh interval (#207). */
-    return deps.queue.configure(parsed.data);
+    deps.queue.configure(parsed.data);
+    return deps.queue.aggregate();
   });
+  app.get<{ Params: { profileId: string }; Querystring: { cursor?: string } }>(
+    "/api/people/:profileId/research/summary",
+    async (request, reply) => {
+      const id = request.params.profileId;
+      if (!deps.people.get(id)) return reply.code(404).send({ error: "profile-not-found" });
+      /* Side-effect-free (issue #418, T5, spec §7): this is what normal
+         polling reads instead of the dossier route, and it never enqueues. */
+      return { summary: deps.queue.summary(id) };
+    },
+  );
+  app.get<{ Params: { profileId: string }; Querystring: { cursor?: string } }>(
+    "/api/people/:profileId/research/diagnostics",
+    async (request, reply) => {
+      const id = request.params.profileId;
+      if (!deps.people.get(id)) return reply.code(404).send({ error: "profile-not-found" });
+      /* Paged, source-free operation detail on explicit demand (spec §7);
+         side-effect-free like the summary route. */
+      return deps.queue.diagnostics(
+        id,
+        request.query.cursor === undefined ? {} : { cursor: request.query.cursor },
+      );
+    },
+  );
   app.get<{ Params: { profileId: string } }>(
     "/api/people/:profileId/dossier",
     async (request, reply) => {
