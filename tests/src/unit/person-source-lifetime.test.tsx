@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type {
   PersonDossier,
   PersonSourceDocument,
-  PersonResearchStatus,
+  PersonResearchAggregateStatus,
 } from "@chief-of-staff-demo/shared";
 import {
   PersonDossierPanel,
@@ -48,7 +48,12 @@ function client(): DossierClient {
       research: null,
     })),
     settings: vi.fn(async () =>
-      fromPartial<PersonResearchStatus>({ settings: { paused: false }, jobs: [] }),
+      fromPartial<PersonResearchAggregateStatus>({
+        settings: { paused: false },
+        totalJobs: 0,
+        byState: {},
+        running: 0,
+      }),
     ),
     history: vi.fn(async () => []),
     analysis: vi.fn(async () => null),

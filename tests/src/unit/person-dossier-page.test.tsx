@@ -56,9 +56,10 @@ function makeClient(): DossierClient {
     read: async () => ({
       dossier: null,
       research: {
+        schemaVersion: 1,
         profileId: "maya",
+        readiness: { state: "ready", reason: "ready" },
         state: "queued",
-        reasons: ["created"],
         queuedAt: "2026-09-05",
         updatedAt: "2026-09-05",
         nextAt: "2026-09-05",
@@ -66,6 +67,7 @@ function makeClient(): DossierClient {
         sources: 0,
         attempts: 0,
         detail: "Waiting for automatic research.",
+        diagnostics: { totalAttempts: 0, byCode: {}, sample: [], truncated: false },
       },
     }),
     source: async () => {
@@ -79,7 +81,9 @@ function makeClient(): DossierClient {
       schemaVersion: 1,
       day: "2026-09-05",
       usedCalls: 0,
-      jobs: [],
+      totalJobs: 0,
+      byState: {},
+      running: 0,
       settings: {
         paused: false,
         concurrency: 1,

@@ -35,7 +35,9 @@ function client(): DossierClient {
       schemaVersion: 1,
       day: "2026-09-14",
       usedCalls: 0,
-      jobs: [],
+      totalJobs: 0,
+      byState: {},
+      running: 0,
       settings: {
         paused: false,
         concurrency: 1,
