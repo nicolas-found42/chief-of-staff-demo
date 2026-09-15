@@ -438,6 +438,29 @@ test("fitToByteBudget truncates a summary that is still over budget after digest
   // A caller can still see there WAS a previous conclusion and what it
   // concluded, even after the shrink pipeline has cut its own decisive detail.
   expect(oversized.previousConclusion?.operationId).toBe("op-old");
+
+  /* The digest exists to keep the codes that happened most, so the shrink
+     keeps the head of the distribution and folds only the tail into `other`.
+     Asserting the byte budget alone let the opposite ship: the tail was kept
+     AND summed into `other`, so the commonest codes were dropped, every kept
+     code was counted twice, and the map barely shrank. CodeRabbit caught it on
+     #419; CODING_STANDARDS.md calls the shape of this miss out under "A test
+     asserts the record, not only its summary". */
+  const digested = oversized.diagnostics.byCode;
+  /* `synthetic-code-N` was given count N+1, so 39 is the commonest and 0 the
+     rarest. The commonest survives the digest; the rarest folds into `other`. */
+  expect(digested).toHaveProperty("synthetic-code-39");
+  expect(digested).not.toHaveProperty("synthetic-code-0");
+  const kept = Object.entries(digested)
+    .filter(([code]) => code !== "other")
+    .map(([, count]) => count);
+  const other = digested.other;
+  /* Every kept code is commoner than anything folded away. */
+  expect(Math.min(...kept)).toBeGreaterThan(Math.min(...Object.values(byCode)));
+  /* Nothing is counted twice: each original count lands in exactly one of a
+     kept entry or `other`. */
+  const total = Object.values(byCode).reduce((sum, n) => sum + n, 0);
+  expect(kept.reduce((sum, n) => sum + n, 0) + other).toBe(total);
 });
 
 test("fitToByteBudget is a no-op under budget and idempotent once it has shrunk", () => {

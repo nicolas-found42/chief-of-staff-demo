@@ -487,10 +487,17 @@ type Complete = (request: CompletionRequest) => Promise<unknown>;
  * this ticket requires recording rather than assuming. Restores the original
  * `fetch` afterward regardless of outcome.
  */
-async function withObservedRoute<T>(
-  work: () => Promise<T>,
-): Promise<{ result: T; routes: string[] }> {
-  const routes: string[] = [];
+/**
+ * Observes which Upstream Route answered, into a sink the CALLER owns.
+ *
+ * The sink is a parameter rather than a return value because a failed cell is
+ * exactly where the route matters — one route can serve a model well and
+ * another badly — and a thrown call never reaches a returned value. Recording
+ * "unknown" for every failure would have thrown away the evidence the probe
+ * exists to collect (spec #418 §3: record the observed route, never claim it
+ * was controlled).
+ */
+async function withObservedRoute<T>(routes: string[], work: () => Promise<T>): Promise<T> {
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const response = await realFetch(input, init);
@@ -524,8 +531,7 @@ async function withObservedRoute<T>(
     });
   };
   try {
-    const result = await work();
-    return { result, routes };
+    return await work();
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -538,9 +544,11 @@ async function runOneRepetition(
   repetition: number,
 ): Promise<SanitizedCellRepetition> {
   const events: ModelAttemptEvent[] = [];
+  const routes: string[] = [];
   const began = performance.now();
+  const observedRoute = () => (routes.length > 0 ? routes.join(",") : "unknown");
   try {
-    const { result: raw, routes } = await withObservedRoute(() =>
+    const raw = await withObservedRoute(routes, () =>
       complete({
         system: EXTRACTION_SYSTEM,
         user: fixtureUser(fixture),
@@ -553,12 +561,11 @@ async function runOneRepetition(
         ...spec.options,
       }),
     );
-    const route = routes.length > 0 ? routes.join(",") : "unknown";
     return {
       fixture,
       repetition,
       wallClockMs: Math.round(performance.now() - began),
-      attempts: events.map((event) => sanitizeAttempt(event, route)),
+      attempts: events.map((event) => sanitizeAttempt(event, observedRoute())),
       finalOutcome: "admitted",
       admissibility: evaluateAdmissibility(raw),
     };
@@ -568,7 +575,7 @@ async function runOneRepetition(
       fixture,
       repetition,
       wallClockMs: Math.round(performance.now() - began),
-      attempts: events.map((event) => sanitizeAttempt(event, "unknown")),
+      attempts: events.map((event) => sanitizeAttempt(event, observedRoute())),
       finalOutcome: "boundary-failure",
       failureDiagnostic: diagnostic,
     };

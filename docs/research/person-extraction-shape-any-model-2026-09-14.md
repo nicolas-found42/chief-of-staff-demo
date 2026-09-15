@@ -1,3 +1,15 @@
+> **Superseded, 2026-09-15.** This note was written before the cause was known,
+> and its central premise is wrong. It reads the empty answer as the model
+> failing to meet the Extraction Result Shape's output obligation, and proposes
+> eight levers against that. Live probes measured every one of them inert: the
+> reply was emptied by a `pattern` keyword in a subschema position, and the full
+> shape answers on the first forced tool call once that keyword stops reaching
+> the wire. See ADR-0098 and
+> `person-extraction-probes-2026-09-15-{prefix,postfix}.json`.
+>
+> Kept as written. It is what was known then, and the reasoning it records is
+> why the probe cells were the ones they were.
+
 # Why the extraction Result Shape is "unusable" for small models — and how to make any model serve it
 
 _Researched 2026-09-14. Repo facts are pinned to file and line; external findings were gathered by

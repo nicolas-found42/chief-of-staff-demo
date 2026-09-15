@@ -312,7 +312,7 @@ function capByCode(byCode: Record<string, number>, maxEntries: number): Record<s
   const entries = Object.entries(byCode).sort((a, b) => b[1] - a[1]);
   if (entries.length <= maxEntries) return byCode;
   const overflow = entries.slice(maxEntries).reduce((sum, [, count]) => sum + count, 0);
-  return { ...Object.fromEntries(entries.slice(maxEntries)), other: overflow };
+  return { ...Object.fromEntries(entries.slice(0, maxEntries)), other: overflow };
 }
 
 /**

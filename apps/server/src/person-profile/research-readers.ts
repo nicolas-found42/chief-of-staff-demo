@@ -1032,7 +1032,10 @@ async function readHtml(
     return {
       text: documentText.slice(0, MAX_TEXT),
       capturedAt: null,
-      completeness: text.length > MAX_TEXT ? "partial" : "full",
+      /* The title prefix is part of what is retained, so completeness is
+         measured on the combined text: a prefix that pushes the article past
+         MAX_TEXT truncates its tail, and that is partial. */
+      completeness: documentText.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
       outboundUrls,
       ...(attachments.length > 0 ? { attachments } : {}),

@@ -277,9 +277,11 @@ describe("durability across restart", () => {
        it without asking the owner to reconfirm anything. */
     expect(restarted.confirmed()).toBeNull();
     expect(restarted.durableConfirmation()).toEqual(confirmed);
-    const afterReconnect = new OwnerOnboarding({ people: profiles, workspaceDir });
-    afterReconnect.setConnectedIdentity("ada@example.com");
-    expect(afterReconnect.confirmed()).toEqual(confirmed);
+    /* The reconnect has to happen on the instance that went through the null
+       refresh. A fresh instance reloads from disk and would pass even if the
+       refresh had wiped the in-memory identity irrecoverably. */
+    restarted.setConnectedIdentity("ada@example.com");
+    expect(restarted.confirmed()).toEqual(confirmed);
   });
 
   it.each(["disconnected", "expired"] as const)(

@@ -120,7 +120,6 @@ it("passes the effective dossierExtractionPolicy onto the outgoing extraction re
       outputTokenCeiling: 4096,
       requestedEffort: "medium",
       shapeStrategy: "full",
-      fallback: null,
     }),
     confirmedTranscripts: () => [],
     transcriptStillConfirmed: () => false,

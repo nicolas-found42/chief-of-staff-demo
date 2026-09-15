@@ -56,18 +56,10 @@ export const ExtractionPartCheckpointSchema = z.object({
   recordedAt: z.string().max(40),
   /**
    * Provenance of the answer this checkpoint holds (spec #418 §6): the
-   * Result Shape Binding that actually answered, and whether the model that
-   * produced it was the Profile's ordinarily configured model or an
-   * explicitly configured fallback (T7). Optional so a checkpoint written
-   * before either field existed still parses — its provenance stays
-   * `undefined` (unknown) rather than an invented value, and it is still
-   * served exactly as before under its own key.
-   *
-   * The compatibility key already changes with the resolved model identity
-   * (`extractionPartKey`'s `modelIdentity`), so a fallback's checkpoint is
-   * `binding` records which Result Shape Binding actually answered, so a
-   * lookup can tell that without recomputing the key. It is absent on
-   * checkpoints written before the field existed, and on any answer the
+   * Result Shape Binding that actually answered. Optional, so a checkpoint
+   * written before the field existed still parses — its provenance stays
+   * `undefined` (unknown) rather than an invented value, and it is served
+   * exactly as before under its own key. Absent also covers an answer the
    * boundary reported no attempt for; absent means unknown, never guessed.
    */
   binding: z.enum(RESULT_SHAPE_BINDINGS).optional(),
