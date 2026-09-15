@@ -2,7 +2,11 @@ import { DateTime } from "luxon";
 import { registerMeetingReadTestRoutes } from "../meetings/testRuntime.js";
 import { MeetingRead } from "../meetings/read.js";
 import { weeklyMeetingSources } from "../meetings/weekly-sources.js";
-import type { PersonRelationshipRecord } from "@chief-of-staff-demo/shared";
+import type {
+  PersonRelationshipRecord,
+  PersonResearchNextAction,
+  PersonResearchReadiness,
+} from "@chief-of-staff-demo/shared";
 import { registerPersonDossierApi } from "../api/person-dossiers.js";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -325,6 +329,43 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     diagnostics: publicSearchDiagnostics,
     ...(searxngUrl !== undefined ? { searxngUrl } : {}),
   });
+  const settingsNextAction: PersonResearchNextAction = {
+    label: "Open Settings",
+    href: "/settings",
+  };
+  /**
+   * Truthful readiness of automatic Person Research (issue #418, T3;
+   * #417 F1/F3/F7), following contentResearch's own `readiness(kind)`
+   * closure below rather than inventing a second vocabulary. Referenced by
+   * `personProfilesProduct` below, and (like `ownerOnboarding` itself)
+   * evaluated only once invoked, well after every name here is bound.
+   */
+  const personResearchReadiness = (): PersonResearchReadiness => {
+    if (migrationGate.isActive())
+      return { state: "initializing", reason: "workspace-initializing" };
+    const current = configStore.getForPurpose("personResearch");
+    const demo = process.env.ENABLE_TEST_SEED === "1" || process.env.DEMO_MODE === "1";
+    if (current.provider === "mock")
+      return demo
+        ? { state: "ready", reason: "ready" }
+        : { state: "disabled", reason: "mock-provider-inactive", nextAction: settingsNextAction };
+    if (current.provider !== "ollama" && !current.apiKey.trim())
+      return {
+        state: "setup-required",
+        reason: "provider-not-configured",
+        nextAction: settingsNextAction,
+      };
+    const owner = ownerOnboarding.confirmationStatus();
+    if (owner === "unresolved")
+      return { state: "initializing", reason: "owner-identity-unresolved" };
+    if (owner === "absent")
+      return {
+        state: "setup-required",
+        reason: "owner-not-confirmed",
+        nextAction: settingsNextAction,
+      };
+    return { state: "ready", reason: "ready" };
+  };
   /* Person Profiles (ADR-0042, ADR-0062): the Workspace's dossiers, their
      automatic research, and the public-web identity resolver, composed as
      their own product. The Shell hands over the Workspace directory, the
@@ -359,16 +400,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       transcriptIdentityService
         .confirmedMentions(profileId)
         .some((mention) => mention.transcriptId === transcriptId),
-    researchEnabled: () => {
-      if (migrationGate.isActive()) return false;
-      const current = configStore.getForPurpose("personResearch");
-      const demo = process.env.ENABLE_TEST_SEED === "1" || process.env.DEMO_MODE === "1";
-      if (current.provider === "mock") return demo;
-      return (
-        (current.provider === "ollama" || Boolean(current.apiKey.trim())) &&
-        ownerOnboarding.confirmed() !== null
-      );
-    },
+    /* Kept for every consumer of the plain boolean; derived from the same
+       readiness computation below so the two can never drift apart. */
+    researchEnabled: () => personResearchReadiness().state === "ready",
+    researchReadiness: personResearchReadiness,
     upcomingParticipantEmails: () =>
       meetings
         .list()
