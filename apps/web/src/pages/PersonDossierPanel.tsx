@@ -5,8 +5,10 @@ import type {
   PersonClaim,
   PersonDossier,
   PersonResearchProfileSummary,
+  PersonResearchReadiness,
   PersonResearchSettings,
   PersonResearchAggregateStatus,
+  PersonResearchDiagnosticsPage,
   PersonSourceDocument,
   PersonRelationshipRecord,
   PersonDossierAnalysis,
@@ -17,9 +19,7 @@ interface DossierView {
   dossier: PersonDossier | null;
   /**
    * The bounded per-profile summary (issue #418, T5), not the whole
-   * PersonResearchJob the dossier response used to embed (#417 F4). Ticket
-   * T9 renders this projection properly; this panel keeps only the fields it
-   * already relied on that still exist on the summary.
+   * PersonResearchJob the dossier response used to embed (#417 F4).
    */
   research: PersonResearchProfileSummary | null;
 }
@@ -32,6 +32,16 @@ export interface DossierClient {
   detach(id: string, sourceId: string): Promise<unknown>;
   settings(): Promise<PersonResearchAggregateStatus>;
   configure(settings: Partial<PersonResearchSettings>): Promise<unknown>;
+  /**
+   * The bounded per-profile summary a normal poll reads (issue #418, T9,
+   * spec §7): side-effect-free, never enqueues. Distinct from `read`, whose
+   * dossier route retains its own intentional "viewed" scheduling nudge
+   * (spec §7) and is not something routine polling should repeat every
+   * cycle.
+   */
+  summary(id: string): Promise<PersonResearchProfileSummary | null>;
+  /** Paged, source-free attempt history, fetched only on explicit demand. */
+  diagnostics(id: string, cursor?: string): Promise<PersonResearchDiagnosticsPage | null>;
 }
 const api: DossierClient = {
   read: async (id, revision) =>
@@ -60,6 +70,18 @@ const api: DossierClient = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(settings),
     }),
+  summary: async (id) =>
+    (
+      await request<{ summary: PersonResearchProfileSummary | null }>(
+        `/api/people/${encodeURIComponent(id)}/research/summary`,
+      )
+    ).summary,
+  diagnostics: (id, cursor) =>
+    request(
+      `/api/people/${encodeURIComponent(id)}/research/diagnostics${
+        cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""
+      }`,
+    ),
 };
 const tabs = {
   overview: "Overview",
@@ -73,16 +95,123 @@ const tabs = {
   history: "Relationship history",
   sources: "Sources",
 };
-const states = {
-  queued: "Queued",
-  researching: "Researching",
-  paused: "Paused by limit",
-  incomplete: "Incomplete scope",
-  unavailable: "Sources unavailable",
-  interrupted: "Research interrupted",
-  empty: "No matched evidence found",
-  current: "Current within completed scope",
-};
+/**
+ * Copy for the pipeline-level readiness states (issue #418, T3/T9, spec §7).
+ * `initializing` and `setup-required` read distinctly on purpose: a
+ * transient identity refresh must never tell an owner to repeat completed
+ * onboarding (#417 F7).
+ */
+function readinessSurface(readiness: PersonResearchReadiness): { title: string; detail: string } {
+  switch (readiness.reason) {
+    case "workspace-initializing":
+      return {
+        title: "Confirming workspace setup",
+        detail:
+          "The workspace is still starting up. This is temporary, not evidence that setup is missing.",
+      };
+    case "owner-identity-unresolved":
+      return {
+        title: "Confirming workspace setup",
+        detail:
+          "Confirming the connected owner identity. This is temporary, not evidence that setup is missing.",
+      };
+    case "provider-not-configured":
+      return {
+        title: "Research setup required",
+        detail: "No model provider is configured for automatic research yet.",
+      };
+    case "owner-not-confirmed":
+      return {
+        title: "Research setup required",
+        detail: "An owner has not yet confirmed workspace setup for automatic research.",
+      };
+    case "mock-provider-inactive":
+      return {
+        title: "Research disabled",
+        detail:
+          "Automatic research is disabled because the configured model provider is not a production provider.",
+      };
+    case "administratively-paused":
+      return {
+        title: "Workspace research paused",
+        detail: "An owner paused automatic research for the workspace.",
+      };
+    default:
+      return { title: "Research ready", detail: "" };
+  }
+}
+
+/**
+ * Copy for one Profile's job state, once the pipeline itself is ready (issue
+ * #418, T9, spec §7). Never reads `research.stage` or `research.decisive` as
+ * this operation's own outcome while `state === "researching"`: T5 left both
+ * carrying the PREVIOUS settled operation's values mid-run (see task-graph.md
+ * "Open finding from T5"), and doing so here would reproduce F5 on the
+ * client. Live progress is built only from the always-current counters
+ * (`calls`, `sources`) and the job's own in-progress detail.
+ */
+function jobStateSurface(research: PersonResearchProfileSummary): {
+  title: string;
+  detail: string;
+} {
+  const decisive = research.state === "researching" ? undefined : research.decisive;
+  switch (research.state) {
+    case "queued":
+      return { title: "Queued for research", detail: research.detail };
+    case "researching":
+      return {
+        title: "Researching",
+        detail: `${research.calls} model ${research.calls === 1 ? "call" : "calls"} · ${research.sources} sources processed so far.`,
+      };
+    case "paused":
+      return {
+        title: "Waiting for capacity",
+        detail: "Research is queued but waiting for available concurrency.",
+      };
+    case "interrupted":
+      return { title: "Research interrupted", detail: decisive?.reason ?? research.detail };
+    case "incomplete":
+      return {
+        title: "Research paused at a safety limit",
+        detail: decisive?.reason ?? research.detail,
+      };
+    case "unavailable":
+      return { title: "Sources unavailable", detail: decisive?.reason ?? research.detail };
+    case "empty":
+      /* Honest empty-answer copy (#417 F2, spec §7): a model that returned
+         no usable answer is never rendered as "nothing was found", and a
+         legitimate validated no-supported-facts result reads differently
+         from both. Wording comes only from the decisive classification's
+         own facts, never from matching against a message. */
+      if (decisive?.classification === "no-usable-model-answer")
+        return { title: "No usable extraction answer", detail: decisive.reason };
+      if (decisive?.classification === "no-supported-facts")
+        return { title: "No supported facts found", detail: decisive.reason };
+      if (decisive?.classification === "grounding-or-subject-withheld")
+        return { title: "Evidence withheld pending subject match", detail: decisive.reason };
+      return { title: "No matched evidence found", detail: research.detail };
+    case "current":
+      return { title: "Current within completed scope", detail: research.detail };
+  }
+}
+
+/** The single status surface to render for one Profile's research (issue #418, T9). */
+function researchSurface(research: PersonResearchProfileSummary | null): {
+  title: string;
+  detail: string;
+  nextAction?: PersonResearchProfileSummary["readiness"]["nextAction"];
+} | null {
+  if (!research) return null;
+  if (research.readiness.state !== "ready") {
+    const { title, detail } = readinessSurface(research.readiness);
+    return {
+      title,
+      detail,
+      ...(research.readiness.nextAction ? { nextAction: research.readiness.nextAction } : {}),
+    };
+  }
+  return jobStateSurface(research);
+}
 
 export function PersonDossierPanel({
   profileId,
@@ -119,8 +248,44 @@ export function PersonDossierPanel({
   const [historyRetry, setHistoryRetry] = useState(0);
   const [actionError, setActionError] = useState("");
   const [correctionNotice, setCorrectionNotice] = useState("");
+  /** Paged full attempt history, fetched only on explicit demand (issue #418, T9, spec §7). */
+  const [diagnosticsPage, setDiagnosticsPage] = useState<PersonResearchDiagnosticsPage | null>(
+    null,
+  );
+  const [diagnosticsError, setDiagnosticsError] = useState("");
   const readGeneration = useRef(0);
   const reading = useRef(false);
+  const polling = useRef(false);
+  const viewRef = useRef<DossierView | null>(null);
+  /**
+   * The last-seen live counters (issue #418, T9): what the bounded summary
+   * poll compares against to notice forward progress or a settled/live
+   * transition. The summary never carries retained content, so noticing a
+   * change here is what triggers a full, reactive dossier re-read — it is
+   * not itself the recurring poll.
+   */
+  const progressOf = (research: PersonResearchProfileSummary | null) =>
+    research
+      ? {
+          state: research.state,
+          calls: research.calls,
+          sources: research.sources,
+          attempts: research.attempts,
+          currentOperationId: research.currentOperationId,
+          operationRevision: research.operationRevision,
+        }
+      : null;
+  const lastProgress = useRef<ReturnType<typeof progressOf>>(null);
+  const progressEqual = (a: ReturnType<typeof progressOf>, b: ReturnType<typeof progressOf>) =>
+    a === b ||
+    (!!a &&
+      !!b &&
+      a.state === b.state &&
+      a.calls === b.calls &&
+      a.sources === b.sources &&
+      a.attempts === b.attempts &&
+      a.currentOperationId === b.currentOperationId &&
+      a.operationRevision === b.operationRevision);
   const lifecycle = useRef(0);
   const refresh = useCallback(async () => {
     const generation = ++readGeneration.current;
@@ -146,6 +311,7 @@ export function PersonDossierPanel({
       const data = revision === undefined ? current : await client.read(profileId, revision);
       if (generation !== readGeneration.current) return;
       setView(data);
+      lastProgress.current = progressOf(data.research);
       const nextAnalysis =
         data.dossier && revision === undefined ? await client.analysis(profileId) : null;
       if (generation !== readGeneration.current) return;
@@ -157,25 +323,68 @@ export function PersonDossierPanel({
       if (generation === readGeneration.current) reading.current = false;
     }
   }, [profileId, client, revision]);
+  /**
+   * Normal polling reads only the bounded summary (issue #418, T9, spec §7;
+   * #417 F4): side-effect-free, and it never enqueues. It never replaces the
+   * dossier route's own initial/action reads, which intentionally retain
+   * their "viewed" scheduling nudge (spec §7) — this is what keeps that
+   * nudge from firing every four seconds instead of on genuine reads. When
+   * the live counters show forward progress, or the job settles into a new
+   * state, that is a signal the dossier may have new published content the
+   * summary itself never carries — so this triggers one reactive full
+   * refresh rather than embedding retained content in the poll itself.
+   */
+  const pollResearch = useCallback(async () => {
+    const generation = readGeneration.current;
+    try {
+      const summary = await client.summary(profileId);
+      if (generation !== readGeneration.current) return;
+      const progress = progressOf(summary);
+      if (!progressEqual(progress, lastProgress.current)) {
+        lastProgress.current = progress;
+        await refresh();
+        return;
+      }
+      setView((current) => (current ? { ...current, research: summary } : current));
+    } catch {
+      /* A side-effect-free status poll failing does not overwrite the
+         primary read error; the next full refresh reports a persistent
+         problem honestly instead. */
+    }
+  }, [profileId, client, refresh]);
   const invalidatePending = useCallback(() => {
     ++readGeneration.current;
     ++lifecycle.current;
   }, []);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
   useEffect(() => {
     // Never label the last revision's claims as the newly selected revision.
     setView(null);
     setAnalysis(null);
     setCorrectionNotice("");
     setReadError("");
+    setDiagnosticsPage(null);
+    setDiagnosticsError("");
+    lastProgress.current = null;
     void refresh();
     const timer = setInterval(() => {
-      if (!reading.current) void refresh();
+      if (reading.current || polling.current) return;
+      if (viewRef.current === null) {
+        void refresh();
+        return;
+      }
+      polling.current = true;
+      void pollResearch().finally(() => {
+        polling.current = false;
+      });
     }, 4000);
     return () => {
       invalidatePending();
       clearInterval(timer);
     };
-  }, [refresh, invalidatePending]);
+  }, [refresh, pollResearch, invalidatePending]);
   useEffect(() => {
     let live = true;
     setHistory([]);
@@ -238,6 +447,7 @@ export function PersonDossierPanel({
       attributedWhenOpened: currentSources?.ids.includes(id) ?? true,
     });
   }
+  const surface = researchSurface(view?.research ?? null);
   const dossier = view?.dossier;
   const claims = dossier?.claims ?? [];
   const activeClaims = claims.filter((c) => c.status !== "superseded");
@@ -328,8 +538,8 @@ export function PersonDossierPanel({
                 : "Loading dossier"
               : settings?.settings.paused
                 ? "Workspace research paused"
-                : view.research
-                  ? states[view.research.state]
+                : surface
+                  ? surface.title
                   : revision !== undefined
                     ? "Historical dossier"
                     : "No research status available"}
@@ -341,13 +551,19 @@ export function PersonDossierPanel({
           )}
         </p>
         <p className="muted">
-          {view?.research?.detail ??
-            (!view
-              ? readError
-                ? "The dossier could not be loaded. Retrying automatically."
-                : "Loading retained evidence and research status."
-              : "Only retained, supported evidence appears in this dossier.")}
+          {!view
+            ? readError
+              ? "The dossier could not be loaded. Retrying automatically."
+              : "Loading retained evidence and research status."
+            : settings?.settings.paused
+              ? "An owner paused automatic research for the workspace."
+              : (surface?.detail ?? "Only retained, supported evidence appears in this dossier.")}
         </p>
+        {!settings?.settings.paused && surface?.nextAction && (
+          <p>
+            <a href={surface.nextAction.href}>{surface.nextAction.label}</a>
+          </p>
+        )}
         <button type="button" onClick={() => void act(() => client.research(profileId))}>
           Prioritise research
         </button>{" "}
@@ -427,25 +643,68 @@ export function PersonDossierPanel({
           {error}
         </p>
       ))}
-      {/* This panel reads only the bounded per-profile summary (issue #418,
-          T5); the diagnostics sample and gaps below are display-limited
-          slices of it, not the full attempt ledger or operation record.
-          Ticket T9 owns building this out into full paged detail. */}
+      {/* A terminal conclusion superseded by the operation now current or in
+          progress, kept as its own labeled history rather than erased (#417
+          F5, issue #418, T9, spec §7): starting a new operation never
+          presents this one as the new operation's own current failure. */}
+      {view?.research?.previousConclusion && (
+        <div className="card" aria-label="Previous research attempt">
+          <p>
+            <strong>Previous research attempt</strong> — concluded{" "}
+            {view.research.previousConclusion.conclusion} on{" "}
+            <EvidenceDate value={view.research.previousConclusion.finishedAt} />
+          </p>
+          <p className="muted">
+            {view.research.previousConclusion.decisive?.reason ??
+              view.research.previousConclusion.detail}
+          </p>
+        </div>
+      )}
+      {/* The bounded diagnostics digest (issue #418, T5) is what normal
+          polling already carries; the full paged history is fetched only on
+          explicit demand (spec §7), never automatically. */}
       {!!view?.research?.diagnostics.sample.length && (
         <details className="card">
           <summary>Source and identity diagnostics</summary>
           <p className="muted">
-            Showing {view.research.diagnostics.sample.length} of{" "}
-            {view.research.diagnostics.totalAttempts} recorded attempts. The full history is kept
-            with the research operation.
+            Showing {diagnosticsPage?.entries.length ?? view.research.diagnostics.sample.length} of{" "}
+            {view.research.diagnostics.totalAttempts} recorded attempts.
           </p>
-          {view.research.diagnostics.sample.map((attempt, index) => (
+          {(diagnosticsPage?.entries ?? view.research.diagnostics.sample).map((attempt, index) => (
             <p key={index}>
               <strong>{attempt.code}</strong> · {attempt.stage} · {attempt.outcome}
               <br />
               {attempt.reason}
             </p>
           ))}
+          {diagnosticsError && (
+            <p role="alert" className="banner-error">
+              {diagnosticsError}
+            </p>
+          )}
+          {(diagnosticsPage
+            ? diagnosticsPage.nextCursor !== null
+            : view.research.diagnostics.totalAttempts >
+              view.research.diagnostics.sample.length) && (
+            <button
+              type="button"
+              onClick={() =>
+                void client
+                  .diagnostics(profileId, diagnosticsPage?.nextCursor ?? undefined)
+                  .then((page) => {
+                    setDiagnosticsError("");
+                    setDiagnosticsPage((previous) =>
+                      page
+                        ? { ...page, entries: [...(previous?.entries ?? []), ...page.entries] }
+                        : previous,
+                    );
+                  })
+                  .catch((error: unknown) => setDiagnosticsError(errorMessage(error)))
+              }
+            >
+              {diagnosticsPage ? "Load more diagnostics" : "Load full diagnostic history"}
+            </button>
+          )}
         </details>
       )}
       {!!view?.research?.gaps?.length && (
