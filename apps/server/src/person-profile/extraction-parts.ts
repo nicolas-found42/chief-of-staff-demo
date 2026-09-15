@@ -26,7 +26,7 @@ export type Extraction = z.infer<typeof ExtractionSchema>;
  * one of each, in order, reproduces exactly the fields `ExtractionSchema`
  * requires — nothing added, nothing dropped.
  */
-export const EXTRACTION_SLICES = ["identity", "claims", "structure"] as const;
+const EXTRACTION_SLICES = ["identity", "claims", "structure"] as const;
 export type ExtractionSlice = (typeof EXTRACTION_SLICES)[number];
 
 /** Identity/source metadata slice: the document-level facts, nothing else. */
