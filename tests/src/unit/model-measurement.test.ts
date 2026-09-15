@@ -72,6 +72,8 @@ describe("exact-request fingerprint", () => {
       requestFingerprint(cfg, request({ compactWireNames: true })),
       requestFingerprint(cfg, request({ reasoningEffort: "high" })),
       requestFingerprint(cfg, request({ preferredMinThroughput: 50 })),
+      requestFingerprint(cfg, request({ outputTokenCeiling: 4096 })),
+      requestFingerprint(cfg, request({ describeResultShape: true })),
     ];
     expect(new Set([base, ...variants]).size).toBe(variants.length + 1);
   });

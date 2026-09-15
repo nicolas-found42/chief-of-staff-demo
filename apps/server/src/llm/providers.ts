@@ -1263,6 +1263,31 @@ function readGeminiText(reply: ModelReply, answer: AnswerContainer): string {
   throw unusableShape(reply, answer);
 }
 
+/**
+ * The token facts known about a failed reply, read the same way a succeeded
+ * one's usage is (spec #418 §4): a `length` finish carrying a populated
+ * `outputTokens` says the model spent its ceiling, and the same finish with
+ * no usage at all says nothing about why generation stopped short.
+ */
+function knownUsage(
+  provider: ProviderId,
+  payload: unknown,
+): { inputTokens: number | null; outputTokens: number | null; costUsd: number | null } | null {
+  const facts =
+    provider === "anthropic"
+      ? anthropicUsage(payload)
+      : provider === "gemini"
+        ? geminiUsage(payload)
+        : openAiUsage(payload);
+  return (
+    facts && {
+      inputTokens: facts.inputTokens,
+      outputTokens: facts.outputTokens,
+      costUsd: facts.costUsd,
+    }
+  );
+}
+
 function unusableShape(reply: ModelReply, answer: AnswerContainer): ModelBoundaryError {
   return modelBoundaryFailure({
     call: reply.call,
@@ -1271,6 +1296,7 @@ function unusableShape(reply: ModelReply, answer: AnswerContainer): ModelBoundar
     body: reply.response.text,
     payload: reply.payload,
     answer,
+    usage: knownUsage(reply.call.provider, reply.payload),
   });
 }
 
@@ -1683,6 +1709,12 @@ async function openAiCompatibleComplete(
         )
       : undefined;
   deadline.reasoningEffort = reasoningEffort;
+  /* The low-effort intent or an explicit override, before resolution — spec
+     #418 §2's gap: only the effective value above used to survive anywhere. */
+  deadline.requestedReasoningEffort =
+    cfg.provider === "openrouter"
+      ? (request.reasoningEffort ?? DEFAULT_REASONING_EFFORT)
+      : undefined;
   const reasoning: { exclude: true; effort?: string } | null =
     cfg.provider === "openrouter"
       ? {
@@ -2363,6 +2395,9 @@ async function withinRequestCeiling<T>(
       ...(deadline.reasoningEffort !== undefined
         ? { reasoningEffort: deadline.reasoningEffort }
         : {}),
+      ...(deadline.requestedReasoningEffort !== undefined
+        ? { requestedReasoningEffort: deadline.requestedReasoningEffort }
+        : {}),
       /* Usage facts describe the wire response of one succeeded attempt; a
          retrying or failed attempt has none to report. */
       ...(event.outcome === "succeeded" && deadline.usage !== undefined
@@ -2488,6 +2523,15 @@ export function makeCompleteJson(
   };
   const complete = async (request: CompletionRequest): Promise<unknown> => {
     const full = wireJsonSchema(request.schema);
+    /* Sizing only: the caller's own `request.system` stays untouched
+       everywhere else, since the real per-attempt binding — and so the real
+       wording — is not known until dispatch (spec #418 §4). This uses the
+       adapter's default starting binding and the full (uncompacted) schema,
+       which is never smaller than what actually goes on the wire, so the
+       reservation below never undercounts these instructions. */
+    const reservationSystem = request.describeResultShape
+      ? `${request.system}\n\n${resultShapeInstruction(initialCall(cfg).binding, full)}`
+      : request.system;
     const operationId = request.operationId;
     /* Measurement attribution (#381): the timeline names the operation a
        call is budgeted under, or the one it is traced to, and the call site
@@ -2577,7 +2621,7 @@ export function makeCompleteJson(
       reservation = context.budgetLedger.reserve({
         operationId,
         model: cfg.model,
-        system: request.system,
+        system: reservationSystem,
         user: request.user,
         schema: request.schema,
         outputReserveTokens: request.outputReserveTokens,
