@@ -7,6 +7,8 @@ import {
   type PersonResearchStatus,
   type PersonResearchJob,
   type PersonResearchOperationOutcome,
+  type PersonResearchReadiness,
+  type PersonResearchEnqueueDecision,
 } from "@chief-of-staff-demo/shared";
 import type { WorkspacePersonProfiles } from "./profiles.js";
 import type { PersonResearch } from "./research.js";
@@ -42,7 +44,10 @@ export class PersonResearchQueue {
       people: WorkspacePersonProfiles;
       research: PersonResearch;
       now?: () => Date;
-      enabled: () => boolean;
+      /** Truthful readiness of the pipeline itself (issue #418, T3), apart
+       * from this queue's own administrative pause — {@link readiness}
+       * folds the two together for every consumer. */
+      readiness: () => PersonResearchReadiness;
       upcomingProfileIds?: () => string[];
       evidenceRevision?: (profileId: string) => string;
     },
@@ -90,6 +95,22 @@ export class PersonResearchQueue {
    * `status()` deep-clones every job in the queue — so reading one Profile's
    * coverage cloned all of them. The lookup is named here instead (#231).
    */
+  /**
+   * Truthful readiness for the automatic/queued research pipeline (issue
+   * #418, T3): what the caller reports about the Workspace, provider and
+   * owner confirmation, with this queue's own administrative pause folded
+   * in. Pausing overrides only an otherwise-`"ready"` readiness, so a real
+   * setup problem is never hidden behind "paused". Side-effect-free.
+   */
+  readiness(): PersonResearchReadiness {
+    const base = this.deps.readiness();
+    if (base.state === "ready" && this.state.settings.paused)
+      return { state: "paused", reason: "administratively-paused" };
+    return base;
+  }
+  private isReady(): boolean {
+    return this.readiness().state === "ready";
+  }
   operation(profileId: string): PersonResearchOperationOutcome | null {
     this.rollDay();
     const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
@@ -123,13 +144,24 @@ export class PersonResearchQueue {
     this.save();
     return this.status();
   }
+  /**
+   * Decide what happens to one Profile's automatic research (issue #418,
+   * T3). Used to return `void` and no-op silently in four distinct
+   * situations — not ready, missing/inactive Profile, already active, and
+   * deferred by backoff — leaving every caller to report success regardless
+   * (#417 F1). Every path now returns a typed, exhaustive decision that
+   * names the queued or active work an `accepted`/`already-active` result
+   * refers to.
+   */
   enqueue(
     profileId: string,
     reason: "created" | "meeting" | "explicit" | "viewed" | "backfill" | "refresh" | "evidence",
-  ): void {
-    if (!this.deps.enabled()) return;
+  ): PersonResearchEnqueueDecision {
+    const readiness = this.readiness();
+    if (readiness.state !== "ready") return { kind: "rejected-readiness", profileId, readiness };
     const profile = this.deps.people.get(profileId);
-    if (!profile || profile.archivedAt !== null || profile.mergedInto) return;
+    if (!profile || profile.archivedAt !== null || profile.mergedInto)
+      return { kind: "inactive-profile", profileId };
     const old = this.state.jobs.find((j) => j.profileId === profileId);
     const now = this.now();
     if (old) {
@@ -138,7 +170,7 @@ export class PersonResearchQueue {
         delete old.checkpoint;
       if (old.state === "researching" || old.state === "queued" || old.state === "paused") {
         this.save();
-        return;
+        return { kind: "already-active", profileId, jobState: old.state };
       }
       const ageHours = (Date.parse(now) - Date.parse(old.updatedAt)) / 3600000;
       const urgent =
@@ -148,7 +180,7 @@ export class PersonResearchQueue {
         (reason === "viewed" && ageHours >= 48);
       if (!urgent && old.nextAt > now) {
         this.save();
-        return;
+        return { kind: "deferred", profileId, nextAt: old.nextAt };
       }
       old.state = "queued";
       if (old.operation?.conclusion !== "bounded" && old.operation?.conclusion !== "interrupted")
@@ -175,6 +207,7 @@ export class PersonResearchQueue {
         detail: "Waiting for automatic research.",
       });
     this.save();
+    return { kind: "accepted", profileId, jobState: "queued" };
   }
   remove(profileId: string): void {
     this.state.jobs = this.state.jobs.filter((j) => j.profileId !== profileId);
@@ -213,7 +246,7 @@ export class PersonResearchQueue {
   }
 
   async tick(profileId?: string): Promise<void> {
-    if (!this.deps.enabled() || this.state.settings.paused) return;
+    if (!this.isReady()) return;
     this.rollDay();
     for (const profile of this.deps.people.search()) {
       if (profileId !== undefined && profile.id !== profileId) continue;
@@ -271,8 +304,7 @@ export class PersonResearchQueue {
       Date.parse(this.now()) - Date.parse(job.lastHistoricalAt) >=
         (this.state.settings.historicalRefreshHours ?? 720) * 3600000;
     const active = () =>
-      this.deps.enabled() &&
-      !this.state.settings.paused &&
+      this.isReady() &&
       generation === this.generation &&
       this.state.jobs.includes(job) &&
       JSON.stringify(this.deps.people.get(job.profileId)) === fingerprint &&
@@ -321,8 +353,7 @@ export class PersonResearchQueue {
       const ownUpdate =
         result.publishedProfileRevision !== undefined &&
         this.deps.people.get(job.profileId)?.revision === result.publishedProfileRevision &&
-        this.deps.enabled() &&
-        !this.state.settings.paused &&
+        this.isReady() &&
         generation === this.generation &&
         this.state.jobs.includes(job);
       if (!active() && !ownUpdate) {

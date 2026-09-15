@@ -354,6 +354,94 @@ export function summarizeResearchAttempts(
   return { shown: ranked.slice(0, limit), totalAttempts: attempts.length, byCode };
 }
 
+/**
+ * Truthful readiness of the automatic/queued research pipeline itself
+ * (issue #418, T3) — distinct from any one Profile's job state. A stable
+ * `reason` code names *why*, and an optional `nextAction` is where an owner
+ * goes to change it, matching the onboarding checklist's own `{label, href}`
+ * shape (`api/onboarding.ts`).
+ *
+ * `initializing` is not evidence that setup is absent: it is the honest
+ * answer while the Workspace or the owner's connected identity has not yet
+ * produced a determinate read, and it is retryable. `setup-required` and
+ * `disabled` are both terminal until an owner acts, but say different things:
+ * the first names a step nobody has completed yet, the second names a
+ * deliberate configuration (a non-production model provider) rather than an
+ * incomplete one. `paused` is the owner's own explicit pause of the queue.
+ */
+export const PersonResearchReadinessStateSchema = z.enum([
+  "initializing",
+  "setup-required",
+  "ready",
+  "paused",
+  "disabled",
+]);
+export type PersonResearchReadinessState = z.infer<typeof PersonResearchReadinessStateSchema>;
+
+export const PersonResearchReadinessReasonSchema = z.enum([
+  "workspace-initializing",
+  "owner-identity-unresolved",
+  "provider-not-configured",
+  "owner-not-confirmed",
+  "mock-provider-inactive",
+  "administratively-paused",
+  "ready",
+]);
+export type PersonResearchReadinessReason = z.infer<typeof PersonResearchReadinessReasonSchema>;
+
+export const PersonResearchNextActionSchema = z.object({
+  label: z.string().max(200),
+  href: z.string().max(400),
+});
+export type PersonResearchNextAction = z.infer<typeof PersonResearchNextActionSchema>;
+
+export const PersonResearchReadinessSchema = z.object({
+  state: PersonResearchReadinessStateSchema,
+  reason: PersonResearchReadinessReasonSchema,
+  nextAction: PersonResearchNextActionSchema.optional(),
+});
+export type PersonResearchReadiness = z.infer<typeof PersonResearchReadinessSchema>;
+
+/**
+ * What `PersonResearchQueue.enqueue()` actually decided (issue #418, T3),
+ * replacing four silent no-op paths with one typed, exhaustive answer. An
+ * `accepted` or `already-active` decision names the Profile and the job
+ * state the caller can expect to observe; `rejected-readiness` carries the
+ * same readiness a caller could otherwise only get by polling separately.
+ */
+export const PersonResearchEnqueueDecisionSchema = z.discriminatedUnion("kind", [
+  /** A new or reactivated job now sits in the queue. */
+  z.object({
+    kind: z.literal("accepted"),
+    profileId: z.string(),
+    jobState: z.enum(["queued", "researching"]),
+  }),
+  /** Coalesced into a job already queued, researching, or paused. */
+  z.object({
+    kind: z.literal("already-active"),
+    profileId: z.string(),
+    jobState: z.enum(["queued", "researching", "paused"]),
+  }),
+  /** Not urgent, and the existing job's backoff window has not elapsed. */
+  z.object({
+    kind: z.literal("deferred"),
+    profileId: z.string(),
+    nextAt: z.string(),
+  }),
+  /** The pipeline itself is not ready to accept work right now. */
+  z.object({
+    kind: z.literal("rejected-readiness"),
+    profileId: z.string(),
+    readiness: PersonResearchReadinessSchema,
+  }),
+  /** The Profile does not exist, or is archived or merged away. */
+  z.object({
+    kind: z.literal("inactive-profile"),
+    profileId: z.string(),
+  }),
+]);
+export type PersonResearchEnqueueDecision = z.infer<typeof PersonResearchEnqueueDecisionSchema>;
+
 /** The source families the expanded pipeline can exercise (issue #228). */
 export const PERSON_SOURCE_FAMILIES = {
   "general-discovery": "General web discovery",

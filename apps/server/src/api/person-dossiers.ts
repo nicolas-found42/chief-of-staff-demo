@@ -84,8 +84,12 @@ export function registerPersonDossierApi(
     async (request, reply) => {
       const id = request.params.profileId;
       if (!deps.people.get(id)) return reply.code(404).send({ error: "profile-not-found" });
-      deps.queue.enqueue(id, "viewed");
-      return view(id);
+      /* A dossier read stays a read (issue #418, T3): the viewed-Profile
+         scheduling side effect is retained, but its decision is exposed
+         rather than turning a readable dossier into an error — even when
+         research is not ready to accept it. */
+      const researchDecision = deps.queue.enqueue(id, "viewed");
+      return { ...view(id), researchDecision };
     },
   );
   app.post<{ Params: { profileId: string } }>(
@@ -96,8 +100,28 @@ export function registerPersonDossierApi(
       if (!person) return reply.code(404).send({ error: "profile-not-found" });
       if (person.archivedAt || person.mergedInto)
         return reply.code(409).send({ error: "profile-inactive" });
-      deps.queue.enqueue(id, "explicit");
-      return reply.code(202).send(view(id));
+      const decision = deps.queue.enqueue(id, "explicit");
+      /* 202 only when work is genuinely queued or already accepted (issue
+         #418, T3; #417 F1): every other decision names why nothing was
+         accepted instead of a false-positive "prioritised" response. */
+      if (decision.kind === "accepted" || decision.kind === "already-active")
+        return reply.code(202).send({ ...view(id), researchDecision: decision });
+      if (decision.kind === "rejected-readiness") {
+        const { readiness } = decision;
+        return readiness.state === "initializing"
+          ? reply.code(503).send({ error: "research-initializing", readiness })
+          : reply.code(409).send({
+              error: "research-disabled",
+              readiness,
+              ...(readiness.nextAction ? { nextAction: readiness.nextAction } : {}),
+            });
+      }
+      if (decision.kind === "inactive-profile")
+        return reply.code(409).send({ error: "profile-inactive" });
+      /* "deferred" cannot occur for the "explicit" reason this route always
+         sends — it is always urgent — but every decision is handled rather
+         than assumed. */
+      return reply.code(200).send({ ...view(id), researchDecision: decision });
     },
   );
   app.post<{ Params: { profileId: string; sourceId: string } }>(

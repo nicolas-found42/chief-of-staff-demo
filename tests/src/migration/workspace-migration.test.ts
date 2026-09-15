@@ -741,7 +741,7 @@ describe("Workspace migration preview", () => {
       workspaceDir: root,
       people,
       research: {} as unknown as PersonResearch,
-      enabled: () => true,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
     }).configure({});
 
     const preview = previewWorkspaceMigration(root);

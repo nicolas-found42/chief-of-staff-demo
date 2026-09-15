@@ -29,7 +29,7 @@ test("owner can inspect research states, change research bounds, and enqueue wit
       workspaceDir: root,
       people,
       research,
-      enabled: () => true,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
     });
     registerPersonDossierApi(app, { people, dossiers, queue });
     const response = await app.inject({ method: "POST", url: `/api/people/${person.id}/research` });
@@ -74,6 +74,137 @@ test("owner can inspect research states, change research bounds, and enqueue wit
     const read = await app.inject(`/api/people/${person.id}/dossier`);
     expect(read.json().dossier).toBeNull();
     expect(read.json().research.state).toBe("queued");
+  } finally {
+    await app.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Typed API status codes (issue #418, T3; #417 F1): 202 only for genuinely
+ * accepted work, a typed 409 `research-disabled` with the actual blocker and
+ * a Settings next action when setup is missing, and a distinct retryable 503
+ * `research-initializing` while readiness is unresolved. A dossier read
+ * stays a 200 read either way.
+ */
+test("POST /research returns 409 research-disabled with a Settings next action when setup is missing", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dossier-api-disabled-"));
+  const app = Fastify();
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const person = people.create({ primaryEmail: "maya@example.com" });
+    const dossiers = new PersonDossierStore(root);
+    const research = new PersonResearch({
+      dossiers,
+      search: async () => [],
+      complete: async () => ({}),
+    });
+    const queue = new PersonResearchQueue({
+      workspaceDir: root,
+      people,
+      research,
+      readiness: () => ({
+        state: "setup-required" as const,
+        reason: "owner-not-confirmed" as const,
+        nextAction: { label: "Open Settings", href: "/settings" },
+      }),
+    });
+    registerPersonDossierApi(app, { people, dossiers, queue });
+
+    const response = await app.inject({ method: "POST", url: `/api/people/${person.id}/research` });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      error: "research-disabled",
+      readiness: { state: "setup-required", reason: "owner-not-confirmed" },
+      nextAction: { label: "Open Settings", href: "/settings" },
+    });
+    /* Not accepted: no job exists at all. */
+    expect(queue.job(person.id)).toBeNull();
+
+    /* A dossier read stays a read: the same blocked readiness is exposed
+       without turning it into an error. */
+    const read = await app.inject(`/api/people/${person.id}/dossier`);
+    expect(read.statusCode).toBe(200);
+    expect(read.json().researchDecision).toMatchObject({ kind: "rejected-readiness" });
+  } finally {
+    await app.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("POST /research returns a distinct retryable 503 research-initializing while readiness is unresolved", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dossier-api-initializing-"));
+  const app = Fastify();
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const person = people.create({ primaryEmail: "maya@example.com" });
+    const dossiers = new PersonDossierStore(root);
+    const research = new PersonResearch({
+      dossiers,
+      search: async () => [],
+      complete: async () => ({}),
+    });
+    const queue = new PersonResearchQueue({
+      workspaceDir: root,
+      people,
+      research,
+      readiness: () => ({
+        state: "initializing" as const,
+        reason: "owner-identity-unresolved" as const,
+      }),
+    });
+    registerPersonDossierApi(app, { people, dossiers, queue });
+
+    const response = await app.inject({ method: "POST", url: `/api/people/${person.id}/research` });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: "research-initializing",
+      readiness: { state: "initializing", reason: "owner-identity-unresolved" },
+    });
+  } finally {
+    await app.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("POST /research still 404s an unknown Profile and 409s an inactive one before ever asking the queue", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dossier-api-inactive-"));
+  const app = Fastify();
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const person = people.create({ primaryEmail: "maya@example.com" });
+    people.archive(person.id);
+    const dossiers = new PersonDossierStore(root);
+    const research = new PersonResearch({
+      dossiers,
+      search: async () => [],
+      complete: async () => ({}),
+    });
+    const queue = new PersonResearchQueue({
+      workspaceDir: root,
+      people,
+      research,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+    });
+    registerPersonDossierApi(app, { people, dossiers, queue });
+
+    expect(
+      (await app.inject({ method: "POST", url: `/api/people/person_absent/research` })).statusCode,
+    ).toBe(404);
+    const archived = await app.inject({ method: "POST", url: `/api/people/${person.id}/research` });
+    expect(archived.statusCode).toBe(409);
+    expect(archived.json()).toEqual({ error: "profile-inactive" });
   } finally {
     await app.close();
     rmSync(root, { recursive: true, force: true });
@@ -133,7 +264,7 @@ test.each(["queued", "retrieving"])(
             throw new Error("Late model dispatch");
           },
         }),
-        enabled: () => true,
+        readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
       });
       registerPersonDossierApi(app, { people, dossiers, queue });
       await app.inject({ method: "POST", url: `/api/people/${person.id}/research` });

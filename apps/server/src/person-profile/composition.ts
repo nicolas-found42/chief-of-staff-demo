@@ -4,6 +4,7 @@ import type {
   PersonResearchAttempt,
   PersonResearchCoverageArea,
   PersonResearchOperationOutcome,
+  PersonResearchReadiness,
   PersonSourceDocument,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson, ModelConfigurationIdentity } from "../llm/providers.js";
@@ -150,6 +151,16 @@ export interface PersonProfilesCompositionDeps {
   render?: BrowserRenderer;
   /** Whether research may dispatch at all; false while the migration gate holds. */
   researchEnabled: () => boolean;
+  /**
+   * Truthful readiness of the research pipeline (issue #418, T3), richer
+   * than the boolean above: `initializing` while a startup or refresh
+   * window has not yet produced a determinate answer, `setup-required` or
+   * `disabled` when it has and research cannot run, `ready` otherwise. When
+   * absent, it is derived from {@link researchEnabled} alone (`ready` or a
+   * generic `setup-required`), which keeps every existing caller that never
+   * supplies it — the benchmark, and most composition tests — unaffected.
+   */
+  researchReadiness?: () => PersonResearchReadiness;
   /** Lowercased participant emails of the Meetings close enough to prepare for. */
   upcomingParticipantEmails?: () => string[];
   /** Present only in the hermetic browser suite; the Shell decides that. */
@@ -296,11 +307,22 @@ export function composePersonProfiles(
     ...(deps.researchTestPorts ?? {}),
   });
 
+  /* Falls back to the boolean-only readiness every existing caller (the
+     benchmark, most composition tests) already supplies, so this stays
+     compatible without requiring every one of them to adopt the richer
+     shape (issue #418, T3). */
+  const researchReadiness: () => PersonResearchReadiness =
+    deps.researchReadiness ??
+    (() =>
+      deps.researchEnabled()
+        ? { state: "ready", reason: "ready" }
+        : { state: "setup-required", reason: "provider-not-configured" });
+
   const queue = new PersonResearchQueue({
     workspaceDir: deps.workspaceDir,
     people: profiles,
     research,
-    enabled: deps.researchEnabled,
+    readiness: researchReadiness,
     /* One pair per Confirmed Identity Decision, in the order the Catalog
        promises — so the revision is stable by construction rather than by a
        sort applied here. */
