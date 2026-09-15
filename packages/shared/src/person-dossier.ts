@@ -2,6 +2,8 @@ import { z } from "zod/v3";
 import {
   PersonResearchAttemptSchema,
   PersonResearchOperationOutcomeSchema,
+  PersonResearchJobStateSchema,
+  PersonResearchPreviousConclusionSchema,
 } from "./person-research.js";
 
 const text = z.string().min(1).max(4000);
@@ -408,16 +410,7 @@ export const PersonResearchJobSchema = z.object({
   elapsedMilliseconds: z.number().nonnegative().optional(),
   startedAt: z.string().optional(),
   profileId: z.string(),
-  state: z.enum([
-    "queued",
-    "researching",
-    "paused",
-    "incomplete",
-    "unavailable",
-    "interrupted",
-    "empty",
-    "current",
-  ]),
+  state: PersonResearchJobStateSchema,
   reasons: z.array(z.string()),
   queuedAt: z.string(),
   updatedAt: z.string(),
@@ -426,6 +419,20 @@ export const PersonResearchJobSchema = z.object({
   sources: z.number().int().nonnegative(),
   attempts: z.number().int().nonnegative(),
   detail: z.string(),
+  /**
+   * The operation currently in flight (issue #418, T5), scoped by identity
+   * and revision so a caller can tell live progress from an older
+   * generation's conclusion. Absent while no operation is running.
+   */
+  currentOperationId: z.string().max(64).optional(),
+  currentOperationRevision: z.number().int().nonnegative().optional(),
+  /** The revision `operation` (below) was settled at, once it has one. */
+  operationRevision: z.number().int().nonnegative().optional(),
+  /**
+   * A prior operation's conclusion, superseded by a newer operationId and
+   * kept as its own labeled history rather than erased (#417 F5).
+   */
+  previousConclusion: PersonResearchPreviousConclusionSchema.optional(),
 });
 export type PersonResearchJob = z.infer<typeof PersonResearchJobSchema>;
 export const PersonResearchStatusSchema = z.object({
@@ -436,6 +443,24 @@ export const PersonResearchStatusSchema = z.object({
   jobs: z.array(PersonResearchJobSchema),
 });
 export type PersonResearchStatus = z.infer<typeof PersonResearchStatusSchema>;
+
+/**
+ * An independently bounded queue-wide projection (issue #418, T5, spec §7),
+ * for the rare consumer that genuinely needs queue-wide counts rather than
+ * one Profile's summary. Carries counts only — never per-job diagnostics,
+ * operations, or checkpoints — so it stays cheap regardless of queue size,
+ * unlike {@link PersonResearchStatusSchema} which deep-clones every job.
+ */
+export const PersonResearchAggregateStatusSchema = z.object({
+  schemaVersion: z.literal(1),
+  settings: PersonResearchSettingsSchema,
+  day: z.string(),
+  usedCalls: z.number().int().nonnegative(),
+  totalJobs: z.number().int().nonnegative(),
+  byState: z.record(z.string(), z.number().int().nonnegative()),
+  running: z.number().int().nonnegative(),
+});
+export type PersonResearchAggregateStatus = z.infer<typeof PersonResearchAggregateStatusSchema>;
 export interface PersonRelationshipRecord {
   kind: "meeting" | "transcript" | "task" | "action-item";
   id: string;
