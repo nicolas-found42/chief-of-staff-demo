@@ -12,7 +12,9 @@ import {
 import {
   makeCompleteJson,
   resolveReasoningEffort,
+  dossierFallbackComplete,
   DEFAULT_REASONING_EFFORT,
+  DOSSIER_FALLBACK_MAX_DISPATCHES,
   REQUEST_TIMEOUT_MS,
   SMALL_REQUEST_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
@@ -442,6 +444,153 @@ describe("providers", () => {
     ]);
     expect(calls[0].body).toHaveProperty("response_format");
     expect(calls[1].body).toHaveProperty("tools");
+  });
+
+  /**
+   * Spec #418 §4: an answer empty in every field of `response_format`'s own
+   * answer container — `role` is boilerplate this seam fills in itself, so
+   * the only substantive field is `content`, and it never arrived — gets
+   * exactly one step to `forced_tool_call`, when that binding is declared.
+   */
+  it("openrouter: an empty response_format answer recovers in exactly one extra binding dispatch", async () => {
+    declarations.push(declaring("response_format", "tools", "tool_choice"));
+    responses.push({
+      sse: ['data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{}}', "data: [DONE]"],
+    });
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const events: ModelAttemptEvent[] = [];
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/empty-response-format", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await expect(
+      complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        retry: { onAttempt: (event) => events.push(event) },
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(calls).toHaveLength(2);
+    expect(events).toMatchObject([
+      {
+        attempt: 1,
+        outcome: "retrying",
+        diagnostic: { classification: "unusable_shape", binding: "response_format" },
+      },
+      { attempt: 2, outcome: "succeeded" },
+    ]);
+    expect(calls[0].body).toHaveProperty("response_format");
+    expect(calls[1].body).toHaveProperty("tools");
+  });
+
+  it("openrouter: an empty response_format answer with forced_tool_call undeclared is an ineligible recovery, not a dispatch", async () => {
+    declarations.push(declaring("response_format"));
+    responses.push({
+      sse: ['data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{}}', "data: [DONE]"],
+    });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/empty-response-format-only", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    const failure = await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failure).toMatchObject({ classification: "unusable_shape", binding: "response_format" });
+    expect(calls).toHaveLength(1);
+  });
+
+  /* forced_tool_call already spent earlier in the same ladder walk (here, a
+     404 steps a preferred forced_tool_call start down to a declared
+     response_format) never gets a second turn — spec #418 §4 permits
+     response_format -> forced_tool_call, never a loop back, and never an
+     invented forced_tool_call -> prompt_only rung. */
+  it("openrouter: an empty response_format answer after forced_tool_call was already spent stays an ineligible recovery", async () => {
+    declarations.push(declaring("response_format", "tools", "tool_choice"));
+    responses.push({
+      status: 404,
+      body: { error: "No endpoints found matching your data policy" },
+    });
+    responses.push({
+      sse: ['data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{}}', "data: [DONE]"],
+    });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/tool-then-empty-response-format", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    const failure = await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      preferredBinding: "forced_tool_call",
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failure).toMatchObject({ classification: "unusable_shape", binding: "response_format" });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].body).toHaveProperty("tools");
+    expect(calls[1].body).toHaveProperty("response_format");
+  });
+
+  /* A failed recovery keeps both reports observable — the original empty
+     answer as the "retrying" event's diagnostic, the final classified
+     failure as what the call actually throws — and does not cascade into a
+     second empty-answer binding loop. */
+  it("openrouter: a failed forced-tool recovery retains the initial failure and the final disposition", async () => {
+    declarations.push(declaring("response_format", "tools", "tool_choice"));
+    responses.push({
+      sse: ['data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{}}', "data: [DONE]"],
+    });
+    responses.push({
+      sse: ['data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{}}', "data: [DONE]"],
+    });
+    const events: ModelAttemptEvent[] = [];
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/empty-both-bindings", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    const failure = await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      retry: { onAttempt: (event) => events.push(event) },
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(calls).toHaveLength(2);
+    expect(failure).toMatchObject({
+      classification: "unusable_shape",
+      binding: "forced_tool_call",
+    });
+    expect(events).toMatchObject([
+      {
+        attempt: 1,
+        outcome: "retrying",
+        diagnostic: { classification: "unusable_shape", binding: "response_format" },
+      },
+      {
+        attempt: 2,
+        outcome: "failed",
+        diagnostic: { classification: "unusable_shape", binding: "forced_tool_call" },
+      },
+    ]);
+  });
+
+  it("openrouter: caller cancellation prevents the forced-tool recovery dispatch after an empty response_format answer", async () => {
+    declarations.push(declaring("response_format", "tools", "tool_choice"));
+    responses.push({
+      sse: ['data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{}}', "data: [DONE]"],
+    });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/cancel-empty-response-format", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    const failure = await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      retry: { onAttempt: () => {}, canRetry: () => false },
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failure).toMatchObject({ classification: "unusable_shape", binding: "response_format" });
+    expect(calls).toHaveLength(1);
   });
 
   it("a small call expires at its own absolute ceiling and names it", async () => {
@@ -3904,5 +4053,73 @@ describe("extraction request policy (spec #418 T1)", () => {
     } finally {
       rmSync(workspaceDir, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Spec #418 §5 second half: dossier extraction's opt-in model fallback. These
+ * cover dispatch behavior at the wire — exactly one dispatch, no fresh
+ * binding-recovery ladder of its own, the real answering model named in the
+ * result. Precondition gating (unknown pricing, absent grants, budget
+ * exhaustion, cancellation) is covered separately in
+ * provider-admission-budget.test.ts, against a real `ModelBudgetLedger`.
+ */
+describe("dossier extraction model fallback (spec #418 T7)", () => {
+  it("contributes exactly one dispatch to the finite attempt plan", () => {
+    expect(DOSSIER_FALLBACK_MAX_DISPATCHES).toBe(1);
+  });
+
+  it("dispatches the failed unit's request once against the fallback model and names who actually answered", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const outcome = await dossierFallbackComplete(
+      { provider: "openrouter", model: "some/fallback-model", apiKey: "ork" },
+      { system: "S", user: "U", schema: ExtractionWireSchema },
+      "/nonexistent/mock-result.json",
+      {},
+    );
+    expect(outcome).toEqual({
+      answer: RESULT,
+      provider: "openrouter",
+      model: "some/fallback-model",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  /* A model that declares both bindings would otherwise start a fresh call at
+     response_format and could re-enter the T7 empty-answer recovery step on
+     its own failure, turning "one escalation" into two dispatches. Forcing
+     forced_tool_call keeps the escalation to the one dispatch spec #418 §5
+     requires, whether it succeeds or fails. */
+  it("never starts on response_format and never re-enters the empty-answer recovery step, even on failure", async () => {
+    declarations.push(declaring("response_format", "tools", "tool_choice"));
+    responses.push({
+      sse: ['data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{}}', "data: [DONE]"],
+    });
+    const failure = await dossierFallbackComplete(
+      { provider: "openrouter", model: "some/fallback-both-bindings", apiKey: "ork" },
+      { system: "S", user: "U", schema: ExtractionWireSchema },
+      "/nonexistent/mock-result.json",
+      {},
+    ).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failure).toMatchObject({
+      classification: "unusable_shape",
+      binding: "forced_tool_call",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body).toHaveProperty("tools");
+  });
+
+  it("does not recursively cascade: a failed escalation is not retried with a second fallback", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ status: 500, body: { error: "upstream failure" } });
+    const failure = await dossierFallbackComplete(
+      { provider: "openrouter", model: "some/fallback-fails-once", apiKey: "ork" },
+      { system: "S", user: "U", schema: ExtractionWireSchema },
+      "/nonexistent/mock-result.json",
+      {},
+    ).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failure).toMatchObject({ classification: "http_error", status: 500 });
+    expect(calls).toHaveLength(1);
   });
 });
