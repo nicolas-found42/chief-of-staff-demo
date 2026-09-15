@@ -2134,16 +2134,29 @@ export function resolveReasoningEffort(
  * rebuilt per attempt, so the cache cannot live in its closure. The promise is
  * cached rather than its result so that concurrent Stages share one lookup.
  */
-const openrouterDeclarations = new Map<string, Promise<Set<string> | null>>();
+const openrouterDeclarations = new Map<string, Promise<DeclaredCapabilities | null>>();
 
 /**
- * The `supported_parameters` an OpenRouter model declares, or `null` when the
- * declaration cannot be read — which is not the same as declaring no support.
+ * What one OpenRouter model declares about its own capacity: the union of
+ * `supported_parameters` across every route (as before), plus the lowest
+ * per-route `max_completion_tokens` among routes that declare one — the
+ * conservative bound, since routing may hand a call to any declared route
+ * (spec #418 §2). `null` when the endpoint declares no numeric ceiling at
+ * all, which is not the same as declaring an unbounded one.
+ */
+interface DeclaredCapabilities {
+  parameters: Set<string>;
+  maxCompletionTokens: number | null;
+}
+
+/**
+ * `null` means the declaration cannot be read at all — which is not the same
+ * as declaring no support or no capacity.
  */
 function openrouterDeclaredParameters(
   cfg: LlmConfig,
   deadline: RequestDeadline,
-): Promise<Set<string> | null> {
+): Promise<DeclaredCapabilities | null> {
   const cached = openrouterDeclarations.get(cfg.model);
   if (cached) return cached;
   const pending = fetchDeclaredParameters(cfg, deadline.signal);
@@ -2154,7 +2167,7 @@ function openrouterDeclaredParameters(
 async function fetchDeclaredParameters(
   cfg: LlmConfig,
   signal: AbortSignal,
-): Promise<Set<string> | null> {
+): Promise<DeclaredCapabilities | null> {
   try {
     const response = await fetch(`https://openrouter.ai/api/v1/models/${cfg.model}/endpoints`, {
       headers: { authorization: `Bearer ${cfg.apiKey}` },
@@ -2167,26 +2180,33 @@ async function fetchDeclaredParameters(
   }
 }
 
-function readDeclaredParameters(payload: unknown): Set<string> | null {
+function readDeclaredParameters(payload: unknown): DeclaredCapabilities | null {
   if (typeof payload !== "object" || payload === null || !("data" in payload)) return null;
   const data = payload.data;
   if (typeof data !== "object" || data === null || !("endpoints" in data)) return null;
   if (!isUnknownArray(data.endpoints)) return null;
-  const declared = new Set<string>();
+  const parameters = new Set<string>();
+  let maxCompletionTokens: number | null = null;
   for (const endpoint of data.endpoints) {
-    if (
-      typeof endpoint !== "object" ||
-      endpoint === null ||
-      !("supported_parameters" in endpoint) ||
-      !isUnknownArray(endpoint.supported_parameters)
-    ) {
-      continue;
+    if (typeof endpoint !== "object" || endpoint === null) continue;
+    if ("supported_parameters" in endpoint && isUnknownArray(endpoint.supported_parameters)) {
+      for (const parameter of endpoint.supported_parameters) {
+        if (typeof parameter === "string") parameters.add(parameter);
+      }
     }
-    for (const parameter of endpoint.supported_parameters) {
-      if (typeof parameter === "string") declared.add(parameter);
+    if (
+      "max_completion_tokens" in endpoint &&
+      typeof endpoint.max_completion_tokens === "number" &&
+      Number.isInteger(endpoint.max_completion_tokens) &&
+      endpoint.max_completion_tokens > 0
+    ) {
+      maxCompletionTokens =
+        maxCompletionTokens === null
+          ? endpoint.max_completion_tokens
+          : Math.min(maxCompletionTokens, endpoint.max_completion_tokens);
     }
   }
-  return declared.size > 0 ? declared : null;
+  return parameters.size > 0 ? { parameters, maxCompletionTokens } : null;
 }
 
 /**
@@ -2238,13 +2258,32 @@ async function openrouterComplete(
   schema: JsonObject,
   deadline: RequestDeadline,
 ): Promise<unknown> {
+  const capabilities = await openrouterDeclaredParameters(cfg, deadline);
+  const declared = declaredBindings(capabilities?.parameters ?? null, request.preferredBinding);
+  /* Fail before any wire dispatch rather than send a ceiling the declaration
+     says this model cannot honor, or silently drop it to an unstated
+     upstream default (spec #418 §2). A capability read that came back empty
+     says nothing either way, so an unreadable declaration leaves the
+     ceiling unchecked, exactly like an unreadable binding declaration does. */
+  if (request.outputTokenCeiling !== undefined && capabilities) {
+    const supportsCeiling = capabilities.parameters.has("max_tokens");
+    const withinCapacity =
+      capabilities.maxCompletionTokens === null ||
+      request.outputTokenCeiling <= capabilities.maxCompletionTokens;
+    if (!supportsCeiling || !withinCapacity) {
+      throw modelBoundaryFailure({
+        call: modelCall(cfg, declared.chosen ?? "response_format"),
+        classification: "output_ceiling_unsupported",
+      });
+    }
+  }
   return openAiCompatibleComplete(
     "https://openrouter.ai/api/v1/chat/completions",
     { authorization: `Bearer ${cfg.apiKey}` },
     cfg,
     request,
     schema,
-    declaredBindings(await openrouterDeclaredParameters(cfg, deadline), request.preferredBinding),
+    declared,
     deadline,
     true,
   );
