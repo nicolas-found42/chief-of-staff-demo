@@ -326,8 +326,8 @@ const DUPLICATE_ID_PART_B_DOCUMENT =
   "Okonkwo received the Turable Innovation Prize in 2021 for the Harrow Loop project.";
 
 /** The local id both independently-extracted parts happen to invent. */
-export const DUPLICATE_LOCAL_CLAIM_ID = "c1";
-export const DUPLICATE_LOCAL_WORK_ID = "w1";
+const DUPLICATE_LOCAL_CLAIM_ID = "c1";
+const DUPLICATE_LOCAL_WORK_ID = "w1";
 
 const duplicateIdPartAClaim = claim({
   id: DUPLICATE_LOCAL_CLAIM_ID,
