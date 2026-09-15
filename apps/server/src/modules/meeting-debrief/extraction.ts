@@ -236,6 +236,15 @@ export function groundTranscriptQuotes(
     return turn ? { ...turn, text: normalizeQuote(turn.text) } : null;
   });
   return quotes.flatMap((source) => {
+    const reference = source.quote.trim().match(/^@line:(\d+)$/);
+    if (reference) {
+      const index = Number(reference[1]) - 1;
+      const line = lines[index];
+      const turn = line === undefined ? null : parseTranscriptTurn(line, lines[index - 1]);
+      return turn?.text.trim()
+        ? [{ quote: turn.text, speaker: turn.speaker, timestamp: turn.timestamp }]
+        : [];
+    }
     const quote = normalizeQuote(source.quote);
     if (!quote) return [];
     const matching = segments.flatMap((segment, index) => {

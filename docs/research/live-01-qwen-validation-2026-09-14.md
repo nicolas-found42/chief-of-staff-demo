@@ -1,5 +1,9 @@
 # LIVE-01 model-specific live validation — 2026-09-14
 
+Later fixes and separately frozen experiments are recorded in the
+[LIVE-01 continuation](live-01-continuation-2026-09-14.md). The failures below
+remain the historical baseline.
+
 This is a newly owner-authorized evaluation using exactly `qwen/qwen3.7-flash`.
 It is not evidence that the historical Solar prompt gate passed. The owner message
 in this task supersedes the earlier absence of authorization and historical model,

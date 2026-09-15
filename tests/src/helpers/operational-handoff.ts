@@ -65,6 +65,22 @@ export function sourceStatusFixture(
   };
 }
 
+export function executorSupportFixture(
+  request: import("../../../apps/server/src/llm/providers").CompletionRequest,
+) {
+  const claims = JSON.parse(
+    request.user.split("<executor-claims>\n")[1].split("\n</executor-claims>")[0],
+  ) as { bindingId: string; evidence: string[] }[];
+  return {
+    bindings: claims.map((claim) => ({
+      bindingId: claim.bindingId,
+      reason: "Fixture executor undertakes the stated work",
+      evidence: claim.evidence,
+      supported: true,
+    })),
+  };
+}
+
 export function responsibilityFixture(
   request: import("../../../apps/server/src/llm/providers").CompletionRequest,
 ) {
@@ -73,7 +89,7 @@ export function responsibilityFixture(
   ) as {
     candidateId: string;
     facts: {
-      responsibility: MeetingHandoff["responsibility"];
+      responsibility?: MeetingHandoff["responsibility"];
       evidence: MeetingHandoff["evidence"];
     };
   }[];
@@ -81,13 +97,18 @@ export function responsibilityFixture(
     responsibilities: rows.map((row) => {
       const evidence = row.facts.evidence;
       const promises = evidence.filter(
-        (quote) => /\bI (?:will|shall|promise|am going to)\b/i.test(quote.quote) && quote.speaker,
+        (quote) =>
+          /\b(?:I|We) (?:will|shall|promise|am going to)\b/i.test(quote.quote) && quote.speaker,
       );
       const speakers = [...new Set(promises.map((quote) => quote.speaker!))];
       const responsibility =
         speakers.length === 1
           ? { names: speakers, basis: "explicit", reason: "First-person source commitment" }
-          : row.facts.responsibility;
+          : (row.facts.responsibility ?? {
+              names: [],
+              basis: "unknown",
+              reason: "No fixture role established",
+            });
       const bindings = responsibility.names.map((name) => ({
         name,
         evidence: evidence
@@ -141,6 +162,8 @@ export function accountedHandoffModel(reply: {
         })),
       };
     }
+    if (request.system.startsWith("VERIFY EXECUTOR SUPPORT"))
+      return executorSupportFixture(request);
     if (request.system.startsWith("VERIFY RESPONSIBILITY")) return responsibilityFixture(request);
     if (request.system.startsWith("CLASSIFY SOURCE STATUS")) return sourceStatusFixture(request);
     if (request.system.startsWith("AUDIT FINAL COVERAGE")) return { candidates: [] };

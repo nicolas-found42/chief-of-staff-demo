@@ -13,9 +13,20 @@ import {
   checkedCandidateFacts,
   sourceStatusFixture,
   responsibilityFixture,
+  executorSupportFixture,
 } from "../helpers/operational-handoff";
 import { groundTranscriptQuotes } from "../../../apps/server/src/modules/meeting-debrief/extraction";
 import { openRuns } from "../../../apps/server/src/runs";
+
+function executorBindingsFixture(reply: ReturnType<typeof responsibilityFixture>) {
+  return {
+    responsibilities: reply.responsibilities.map((row) => ({
+      candidateId: row.candidateId,
+      reason: row.responsibility.reason,
+      bindings: row.bindings.map((binding) => ({ ...binding, basis: row.responsibility.basis })),
+    })),
+  };
+}
 
 const overview = {
   version: 1,
@@ -791,6 +802,8 @@ it("retains a conditional commitment through enrichment and records completed wo
           { work: "Send the old plan", quote: "I already sent the old plan.", speaker: "Alice" },
         ],
       };
+    if (request.system.startsWith("VERIFY EXECUTOR SUPPORT"))
+      return executorSupportFixture(request);
     if (request.system.startsWith("VERIFY RESPONSIBILITY")) return responsibilityFixture(request);
     if (request.system.startsWith("CLASSIFY SOURCE STATUS")) return sourceStatusFixture(request);
     if (request.system.startsWith("AUDIT FINAL COVERAGE")) return { candidates: [] };
@@ -897,73 +910,95 @@ it.each(["duplicate", "unknown", "merge-cycle", "missing-enrichment"] as const)(
   },
 );
 
-it("merges duplicate candidates into one retained Action Item", async () => {
-  const model = accountedHandoffModel({
-    ...overview,
-    actionItems: [
-      {
-        title: candidate.work,
-        evidence: candidate.quote,
-        owner: "Alice",
-        ownerMentionId: null,
-        ownerProfileId: null,
-        dueDate: null,
-        handoff: operationalHandoff({
-          timing: {
-            kind: "trigger",
-            stated: "After the workshop",
-            referenceDate: "2026-09-09",
-            reasoning: "Conditional",
-          },
-        }),
-      },
-    ],
-  });
-  let duplicateIds: string[] = [];
-  const detail = await extract(async (request) => {
-    if (request.system.startsWith("DEDUPE CHECKED ACTIONS"))
-      return {
-        groups: [
-          {
-            verdict: "same_deliverable",
-            candidateIds: duplicateIds,
-            reason: "The same promise appears twice",
+it.each(["valid", "missing", "duplicate-id", "cycle"] as const)(
+  "accounts for every duplicate candidate before merging (%s)",
+  async (fault) => {
+    const model = accountedHandoffModel({
+      ...overview,
+      actionItems: [
+        {
+          title: candidate.work,
+          evidence: candidate.quote,
+          owner: "Alice",
+          ownerMentionId: null,
+          ownerProfileId: null,
+          dueDate: null,
+          handoff: operationalHandoff({
+            timing: {
+              kind: "trigger",
+              stated: "After the workshop",
+              referenceDate: "2026-09-09",
+              reasoning: "Conditional",
+            },
+          }),
+        },
+      ],
+    });
+    let duplicateIds: string[] = [];
+    let exposedRoles = false;
+    const detail = await extract(async (request) => {
+      if (request.system.startsWith("DEDUPE CHECKED ACTIONS")) {
+        const rows = JSON.parse(
+          request.user.split("<checked-actions>\n")[1].split("\n</checked-actions>")[0],
+        ) as Array<{ facts: Record<string, unknown> }>;
+        exposedRoles ||= rows.some(
+          (row) => "responsibility" in row.facts || "statusReasoning" in row.facts,
+        );
+        return {
+          matches: (fault === "missing" ? duplicateIds.slice(1) : duplicateIds).map(
+            (candidateId, index) => ({
+              candidateId: fault === "duplicate-id" ? duplicateIds[0] : candidateId,
+              reason: "The same promise appears twice",
+              evidence: ["@line:1"],
+              sameAsCandidateId:
+                fault === "cycle" && index === 0
+                  ? duplicateIds[1]
+                  : index === 0
+                    ? null
+                    : duplicateIds[index - 1],
+            }),
+          ),
+        };
+      }
+      if (request.system.startsWith("DISCOVER CANDIDATES"))
+        return { candidates: [candidate, candidate, candidate] };
+      if (request.system.startsWith("VERIFY RESPONSIBILITY")) return responsibilityFixture(request);
+      if (request.system.startsWith("CLASSIFY SOURCE STATUS")) return sourceStatusFixture(request);
+      if (request.system.startsWith("AUDIT FINAL COVERAGE")) return { candidates: [] };
+      if (request.system.startsWith("AUDIT SOURCE COVERAGE")) return { candidates: [] };
+      if (request.system.startsWith("DEDUPE CHECKED ACTIONS")) return { groups: [] };
+      if (
+        request.system.startsWith("RECONCILE CANDIDATES") ||
+        request.system.startsWith("VERIFY ACTION FACTS")
+      ) {
+        const rows = JSON.parse(
+          request.user.split("<untrusted-candidates>\n")[1].split("\n</untrusted-candidates>")[0],
+        ) as { id: string }[];
+        duplicateIds = rows.map((row) => row.id);
+        return {
+          dispositions: rows.map((row) => ({
+            candidateId: row.id,
+            disposition: "retained",
+            targetId: null,
+            reason: "Same promise repeated in overlap",
             evidence: [candidate.quote],
-          },
-        ],
-      };
-    if (request.system.startsWith("DISCOVER CANDIDATES"))
-      return { candidates: [candidate, candidate] };
-    if (request.system.startsWith("VERIFY RESPONSIBILITY")) return responsibilityFixture(request);
-    if (request.system.startsWith("CLASSIFY SOURCE STATUS")) return sourceStatusFixture(request);
-    if (request.system.startsWith("AUDIT FINAL COVERAGE")) return { candidates: [] };
-    if (request.system.startsWith("AUDIT SOURCE COVERAGE")) return { candidates: [] };
-    if (request.system.startsWith("DEDUPE CHECKED ACTIONS")) return { groups: [] };
-    if (
-      request.system.startsWith("RECONCILE CANDIDATES") ||
-      request.system.startsWith("VERIFY ACTION FACTS")
-    ) {
-      const rows = JSON.parse(
-        request.user.split("<untrusted-candidates>\n")[1].split("\n</untrusted-candidates>")[0],
-      ) as { id: string }[];
-      duplicateIds = rows.map((row) => row.id);
-      return {
-        dispositions: rows.map((row) => ({
-          candidateId: row.id,
-          disposition: "retained",
-          targetId: null,
-          reason: "Same promise repeated in overlap",
-          evidence: [candidate.quote],
-          facts: referenceFacts,
-        })),
-      };
+            facts: referenceFacts,
+          })),
+        };
+      }
+      return model(request);
+    });
+    expect(exposedRoles).toBe(false);
+    if (fault !== "valid") {
+      expect(detail.status).toBe("failed");
+      expect(detail.extraction).toBeNull();
+      return;
     }
-    return model(request);
-  });
-  expect(detail.status).toBe("done");
-  expect(detail.extraction?.actionItems).toHaveLength(1);
-  expect(detail.extraction?.actionItems[0].title).toBe(candidate.work);
-});
+    expect(detail.status).toBe("done");
+    expect(detail.extraction?.actionItems).toHaveLength(1);
+    expect(detail.extraction?.actionItems[0].title).toBe(candidate.work);
+  },
+);
 
 it("grounds Markdown turn labels and preserves their named executor", async () => {
   const quote = "I will test the app tomorrow.";
@@ -1475,6 +1510,7 @@ it("reconciles duplicate facts explicitly when a merge repair describes agreemen
   };
   const model = accountedHandoffModel({ ...overview, actionItems: [action] });
   let ids: string[] = [];
+  let constrainedRepairs = 0;
   const detail = await extract(async (request) => {
     if (request.system.startsWith("DISCOVER CANDIDATES"))
       return { candidates: [0, 1].map(() => ({ work: action.title, quote, speaker: "Alice" })) };
@@ -1502,7 +1538,26 @@ it("reconciles duplicate facts explicitly when a merge repair describes agreemen
         ],
       };
     }
-    if (request.system.startsWith("REPAIR CHECKED DUPLICATES"))
+    if (request.system.startsWith("REPAIR CHECKED DUPLICATES")) {
+      const invalid = {
+        groups: [
+          {
+            candidateIds: ids,
+            verdict: "same_deliverable",
+            reason: "One draft",
+            evidence: ["@line:29:16"],
+          },
+        ],
+        corrections: [],
+      };
+      expect(request.schema.safeParse(invalid).success).toBe(false);
+      expect(
+        request.schema.safeParse({
+          ...invalid,
+          groups: [{ ...invalid.groups[0], evidence: ["@line:1"] }],
+        }).success,
+      ).toBe(true);
+      constrainedRepairs++;
       return {
         groups: [
           {
@@ -1514,6 +1569,7 @@ it("reconciles duplicate facts explicitly when a merge repair describes agreemen
         ],
         corrections: [],
       };
+    }
     if (request.system.startsWith("RECONCILE DUPLICATE FACTS"))
       return {
         verdict: "same_deliverable",
@@ -1525,6 +1581,7 @@ it("reconciles duplicate facts explicitly when a merge repair describes agreemen
       };
     return model(request);
   }, `Alice: ${quote}`);
+  expect(constrainedRepairs).toBe(1);
   expect(detail.status).toBe("done");
   expect(detail.extraction?.actionItems).toHaveLength(1);
   expect(detail.extraction?.actionItems[0]).toMatchObject({
@@ -1709,9 +1766,9 @@ it("retries a semantically invalid repair instead of replaying it forever", asyn
           const contextual = structuredClone(result);
           contextual.responsibilities[0].responsibility.basis = "explicit";
           contextual.responsibilities[0].bindings[0].evidence = ["@line:6"];
-          expect(request.schema.safeParse(contextual).success).toBe(false);
+          expect(request.schema.safeParse(executorBindingsFixture(contextual)).success).toBe(false);
           contextual.responsibilities[0].responsibility.basis = "inferred";
-          expect(request.schema.safeParse(contextual).success).toBe(true);
+          expect(request.schema.safeParse(executorBindingsFixture(contextual)).success).toBe(true);
         }
         if (responsibilityCalls <= 2)
           for (const row of result.responsibilities)
@@ -1841,16 +1898,17 @@ it.each(["unknown-with-binding", "header-reference"])(
         const reply = responsibilityFixture(request);
         const valid = {
           responsibilities: reply.responsibilities.map((row) => ({
-            ...row,
-            bindings: [{ name: "Alice", evidence: ["@line:2"] }],
+            candidateId: row.candidateId,
+            reason: "Alice promises the test",
+            bindings: [{ name: "Alice", evidence: ["@line:2"], basis: "explicit" }],
           })),
         };
         const invalid = {
           responsibilities: valid.responsibilities.map((row) => ({
             ...row,
             ...(fault === "unknown-with-binding"
-              ? { responsibility: { names: [], basis: "unknown", reason: "Unresolved" } }
-              : { bindings: [{ name: "Alice", evidence: ["@line:1"] }] }),
+              ? { bindings: [{ name: "Alice", evidence: ["@line:2"], basis: "unknown" }] }
+              : { bindings: [{ name: "Alice", evidence: ["@line:1"], basis: "explicit" }] }),
           })),
         };
         expect(request.schema.safeParse(invalid).success).toBe(false);
@@ -1937,8 +1995,8 @@ it("allows responsibility verification to recover a named executor absent from p
           bindings: [{ name: "Carol", evidence: ["@line:2"] }],
         })),
       };
-      expect(request.schema.safeParse(corrected).success).toBe(true);
-      return corrected;
+      expect(request.schema.safeParse(executorBindingsFixture(corrected)).success).toBe(true);
+      return executorBindingsFixture(corrected);
     }
     return model(request);
   }, `Alice  00:12\n${quote}`);
@@ -1946,7 +2004,235 @@ it("allows responsibility verification to recover a named executor absent from p
   expect(detail.extraction?.actionItems[0].owner).toBe("Carol");
 });
 
-it("constrains relationship citations to spoken turns so header references cannot survive repair", async () => {
+it.each(["header-reference", "missing-assignment"])(
+  "constrains relationship evidence so invalid claims cannot survive repair: %s",
+  async (fault) => {
+    const quote = "I will test the app.";
+    const model = accountedHandoffModel({
+      ...overview,
+      actionItems: [
+        {
+          title: "Test the app",
+          owner: "Alice",
+          evidence: quote,
+          handoff: operationalHandoff({
+            evidence: [{ quote, speaker: "Alice", timestamp: "00:12" }],
+          }),
+        },
+      ],
+    });
+    let invalidOffered = false;
+    let relationshipCalls = 0;
+    const detail = await extract(async (request) => {
+      if (request.system.startsWith("VERIFY RELATIONSHIP")) {
+        relationshipCalls++;
+        const rows = JSON.parse(
+          request.user.split("<checked-actions>\n")[1].split("\n</checked-actions>")[0],
+        ) as Array<{ candidateId: string }>;
+        const valid = {
+          claims: rows.map((row) => ({
+            candidateId: row.candidateId,
+            relationship: "self-commitment",
+            statement: "@line:2",
+            assignment: null,
+            acceptance: null,
+            laterUpdates: [],
+            unresolvedReasons: [],
+          })),
+        };
+        const invalid = {
+          claims: valid.claims.map((row) =>
+            fault === "header-reference"
+              ? { ...row, statement: "@line:1" }
+              : { ...row, relationship: "accepted-request", acceptance: "@line:2" },
+          ),
+        };
+        invalidOffered ||= request.schema.safeParse(invalid).success;
+        return request.schema.safeParse(invalid).success ? invalid : valid;
+      }
+      return model(request);
+    }, `Alice  00:12\n${quote}`);
+    expect(detail.status).toBe("done");
+    expect(invalidOffered).toBe(false);
+    expect(relationshipCalls).toBe(1);
+  },
+);
+
+it("grounds handoff detail source IDs to spoken text instead of losing their evidence", () => {
+  const quote = "The output must include a short summary.";
+  const record = { normalizedText: `Alice  00:12\n${quote}` };
+  expect(
+    groundTranscriptQuotes([{ quote: "@line:2", speaker: "Untrusted", timestamp: null }], record),
+  ).toEqual([{ quote, speaker: "Alice", timestamp: "00:12" }]);
+  for (const reference of ["@line:1", "@line:999"]) {
+    expect(
+      groundTranscriptQuotes([{ quote: reference, speaker: null, timestamp: null }], record),
+    ).toEqual([]);
+  }
+});
+
+it("keeps provisional role explanations out of independent responsibility verification", async () => {
+  const quote = "I will test the app.";
+  const model = accountedHandoffModel({
+    ...overview,
+    actionItems: [
+      {
+        title: "Test the app",
+        owner: "Alice",
+        evidence: quote,
+        handoff: operationalHandoff({ evidence: [{ quote, speaker: "Alice", timestamp: null }] }),
+      },
+    ],
+  });
+  let exposed = false;
+  const detail = await extract(async (request) => {
+    if (request.system.startsWith("VERIFY RESPONSIBILITY")) {
+      const rows = JSON.parse(
+        request.user.split("<checked-actions>\n")[1].split("\n</checked-actions>")[0],
+      ) as Array<{ facts: Record<string, unknown> }>;
+      exposed ||= rows.some(
+        (row) => "responsibility" in row.facts || "statusReasoning" in row.facts,
+      );
+    }
+    return model(request);
+  }, `Alice: ${quote}`);
+  expect(detail.status).toBe("done");
+  expect(exposed).toBe(false);
+});
+
+it("checks adoption against the source without anchoring on unfinished implementation actions", async () => {
+  const statement = "Use a checklist for review.";
+  const evidence = "We agreed to use a checklist for review.";
+  const model = accountedHandoffModel({
+    ...overview,
+    decisions: [{ statement, evidence }],
+    actionItems: [
+      {
+        title: "Write the checklist",
+        owner: "Bob",
+        evidence: "I will write the checklist.",
+        handoff: operationalHandoff({
+          responsibility: { names: ["Bob"], basis: "explicit", reason: "Own promise" },
+          evidence: [{ quote: "I will write the checklist.", speaker: "Bob", timestamp: null }],
+        }),
+      },
+    ],
+  });
+  const detail = await extract(async (request) => {
+    const reply = await model(request);
+    if (
+      request.system.startsWith("OVERVIEW ONLY") &&
+      request.user.includes("<untrusted-dispositions>")
+    ) {
+      return { ...overview, decisions: [] };
+    }
+    if (
+      request.system.startsWith("VERIFY DECISION STATUS") &&
+      request.user.includes("<assembled-actions>")
+    ) {
+      const result = reply as { decisions: Array<Record<string, unknown>> };
+      return {
+        decisions: result.decisions.map((row) => ({
+          ...row,
+          status: "pending_action",
+          reason: "The checklist has not been written yet",
+        })),
+      };
+    }
+    return reply;
+  }, `Alice: ${evidence}\nBob: I will write the checklist.`);
+  expect(detail.status).toBe("done");
+  expect(detail.extraction?.decisions).toEqual([{ statement, evidence }]);
+});
+
+it("discovers small commitments in focused sections while retaining the broader source audit", async () => {
+  const quote = "I will check for new changes before training and refresh the slides.";
+  const model = accountedHandoffModel({
+    ...overview,
+    actionItems: [
+      {
+        title: "Check changes and refresh training slides",
+        owner: "Alice",
+        evidence: quote,
+        handoff: operationalHandoff({ evidence: [{ quote, speaker: "Alice", timestamp: null }] }),
+      },
+    ],
+  });
+  const spans: Array<[number, number]> = [];
+  let broadAudit = false;
+  const detail = await extract(
+    async (request) => {
+      if (request.system.startsWith("DISCOVER CANDIDATES")) {
+        const span = request.user.match(/Source characters (\d+)-(\d+)/)!;
+        const start = Number(span[1]);
+        const end = Number(span[2]);
+        spans.push([start, end]);
+        // Reproduce the live model's omission when the discovery section is too broad.
+        if (end - start > 4000 || !request.user.includes(quote)) return { candidates: [] };
+      }
+      if (request.system.startsWith("AUDIT SOURCE COVERAGE")) {
+        const span = request.user.match(/Source characters (\d+)-(\d+)/)!;
+        broadAudit ||= Number(span[2]) - Number(span[1]) > 4000;
+      }
+      return model(request);
+    },
+    `Alice: ${quote}\n` +
+      "Alice: This is background context without any further commitment.\n".repeat(150),
+  );
+  expect(detail.status).toBe("done");
+  expect(detail.extraction?.actionItems).toHaveLength(1);
+  expect(spans.every(([start, end]) => end - start <= 4000)).toBe(true);
+  expect(Math.max(...spans.map(([, end]) => end))).toBeGreaterThan(8000);
+  expect(broadAudit).toBe(true);
+});
+
+it("repairs a decision citation that selects a speaker header instead of speech", async () => {
+  const statement = "Use a checklist for review.";
+  const evidence = "We agreed to use a checklist for review.";
+  const model = accountedHandoffModel({
+    ...overview,
+    decisions: [{ statement, evidence }],
+    actionItems: [],
+  });
+  let checks = 0;
+  const detail = await extract(async (request) => {
+    const reply = await model(request);
+    if (request.system.startsWith("VERIFY DECISION STATUS")) {
+      checks++;
+      const result = reply as { decisions: Array<Record<string, unknown>> };
+      return {
+        decisions: result.decisions.map((row) => ({
+          ...row,
+          evidence: [checks === 1 ? "@line:1" : "@line:2"],
+        })),
+      };
+    }
+    return reply;
+  }, `Alice  00:12\n${evidence}`);
+  expect(checks).toBe(2);
+  expect(detail.extraction?.decisions).toEqual([{ statement, evidence }]);
+});
+
+it("keeps source evidence with an unknown speaker when the line is actual prose", async () => {
+  const statement = "Use a checklist for review.";
+  const evidence = "We agreed to use a checklist for review.";
+  const model = accountedHandoffModel({
+    ...overview,
+    decisions: [{ statement, evidence }],
+    actionItems: [],
+  });
+  const detail = await extract(async (request) => {
+    const reply = await model(request);
+    if (request.system.startsWith("VERIFY DECISION STATUS")) {
+      const result = reply as { decisions: Array<Record<string, unknown>> };
+      return { decisions: result.decisions.map((row) => ({ ...row, evidence: ["@line:1"] })) };
+    }
+    return reply;
+  }, evidence);
+  expect(detail.extraction?.decisions).toEqual([{ statement, evidence }]);
+});
+
+it("derives responsibility once from source-backed executor bindings", async () => {
   const quote = "I will test the app.";
   const model = accountedHandoffModel({
     ...overview,
@@ -1961,32 +2247,184 @@ it("constrains relationship citations to spoken turns so header references canno
       },
     ],
   });
-  let invalidOffered = false;
-  let relationshipCalls = 0;
   const detail = await extract(async (request) => {
-    if (request.system.startsWith("VERIFY RELATIONSHIP")) {
-      relationshipCalls++;
-      const rows = JSON.parse(
-        request.user.split("<checked-actions>\n")[1].split("\n</checked-actions>")[0],
-      ) as Array<{ candidateId: string }>;
-      const valid = {
-        claims: rows.map((row) => ({
+    if (request.system.startsWith("VERIFY RESPONSIBILITY")) {
+      const legacy = responsibilityFixture(request);
+      return {
+        responsibilities: legacy.responsibilities.map((row) => ({
           candidateId: row.candidateId,
-          relationship: "self-commitment",
-          statement: "@line:2",
-          assignment: null,
-          acceptance: null,
-          laterUpdates: [],
-          unresolvedReasons: [],
+          reason: "Alice promises the test",
+          bindings: [{ evidence: ["@line:2"], name: "Alice", basis: "explicit" }],
         })),
       };
-      const invalid = { claims: valid.claims.map((row) => ({ ...row, statement: "@line:1" })) };
-      invalidOffered ||= request.schema.safeParse(invalid).success;
-      return request.schema.safeParse(invalid).success ? invalid : valid;
     }
     return model(request);
   }, `Alice  00:12\n${quote}`);
   expect(detail.status).toBe("done");
-  expect(invalidOffered).toBe(false);
-  expect(relationshipCalls).toBe(1);
+  expect(detail.extraction?.actionItems[0]).toMatchObject({
+    owner: "Alice",
+    handoff: { responsibility: { names: ["Alice"], basis: "explicit" } },
+  });
 });
+
+it.each([true, false])(
+  "uses direct source adoption evidence without requiring finished work: %s",
+  async (adopted) => {
+    const statement = "Use a checklist for review.";
+    const evidence = adopted
+      ? "We agreed to use a checklist; I will write it tomorrow."
+      : "We could use a checklist, but we have not agreed to do that.";
+    const model = accountedHandoffModel({
+      ...overview,
+      decisions: [{ statement, evidence }],
+      actionItems: [],
+    });
+    const detail = await extract(async (request) => {
+      if (request.system.startsWith("VERIFY DECISION STATUS"))
+        return {
+          decisions: [
+            {
+              decisionId: "decision-0",
+              reason: adopted
+                ? "The choice is agreed; implementation is pending"
+                : "Only an unagreed idea",
+              evidence: ["@line:1"],
+              adopted,
+            },
+          ],
+        };
+      return model(request);
+    }, `Alice: ${evidence}`);
+    expect(detail.extraction?.decisions).toEqual(adopted ? [{ statement, evidence }] : []);
+    expect(detail.revision?.sections.find((section) => section.name === "decisions")?.state).toBe(
+      adopted ? "validated" : "validated-empty",
+    );
+  },
+);
+
+it("checks each executor binding's own basis before aggregating shared responsibility", async () => {
+  const quote = "I will test the app.";
+  const model = accountedHandoffModel({
+    ...overview,
+    actionItems: [
+      {
+        title: "Test the app",
+        owner: "Alice",
+        evidence: quote,
+        handoff: operationalHandoff({ evidence: [{ quote, speaker: "Alice", timestamp: null }] }),
+      },
+    ],
+  });
+  let calls = 0;
+  const detail = await extract(async (request) => {
+    if (request.system.startsWith("VERIFY RESPONSIBILITY")) {
+      calls++;
+      const reply = responsibilityFixture(request);
+      return {
+        responsibilities: reply.responsibilities.map((row) => ({
+          candidateId: row.candidateId,
+          reason: "Source role check",
+          bindings:
+            calls === 1
+              ? [
+                  { evidence: ["@line:2"], name: "Alice", basis: "explicit" },
+                  { evidence: ["@line:3"], name: "Carol", basis: "inferred" },
+                ]
+              : [{ evidence: ["@line:1"], name: "Alice", basis: "explicit" }],
+        })),
+      };
+    }
+    return model(request);
+  }, `Alice: ${quote}\nBob: I will write the document.\nCarol: I will review the logs.`);
+  expect(calls).toBe(2);
+  expect(detail.status).toBe("done");
+  expect(detail.extraction?.actionItems[0].owner).toBe("Alice");
+});
+
+it.each(["corrected", "still-wrong", "retry-corrected", "support-evidence"] as const)(
+  "checks that a cited person undertakes the work (%s)",
+  async (fault) => {
+    const quote = "I will apply that wording to both pricing rows.";
+    const action = {
+      title: "Update both pricing rows",
+      owner: "Bob",
+      evidence: fault === "support-evidence" ? "TBD would be better wording." : quote,
+      handoff: operationalHandoff({
+        responsibility: { names: ["Bob"], basis: "explicit", reason: "Bob undertakes the edit" },
+        evidence: [{ quote, speaker: "Bob", timestamp: null }],
+      }),
+    };
+    const model = accountedHandoffModel({ ...overview, actionItems: [action] });
+    let roleCalls = 0;
+    let supportCalls = 0;
+    const detail = await extract(
+      async (request) => {
+        if (request.system.startsWith("VERIFY EXECUTOR SUPPORT")) {
+          supportCalls++;
+          const claims = JSON.parse(
+            request.user.split("<executor-claims>\n")[1].split("\n</executor-claims>")[0],
+          ) as { bindingId: string; executor: string }[];
+          return {
+            bindings: claims.map((claim) => ({
+              bindingId: claim.bindingId,
+              reason:
+                claim.executor === "Bob"
+                  ? "Bob undertakes the edit"
+                  : "Alice only suggests wording; Bob undertakes the edit",
+              evidence: ["@line:2"],
+              supported: claim.executor === "Bob",
+            })),
+          };
+        }
+        if (request.system.startsWith("VERIFY RESPONSIBILITY")) {
+          roleCalls++;
+          const wrong =
+            roleCalls === 1 ||
+            fault === "still-wrong" ||
+            (fault === "retry-corrected" && roleCalls === 2);
+          const rows = JSON.parse(
+            request.user.split("<checked-actions>\n")[1].split("\n</checked-actions>")[0],
+          ) as { candidateId: string }[];
+          return {
+            responsibilities: rows.map((row) => ({
+              candidateId: row.candidateId,
+              reason: "Proposed role",
+              bindings: [
+                {
+                  name: wrong ? "Alice" : "Bob",
+                  basis: fault === "support-evidence" && !wrong ? "inferred" : "explicit",
+                  evidence: [wrong || fault === "support-evidence" ? "@line:1" : "@line:2"],
+                },
+              ],
+            })),
+          };
+        }
+        if (fault === "support-evidence" && request.system.startsWith("VERIFY ACTION FACTS")) {
+          const result = (await model(request)) as {
+            dispositions: { facts: ReturnType<typeof checkedCandidateFacts> }[];
+          };
+          for (const row of result.dispositions)
+            row.facts.evidence = [{ quote: "@line:1", speaker: null, timestamp: null }];
+          return result;
+        }
+        return model(request);
+      },
+      `Alice: TBD would be better wording.\nBob: ${quote}`,
+      fault === "retry-corrected",
+    );
+    expect(supportCalls).toBe(fault === "still-wrong" ? 1 : 2);
+    expect(roleCalls).toBe(fault === "retry-corrected" ? 3 : 2);
+    if (fault === "still-wrong") {
+      expect(detail.status).toBe("failed");
+      expect(detail.extraction).toBeNull();
+      return;
+    }
+    expect(detail.status).toBe("done");
+    expect(detail.extraction?.actionItems[0].owner).toBe("Bob");
+    expect(detail.extraction?.actionItems[0].handoff?.evidence).toContainEqual({
+      quote,
+      speaker: "Bob",
+      timestamp: null,
+    });
+  },
+);
