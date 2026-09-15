@@ -357,6 +357,14 @@ call, never to the Shell: one seam serves every Module, so a Module that does no
 result shape is handed another Module's.
 _Avoid_: Schema (alone), extraction shape, output format
 
+**Wire schema**:
+The description of a Result Shape that is actually sent to a provider, which is narrower than the
+shape itself. Keywords an Upstream Route cannot decode are dropped on the way out — `maxLength`,
+which cost the call in latency (#304), and `pattern`, which emptied the reply outright (ADR-0098) —
+while the Module's own schema still enforces them when the answer comes back. A constraint missing
+from the wire schema is moved to validation time, never relaxed.
+_Avoid_: The schema (the Module's own schema still holds every rule), JSON Schema (names the format, not this narrowing)
+
 **Result Shape Binding**:
 How a model is made to answer in a Result Shape. Three of them, ordered by how deterministic they
 are: the provider constrains decoding to the shape, or it constrains the arguments of a call the
