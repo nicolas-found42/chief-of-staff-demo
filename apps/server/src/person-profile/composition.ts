@@ -1,4 +1,5 @@
 import type {
+  DossierExtractionPolicy,
   PersonDossier,
   PersonProfile,
   PersonResearchAttempt,
@@ -117,6 +118,16 @@ export interface PersonProfilesCompositionDeps {
    * its own override.
    */
   completeDossier?: () => CompleteJson;
+  /**
+   * Dossier extraction's effective request policy (issue #418, T2/T4): the
+   * output-token ceiling, requested reasoning effort, shape strategy and
+   * policy version the extraction call and its reuse key must agree on.
+   * Read per operation, like `completeDossier` above, so a Settings edit
+   * lands without a restart. Absent leaves every extraction request exactly
+   * as it was before this policy existed — the benchmark and most
+   * composition tests, which supply no policy today.
+   */
+  dossierExtractionPolicy?: () => DossierExtractionPolicy;
   /**
    * The research planner's model access, on its own Settings purpose. Absent
    * means the operation expands from collected evidence only.
@@ -268,6 +279,9 @@ export function composePersonProfiles(
     /* Rollback switch for validated Extraction Part reuse (#381, R1):
        versioned, and off without invalidating anything already stored. */
     reuseExtractionParts: process.env.PERSON_PROFILE_EXTRACTION_REUSE !== "0",
+    ...(deps.dossierExtractionPolicy
+      ? { dossierExtractionPolicy: deps.dossierExtractionPolicy }
+      : {}),
     /* The planner runs on its own configured purpose, so a Workspace can give
        planning a different model from extraction without either becoming the
        other's fallback. When no planner is configured the operation expands
