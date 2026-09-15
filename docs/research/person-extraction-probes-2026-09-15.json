@@ -1,0 +1,1148 @@
+{
+  "manifest": {
+    "manifestVersion": 1,
+    "model": "inception/mercury-2.5",
+    "provider": "openrouter",
+    "policyVersion": 1,
+    "schemaHash": "06b37411e86c159f4f19f63d566384c10fffb6df223d9d8c67338952b91faa4f",
+    "fixtureHashes": {
+      "denseMultiClaim": "466b0caf8b791813a26a5d68e1ad6e982e52c3b0c10624c259b1dc947043b3c8",
+      "sparseIdentityOnly": "81207051f32a29e4d7bfd84197bc31cbc67d67b8295e1f10387212647efc066e",
+      "noRelevantFacts": "f383ec39eced9410e8e1abef0bc4d31783f12d1976d00321976fb67902d59498",
+      "duplicateLocalIdsPartA": "daa6b4b999f78b07b3d9088ef07210b738c9a22ac6570a9fa2559acdfeb2c2e3",
+      "wrongSubjectDocument": "611cde3089893f5a8067a601b264a5d84a6b8ab0256bc561f3d741efebe84f18"
+    },
+    "cells": [
+      {
+        "id": "existing-full",
+        "description": "The unrepaired production request (spec §3 characterization): full shape, forced_tool_call preferred, no explicit output ceiling, no describeResultShape — reproduces the incident's own request shape.",
+        "variable": "none (baseline)",
+        "fixtures": ["denseMultiClaim"],
+        "repetitions": 2,
+        "options": {
+          "preferredBinding": "forced_tool_call"
+        }
+      },
+      {
+        "id": "small-shape-control",
+        "description": "The same unrepaired shape over a small-output fixture, establishing the provider is reachable and the failure (if any) is proportional to output size, not blanket unavailability.",
+        "variable": "fixture size (document + expected answer), same request options as existing-full",
+        "fixtures": ["sparseIdentityOnly"],
+        "repetitions": 2,
+        "options": {
+          "preferredBinding": "forced_tool_call"
+        }
+      },
+      {
+        "id": "explicit-budget-16384",
+        "description": "Explicit-budget full request at a modest candidate ceiling, isolating the output-ceiling lever alone (spec §2, §3).",
+        "variable": "outputTokenCeiling = 16384",
+        "fixtures": ["denseMultiClaim"],
+        "repetitions": 2,
+        "options": {
+          "preferredBinding": "forced_tool_call",
+          "outputTokenCeiling": 16384
+        }
+      },
+      {
+        "id": "explicit-budget-65536",
+        "description": "Explicit-budget full request at Mercury's declared completion ceiling (mercury-capabilities-evidence.md), isolating the output-ceiling lever alone at its maximum candidate value.",
+        "variable": "outputTokenCeiling = 65536",
+        "fixtures": ["denseMultiClaim"],
+        "repetitions": 2,
+        "options": {
+          "preferredBinding": "forced_tool_call",
+          "outputTokenCeiling": 65536
+        }
+      },
+      {
+        "id": "budget-plus-effort",
+        "description": "Explicit ceiling plus reasoning effort dropped to the advertised `none` (capability evidence item 5), isolating whether reducing invisible reasoning consumption — not only raising the ceiling — is needed.",
+        "variable": "outputTokenCeiling = 65536 AND reasoningEffort = none",
+        "fixtures": ["denseMultiClaim"],
+        "repetitions": 2,
+        "options": {
+          "preferredBinding": "forced_tool_call",
+          "outputTokenCeiling": 65536,
+          "reasoningEffort": "none"
+        }
+      },
+      {
+        "id": "schema-instructions-only",
+        "description": "describeResultShape alone, at the unrepaired ceiling/effort baseline, isolating lever 3.8's own effect from the budget levers above.",
+        "variable": "describeResultShape = true",
+        "fixtures": ["denseMultiClaim"],
+        "repetitions": 2,
+        "options": {
+          "preferredBinding": "forced_tool_call",
+          "describeResultShape": true
+        }
+      },
+      {
+        "id": "repaired-full",
+        "description": "All first-line fixes combined (the actual post-T1/T4 production shape) across the qualification set: dense, sparse, legitimately-empty, duplicate-id-part and wrong-subject fixtures. Determines whether the repaired full strategy is qualified (spec §3).",
+        "variable": "fixture identity, all other options fixed at the repaired combination",
+        "fixtures": [
+          "denseMultiClaim",
+          "sparseIdentityOnly",
+          "noRelevantFacts",
+          "duplicateLocalIdsPartA",
+          "wrongSubjectDocument"
+        ],
+        "repetitions": 1,
+        "options": {
+          "preferredBinding": "forced_tool_call",
+          "outputTokenCeiling": 65536,
+          "reasoningEffort": "low",
+          "describeResultShape": true
+        }
+      },
+      {
+        "id": "forced-tool-recovery",
+        "description": "Deliberately prefers response_format (overriding extraction's own forced_tool_call preference, for this probe cell only) on the repaired combination, to observe whether an empty response_format answer steps down to forced_tool_call exactly once (spec §4, T7's emptyEverywhereForcedToolCallRecoverable rung) and to settle which binding/field the incident actually hit.",
+        "variable": "preferredBinding = response_format (all other options match repaired-full)",
+        "fixtures": ["denseMultiClaim"],
+        "repetitions": 2,
+        "options": {
+          "outputTokenCeiling": 65536,
+          "reasoningEffort": "low",
+          "describeResultShape": true
+        }
+      }
+    ],
+    "authorization": {
+      "spendCeiling": "Owner-authorized live probes only, no numeric ceiling given; kept small and bounded to this manifest's declared cells (a few dozen small Mercury calls, cents at $0.04/M input, $0.15/M output).",
+      "routePermission": "openrouter, inception/mercury-2.5 only, exact ADR-0091 string.",
+      "notAuthorized": "A full Person Research Benchmark corpus acceptance run (scripts/person-research-benchmark.mts) is explicitly NOT authorized by this ticket; see the disposition report for its cost/requirements estimate."
+    },
+    "codeVersion": "d7854595e37a0a44014415aa48e545bc3896af22",
+    "frozenAt": "2026-09-15T15:01:41.994Z",
+    "manifestHash": "ac2001f53daf2e4644af9444dfe5722fd177c2e778902c32098b1aef7ecaa39f"
+  },
+  "results": [
+    {
+      "id": "existing-full",
+      "description": "The unrepaired production request (spec §3 characterization): full shape, forced_tool_call preferred, no explicit output ceiling, no describeResultShape — reproduces the incident's own request shape.",
+      "variable": "none (baseline)",
+      "repetitions": [
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 1,
+          "wallClockMs": 860,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 2,
+          "wallClockMs": 642,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "small-shape-control",
+      "description": "The same unrepaired shape over a small-output fixture, establishing the provider is reachable and the failure (if any) is proportional to output size, not blanket unavailability.",
+      "variable": "fixture size (document + expected answer), same request options as existing-full",
+      "repetitions": [
+        {
+          "fixture": "sparseIdentityOnly",
+          "repetition": 1,
+          "wallClockMs": 402,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "sparseIdentityOnly",
+          "repetition": 2,
+          "wallClockMs": 352,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "explicit-budget-16384",
+      "description": "Explicit-budget full request at a modest candidate ceiling, isolating the output-ceiling lever alone (spec §2, §3).",
+      "variable": "outputTokenCeiling = 16384",
+      "repetitions": [
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 1,
+          "wallClockMs": 446,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 2,
+          "wallClockMs": 490,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "explicit-budget-65536",
+      "description": "Explicit-budget full request at Mercury's declared completion ceiling (mercury-capabilities-evidence.md), isolating the output-ceiling lever alone at its maximum candidate value.",
+      "variable": "outputTokenCeiling = 65536",
+      "repetitions": [
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 1,
+          "wallClockMs": 1045,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 2,
+          "wallClockMs": 417,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "budget-plus-effort",
+      "description": "Explicit ceiling plus reasoning effort dropped to the advertised `none` (capability evidence item 5), isolating whether reducing invisible reasoning consumption — not only raising the ceiling — is needed.",
+      "variable": "outputTokenCeiling = 65536 AND reasoningEffort = none",
+      "repetitions": [
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 1,
+          "wallClockMs": 428,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "none",
+              "requestedReasoningEffort": "none",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 2,
+          "wallClockMs": 482,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "none",
+              "requestedReasoningEffort": "none",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "schema-instructions-only",
+      "description": "describeResultShape alone, at the unrepaired ceiling/effort baseline, isolating lever 3.8's own effect from the budget levers above.",
+      "variable": "describeResultShape = true",
+      "repetitions": [
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 1,
+          "wallClockMs": 380,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 2,
+          "wallClockMs": 476,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "repaired-full",
+      "description": "All first-line fixes combined (the actual post-T1/T4 production shape) across the qualification set: dense, sparse, legitimately-empty, duplicate-id-part and wrong-subject fixtures. Determines whether the repaired full strategy is qualified (spec §3).",
+      "variable": "fixture identity, all other options fixed at the repaired combination",
+      "repetitions": [
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 1,
+          "wallClockMs": 434,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "sparseIdentityOnly",
+          "repetition": 1,
+          "wallClockMs": 11010,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "retrying",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "upstream_error",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": 502,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": null,
+                "bodyBytes": 284,
+                "topLevelKeys": [
+                  "id",
+                  "object",
+                  "created",
+                  "model",
+                  "provider",
+                  "choices",
+                  "error"
+                ],
+                "populatedFields": [],
+                "emptyFields": [],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            },
+            {
+              "attempt": 2,
+              "binding": "forced_tool_call",
+              "outcome": "retrying",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "http_error",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": null,
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 404,
+                "finishReason": null,
+                "bodyBytes": 287,
+                "topLevelKeys": [],
+                "populatedFields": [],
+                "emptyFields": [],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            },
+            {
+              "attempt": 3,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "noRelevantFacts",
+          "repetition": 1,
+          "wallClockMs": 530,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "duplicateLocalIdsPartA",
+          "repetition": 1,
+          "wallClockMs": 519,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        },
+        {
+          "fixture": "wrongSubjectDocument",
+          "repetition": 1,
+          "wallClockMs": 435,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "forced_tool_call",
+              "outcome": "failed",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "diagnostic": {
+                "classification": "unusable_shape",
+                "provider": "openrouter",
+                "model": "inception/mercury-2.5",
+                "upstreamServer": "Inception",
+                "upstreamCode": null,
+                "binding": "forced_tool_call",
+                "status": 200,
+                "finishReason": "stop",
+                "bodyBytes": 133,
+                "topLevelKeys": ["provider", "choices"],
+                "populatedFields": ["choices[0].message.role"],
+                "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+                "timeoutMs": null,
+                "usage": null
+              },
+              "observedUpstreamRoute": "unknown"
+            }
+          ],
+          "finalOutcome": "boundary-failure",
+          "failureDiagnostic": {
+            "classification": "unusable_shape",
+            "provider": "openrouter",
+            "model": "inception/mercury-2.5",
+            "upstreamServer": "Inception",
+            "upstreamCode": null,
+            "binding": "forced_tool_call",
+            "status": 200,
+            "finishReason": "stop",
+            "bodyBytes": 133,
+            "topLevelKeys": ["provider", "choices"],
+            "populatedFields": ["choices[0].message.role"],
+            "emptyFields": ["choices[0].message.content", "choices[0].message.tool_calls"],
+            "timeoutMs": null,
+            "usage": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "forced-tool-recovery",
+      "description": "Deliberately prefers response_format (overriding extraction's own forced_tool_call preference, for this probe cell only) on the repaired combination, to observe whether an empty response_format answer steps down to forced_tool_call exactly once (spec §4, T7's emptyEverywhereForcedToolCallRecoverable rung) and to settle which binding/field the incident actually hit.",
+      "variable": "preferredBinding = response_format (all other options match repaired-full)",
+      "repetitions": [
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 1,
+          "wallClockMs": 4076,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "response_format",
+              "outcome": "succeeded",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "usage": {
+                "inputTokens": 9845,
+                "outputTokens": 2055,
+                "costUsd": 0.0006950295
+              },
+              "diagnostic": null,
+              "observedUpstreamRoute": "Inception"
+            }
+          ],
+          "finalOutcome": "admitted",
+          "admissibility": {
+            "admissible": false,
+            "reason": "Model answer did not validate against ExtractionSchema.",
+            "validationIssueCount": 1
+          }
+        },
+        {
+          "fixture": "denseMultiClaim",
+          "repetition": 2,
+          "wallClockMs": 8918,
+          "attempts": [
+            {
+              "attempt": 1,
+              "binding": "response_format",
+              "outcome": "succeeded",
+              "provider": "openrouter",
+              "model": "inception/mercury-2.5",
+              "reasoningEffort": "low",
+              "requestedReasoningEffort": "low",
+              "usage": {
+                "inputTokens": 9847,
+                "outputTokens": 4325,
+                "costUsd": 0.0010322037
+              },
+              "diagnostic": null,
+              "observedUpstreamRoute": "Inception"
+            }
+          ],
+          "finalOutcome": "admitted",
+          "admissibility": {
+            "admissible": false,
+            "reason": "Model answer did not validate against ExtractionSchema.",
+            "validationIssueCount": 7
+          }
+        }
+      ]
+    }
+  ]
+}
