@@ -1644,10 +1644,20 @@ function clearRests(model: string): void {
  * `chosen` is what the model declared support for, or `null` when there is no
  * declaration to read — which is not the same as declaring no support, and is
  * the only case that permits the ordinary refusal step-down.
+ *
+ * `parameters` is the raw declaration `chosen`/`ladder` were built from, kept
+ * alongside them so a recovery step that must ask "is the NEXT binding
+ * explicitly declared" (spec #418 §4) can ask the declaration directly
+ * instead of inferring it from ladder membership — the ladder includes a
+ * binding one position past `chosen` unconditionally, declared or not
+ * (`declaredBindings` below), which is right for the existing refusal
+ * step-down but wrong for a recovery that must not optimistically dispatch
+ * to an unsupported binding. `null` when there is no declaration to read.
  */
 interface DeclaredBindings {
   chosen: ResultShapeBinding | null;
   ladder: readonly ResultShapeBinding[];
+  parameters: Set<string> | null;
 }
 
 /** Whether a declaration covers one binding. Prompt-only asks nothing of the provider. */
@@ -1954,12 +1964,47 @@ async function openAiCompatibleComplete(
          they keep their report (ADR-0074). */
       const diagnostic = modelBoundaryDiagnostic(error);
       if (cfg.provider === "openrouter") restFailedRoute(cfg.model, diagnostic ?? null);
+      /* `response_format`'s answer container is always exactly `{role,
+         content}` — `role` is boilerplate this seam fills in itself (never
+         read off the wire, see the streamed-message reconstruction above),
+         never the model's own answer. So "empty everywhere" in the sense
+         that matters — no substantive answer arrived at all, as opposed to
+         one that arrived in the wrong shape — reads as "content" not among
+         the populated fields, exactly the negation of the populated-prose
+         case just below. Trying `response_format` again cannot do better
+         than that; spec #418 §4 permits exactly one step out of it —
+         response_format to forced_tool_call, and only there — but only when
+         the next binding is a fact the declaration states rather than an
+         optimistic guess: `ladder[index + 1] === "forced_tool_call"` is true
+         whenever `forced_tool_call` has not already been spent in this walk
+         (the ladder never revisits a binding, and `declaredBindings` always
+         places it one step after a `response_format` start regardless of
+         declaration — see the comment on `DeclaredBindings` above), and
+         `declares(declared.parameters, "forced_tool_call")` is the explicit
+         declaration check that ladder membership alone does not give: an
+         unread or absent declaration proves nothing, and "nothing" is not
+         "supported" (spec #418 §4's "ineligible recovery, not optimistically
+         dispatched"). Refusals, admission denials, malformed tool-call
+         arguments and every other HTTP-200 anomaly never reach this branch at
+         all — they classify as something other than `unusable_shape`, or
+         (ADR-0074) they keep their report at the tool binding on purpose. */
+      const contentPopulated =
+        diagnostic?.classification === "unusable_shape" &&
+        diagnostic.populatedFields.some((field) => field.endsWith(".content"));
+      const emptyEverywhereForcedToolCallRecoverable =
+        diagnostic?.classification === "unusable_shape" &&
+        call.binding === "response_format" &&
+        !contentPopulated &&
+        ladder[index + 1] === "forced_tool_call" &&
+        declared.parameters !== null &&
+        declares(declared.parameters, "forced_tool_call");
       const shapeRecoverable =
         (diagnostic?.classification === "answer_not_json" && call.binding === "response_format") ||
-        (diagnostic?.classification === "unusable_shape" &&
-          /* An answer that is empty everywhere is not going to be better at
-             the next binding, and keeps its report. */
-          diagnostic.populatedFields.some((field) => field.endsWith(".content")));
+        /* A populated field that is not the binding's own content is not
+           going to be better at the next binding either, and keeps its
+           report — the empty-everywhere case above is the one exception. */
+        contentPopulated ||
+        emptyEverywhereForcedToolCallRecoverable;
       if (index < ladder.length - 1 && !deadline.signal.aborted && shapeRecoverable) {
         deadline.reportAttempt({
           outcome: "retrying",
@@ -2263,7 +2308,7 @@ function declaredBindings(
   declared: Set<string> | null,
   preferred?: CompletionRequest["preferredBinding"],
 ): DeclaredBindings {
-  if (!declared) return { chosen: null, ladder: RESULT_SHAPE_BINDINGS };
+  if (!declared) return { chosen: null, ladder: RESULT_SHAPE_BINDINGS, parameters: null };
   const chosen: ResultShapeBinding =
     preferred === "forced_tool_call" && declares(declared, "forced_tool_call")
       ? "forced_tool_call"
@@ -2281,6 +2326,7 @@ function declaredBindings(
         (binding, index) => binding !== chosen && (index > from || declares(declared, binding)),
       ),
     ],
+    parameters: declared,
   };
 }
 
@@ -2339,7 +2385,7 @@ function ollamaComplete(
     cfg,
     request,
     schema,
-    { chosen: null, ladder: RESULT_SHAPE_BINDINGS },
+    { chosen: null, ladder: RESULT_SHAPE_BINDINGS, parameters: null },
     deadline,
     false,
   );
