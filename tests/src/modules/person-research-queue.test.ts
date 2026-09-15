@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
+import type { PersonResearchReadiness } from "@chief-of-staff-demo/shared";
 import { PersonResearchQueue } from "../../../apps/server/src/person-profile/research-queue.js";
 import { PersonResearch } from "../../../apps/server/src/person-profile/research.js";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
@@ -82,6 +83,191 @@ test("one named lookup returns one Profile's queue record", () => {
   job!.state = "researching";
   expect(queue.job(person.id)?.state).toBe("queued");
   expect(queue.job("no-such-profile")).toBeNull();
+});
+
+/**
+ * Typed enqueue decisions (issue #418, T3): `enqueue()` used to return void
+ * and no-op silently in four distinct situations (#417 F1). Every path now
+ * returns an honest, exhaustive decision.
+ */
+test("enqueue() returns a typed accepted decision naming the queued work", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  expect(queue.enqueue(person.id, "created")).toEqual({
+    kind: "accepted",
+    profileId: person.id,
+    jobState: "queued",
+  });
+});
+
+test("enqueue() reports already-active work instead of silently coalescing it", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.enqueue(person.id, "created");
+  expect(queue.enqueue(person.id, "viewed")).toEqual({
+    kind: "already-active",
+    profileId: person.id,
+    jobState: "queued",
+  });
+});
+
+test("enqueue() defers a non-urgent reason still inside the existing job's backoff window", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  let now = new Date("2026-09-05T12:00:00Z");
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    now: () => now,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.enqueue(person.id, "created");
+  await queue.tick();
+  now = new Date("2026-09-05T12:00:01Z");
+  /* "viewed" is only urgent once the existing job has aged 48h; freshly
+     completed, its refresh backoff is still well in the future. */
+  const decision = queue.enqueue(person.id, "viewed");
+  expect(decision.kind).toBe("deferred");
+  if (decision.kind === "deferred") {
+    expect(decision.profileId).toBe(person.id);
+    expect(Date.parse(decision.nextAt)).toBeGreaterThan(Date.parse(now.toISOString()));
+  }
+});
+
+test("enqueue() rejects on readiness, carrying the actual blocker, without touching the queue", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const readiness = {
+    state: "setup-required" as const,
+    reason: "owner-not-confirmed" as const,
+    nextAction: { label: "Open Settings", href: "/settings" },
+  };
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => readiness,
+  });
+  expect(queue.enqueue(person.id, "explicit")).toEqual({
+    kind: "rejected-readiness",
+    profileId: person.id,
+    readiness,
+  });
+  expect(queue.status().jobs).toHaveLength(0);
+});
+
+test("enqueue() reports inactive-profile for an archived Profile and for one that does not exist", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  people.archive(person.id);
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  expect(queue.enqueue(person.id, "explicit")).toEqual({
+    kind: "inactive-profile",
+    profileId: person.id,
+  });
+  expect(queue.enqueue("person_absent", "explicit")).toEqual({
+    kind: "inactive-profile",
+    profileId: "person_absent",
+  });
+});
+
+test("queue.readiness() reports paused only over an otherwise-ready readiness", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const setupRequired: PersonResearchReadiness = {
+    state: "setup-required",
+    reason: "provider-not-configured",
+  };
+  let base: PersonResearchReadiness = { state: "ready", reason: "ready" };
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => base,
+  });
+  expect(queue.readiness()).toEqual(base);
+  queue.configure({ paused: true });
+  expect(queue.readiness()).toEqual({ state: "paused", reason: "administratively-paused" });
+  /* A genuine setup problem is never hidden behind "paused". */
+  base = setupRequired;
+  expect(queue.readiness()).toEqual(setupRequired);
 });
 
 test.each(["archive", "correction", "merge", "privacy", "pause", "gate", "stop", "evidence"])(
