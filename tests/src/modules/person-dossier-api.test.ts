@@ -211,6 +211,59 @@ test("POST /research still 404s an unknown Profile and 409s an inactive one befo
   }
 });
 
+/**
+ * New status/diagnostics polling interfaces are side-effect-free and never
+ * enqueue work (issue #418, T5, spec §7).
+ */
+test("GET /research/summary and /research/diagnostics are side-effect-free, bounded, and 404 an unknown Profile", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dossier-api-summary-"));
+  const app = Fastify();
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const person = people.create({ primaryEmail: "maya@example.com" });
+    const dossiers = new PersonDossierStore(root);
+    const research = new PersonResearch({
+      dossiers,
+      search: async () => [],
+      complete: async () => ({}),
+    });
+    const queue = new PersonResearchQueue({
+      workspaceDir: root,
+      people,
+      research,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+    });
+    registerPersonDossierApi(app, { people, dossiers, queue });
+
+    expect((await app.inject(`/api/people/person_absent/research/summary`)).statusCode).toBe(404);
+    expect((await app.inject(`/api/people/person_absent/research/diagnostics`)).statusCode).toBe(
+      404,
+    );
+
+    const beforeSummary = await app.inject(`/api/people/${person.id}/research/summary`);
+    expect(beforeSummary.statusCode).toBe(200);
+    expect(beforeSummary.json()).toEqual({ summary: null });
+    /* Reading the summary never enqueues (unlike GET /dossier, whose
+       "viewed" scheduling side effect is a distinct, deliberate decision). */
+    expect(queue.job(person.id)).toBeNull();
+
+    const diagnostics = await app.inject(`/api/people/${person.id}/research/diagnostics`);
+    expect(diagnostics.statusCode).toBe(200);
+    expect(diagnostics.json()).toBeNull();
+    expect(queue.job(person.id)).toBeNull();
+
+    await app.inject({ method: "POST", url: `/api/people/${person.id}/research` });
+    const afterSummary = await app.inject(`/api/people/${person.id}/research/summary`);
+    expect(afterSummary.json().summary).toMatchObject({ profileId: person.id, state: "queued" });
+  } finally {
+    await app.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test.each(["queued", "retrieving"])(
   "detaching %s evidence preserves revisions and excludes late research after restart",
   async (phase) => {
