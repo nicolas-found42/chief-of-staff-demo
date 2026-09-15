@@ -33,8 +33,6 @@ import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import type { ZodTypeAny } from "zod/v3";
-
 import {
   ExtractionSchema,
   type Extraction,
@@ -57,7 +55,7 @@ import * as boundaryFixtures from "../tests/src/modules/person-research-extracti
 // (issue precedent), rather than adding a root dependency for one hash.
 const { zodToJsonSchema } = createRequire(new URL("../apps/server/package.json", import.meta.url))(
   "zod-to-json-schema",
-) as { zodToJsonSchema: (schema: ZodTypeAny) => unknown };
+) as { zodToJsonSchema: (schema: typeof ExtractionSchema) => unknown };
 
 /** ADR-0091: exact string, no `-preview`, no alias, in every call and every recorded line. */
 export const EXTRACTION_MODEL = "inception/mercury-2.5" as const;
@@ -262,7 +260,9 @@ export function buildProbeCells(selectedCeiling: number): ProbeCellSpec[] {
       fixtures: ["denseMultiClaim"],
       repetitions: 2,
       options: {
-        preferredBinding: undefined,
+        // No preferredBinding key at all: `declaredBindings` then falls
+        // through to `response_format` (Mercury's first-listed declared
+        // binding), rather than extraction's own forced_tool_call preference.
         outputTokenCeiling: selectedCeiling,
         reasoningEffort: "low",
         describeResultShape: true,
