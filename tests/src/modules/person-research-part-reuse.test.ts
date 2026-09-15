@@ -644,11 +644,10 @@ describe("the effective extraction policy (spec #418 §6)", () => {
     expect(checkpoints).toHaveLength(2);
     for (const checkpoint of checkpoints) {
       expect(checkpoint.binding).toBe("response_format");
-      expect(checkpoint.modelRole).toBe("primary");
     }
   });
 
-  it("leaves binding and modelRole unset when the boundary never reports an attempt", async () => {
+  it("leaves binding unset when the boundary never reports an attempt", async () => {
     /* The other fixtures in this file (`fakeModel`) never call
        `retry.onAttempt`, exactly like a caller that receives no wire
        telemetry at all — the checkpoint still writes, and its provenance is
@@ -658,8 +657,7 @@ describe("the effective extraction policy (spec #418 §6)", () => {
     const stored = fx.dossiers.extractionParts(fx.person.id);
     expect(stored).toHaveLength(1);
     expect(stored[0].binding).toBeUndefined();
-    expect(stored[0].modelRole).toBe("primary");
-    /* A legacy-shaped checkpoint (no binding/modelRole at all, as written
+    /* A legacy-shaped checkpoint (no binding at all, as written
        before this field existed) still replays as a hit — provenance is
        additive, never a new reuse requirement. */
     void checkpoint;

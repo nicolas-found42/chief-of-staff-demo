@@ -65,15 +65,12 @@ export const ExtractionPartCheckpointSchema = z.object({
    *
    * The compatibility key already changes with the resolved model identity
    * (`extractionPartKey`'s `modelIdentity`), so a fallback's checkpoint is
-   * never written under, or matched by, the primary model's key. These
-   * fields record that fact as data — so a lookup can tell a primary answer
-   * from a fallback one without recomputing the key — and give a future
-   * caller (T7) the field to set when it deliberately looks up a previously
-   * successful compatible recovery result instead of only ever landing on
-   * one by the accident of key collision.
+   * `binding` records which Result Shape Binding actually answered, so a
+   * lookup can tell that without recomputing the key. It is absent on
+   * checkpoints written before the field existed, and on any answer the
+   * boundary reported no attempt for; absent means unknown, never guessed.
    */
   binding: z.enum(RESULT_SHAPE_BINDINGS).optional(),
-  modelRole: z.enum(["primary", "fallback"]).optional(),
   result: ExtractionSchema,
 });
 export type ExtractionPartCheckpoint = z.infer<typeof ExtractionPartCheckpointSchema>;

@@ -1165,12 +1165,11 @@ export class PersonResearch {
                 ...(privateDocument ? { transcriptId: privateDocument.transcriptId } : {}),
                 /* Provenance (spec #418 §6): this call is always the
                    Profile's ordinarily configured model — T4 dispatches no
-                   fallback — so every checkpoint it writes is explicitly
-                   `"primary"`, never guessed for older checkpoints that
-                   predate this field. `binding` is the Result Shape Binding
-                   that actually answered, when the boundary reported one. */
+                   `binding` is the Result Shape Binding that actually
+                   answered, recorded only when the boundary reported an
+                   attempt; it stays unset otherwise rather than being
+                   guessed. */
                 ...(partBinding ? { binding: partBinding } : {}),
-                modelRole: "primary",
                 result: validated,
               });
           } catch (error) {
