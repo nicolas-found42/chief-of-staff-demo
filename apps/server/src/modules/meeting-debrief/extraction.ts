@@ -200,9 +200,15 @@ export function dropActionItemEvidence(raw: unknown): unknown {
   };
 }
 
+/** A speaker label and its standalone turn timestamp, with no speech. */
+export const TRANSCRIPT_HEADER_PATTERN = /^([^:\n]+?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s*$/;
+
 /** Share turn metadata across evidence grounding and responsibility checks so
  * retained Markdown exports carry the same identities as plain transcripts. */
-export function parseTranscriptTurn(line: string): {
+export function parseTranscriptTurn(
+  line: string,
+  previousLine?: string,
+): {
   speaker: string;
   timestamp: string | null;
   text: string;
@@ -211,7 +217,14 @@ export function parseTranscriptTurn(line: string): {
   if (markdown)
     return { speaker: markdown[1]!.trim(), timestamp: markdown[2]!, text: markdown[3]! };
   const plain = line.match(/^(?:\[([\d:]+)(?:[–-][\d:]+)?\]\s*)?([^:\n]+):\s(.*)$/);
-  return plain ? { speaker: plain[2]!.trim(), timestamp: plain[1] ?? null, text: plain[3]! } : null;
+  if (plain?.[1]) return { speaker: plain[2]!.trim(), timestamp: plain[1], text: plain[3]! };
+  // Some exports separate the label from its speech. Only the immediately
+  // following nonblank line belongs to that header; never carry it across a gap.
+  // A colon within that speech is prose unless it has its own turn timestamp.
+  const header = previousLine?.match(TRANSCRIPT_HEADER_PATTERN);
+  if (header && line.trim() && !TRANSCRIPT_HEADER_PATTERN.test(line))
+    return { speaker: header[1]!.trim(), timestamp: header[2]!, text: line };
+  return plain ? { speaker: plain[2]!.trim(), timestamp: null, text: plain[3]! } : null;
 }
 
 /** Ground model quotes in literal transcript speech, preserving speaker boundaries. */
@@ -220,11 +233,21 @@ export function groundTranscriptQuotes(
   record: Pick<TranscriptRecord, "normalizedText">,
 ): MeetingHandoff["evidence"] {
   const sourceText = normalizeQuote(record.normalizedText);
-  const segments = record.normalizedText.split("\n").map((line) => {
-    const turn = parseTranscriptTurn(line);
+  const lines = record.normalizedText.split("\n");
+  const segments = lines.map((line, index) => {
+    const turn = parseTranscriptTurn(line, lines[index - 1]);
     return turn ? { ...turn, text: normalizeQuote(turn.text) } : null;
   });
   return quotes.flatMap((source) => {
+    const reference = source.quote.trim().match(/^@line:(\d+)$/);
+    if (reference) {
+      const index = Number(reference[1]) - 1;
+      const line = lines[index];
+      const turn = line === undefined ? null : parseTranscriptTurn(line, lines[index - 1]);
+      return turn?.text.trim()
+        ? [{ quote: turn.text, speaker: turn.speaker, timestamp: turn.timestamp }]
+        : [];
+    }
     const quote = normalizeQuote(source.quote);
     if (!quote) return [];
     const matching = segments.flatMap((segment, index) => {

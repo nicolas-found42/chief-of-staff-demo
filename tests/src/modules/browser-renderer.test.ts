@@ -112,6 +112,47 @@ describe("public browser rendering", () => {
     }
   });
 
+  it("reads the ready document without waiting for unrelated pending resources", async () => {
+    const page = pageFixture();
+    let dispatch!: (route: unknown) => Promise<void>;
+    browser.route.mockImplementation((_pattern, handler) => {
+      dispatch = handler;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetchResource = vi.fn(async () => {
+      await gate;
+      return { status: 200, headers: {}, body: Buffer.from("background resource") };
+    });
+    const route = {
+      request: () => ({
+        url: () => "https://example.com/background",
+        method: () => "GET",
+        headers: () => ({}),
+        postDataBuffer: () => null,
+        isNavigationRequest: () => false,
+      }),
+      abort: vi.fn(async () => undefined),
+      fulfill: vi.fn(async () => undefined),
+    };
+    let resource!: Promise<void>;
+    page.goto.mockImplementationOnce(async () => {
+      resource = dispatch(route);
+      return { status: () => 200 };
+    });
+    const result = playwrightBrowserRenderer(fetchResource)("https://example.com");
+    try {
+      await vi.waitFor(() => expect(page.evaluate).toHaveBeenCalled(), { timeout: 100 });
+    } finally {
+      release();
+      await resource;
+      await result;
+    }
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+
   it("rejects overlapping renders and releases admission after cleanup", async () => {
     const page = pageFixture();
     let finish!: () => void;

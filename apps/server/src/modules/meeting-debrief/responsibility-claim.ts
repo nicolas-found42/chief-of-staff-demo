@@ -73,12 +73,16 @@ const ANONYMOUS_SPEAKER = /^speaker\s+\d+$/i;
  * cited as one.
  */
 export function claimTurns(
-  parse: (text: string) => { text: string; speaker: string; timestamp: string | null } | null,
+  parse: (
+    text: string,
+    previousLine?: string,
+  ) => { text: string; speaker: string; timestamp: string | null } | null,
   normalizedText: string,
 ): ClaimTurn[] {
   const turns: ClaimTurn[] = [];
-  for (const line of normalizedText.split("\n")) {
-    const turn = parse(line);
+  const lines = normalizedText.split("\n");
+  for (const [index, line] of lines.entries()) {
+    const turn = parse(line, lines[index - 1]);
     if (!turn || !turn.text.trim()) continue;
     turns.push({
       index: turns.length + 1,

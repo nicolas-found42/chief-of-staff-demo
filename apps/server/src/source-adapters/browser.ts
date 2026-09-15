@@ -168,7 +168,9 @@ export function playwrightBrowserRenderer(fetchResource = resourceFetch): Browse
         waitUntil: "domcontentloaded",
         timeout: Math.max(1, deadline - Date.now()),
       });
-      await Promise.allSettled(pending);
+      // DOMContentLoaded is the reading boundary. Waiting for every background
+      // resource lets analytics and speculative fetches exhaust the budget after
+      // the source is ready. The finally block still cancels and drains them.
       const body = await readLandingDocument(page, deadline, () => expectedMainDocument);
       if (failure) throw failure;
       return {

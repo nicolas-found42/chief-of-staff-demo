@@ -262,13 +262,24 @@ the pinned Playwright runtime actually contains **Node 24.20.0**.
 
 ### LIVE-01 — live evaluation disposition
 
+Continuation implementation and separately frozen reruns are tracked in the
+[LIVE-01 continuation report](live-01-continuation-2026-09-14.md). Original results
+below remain historical evidence; they are not overwritten by recovered runs.
+
 - Historical disposition before the new authorization: **explicitly unresolved — blocked
   by missing owner grant, corpus access, model selection and spending controls**.
 - New authorization and live evidence: see [the model-specific LIVE-01 campaign](live-01-qwen-validation-2026-09-14.md). The owner authorized this work on September 14
   with every model-backed step restricted to exactly `qwen/qwen3.7-flash`, superseding
   this entry's earlier Solar/floor/cap prerequisites for the new campaign only.
   The historical preparation below remains a record of what had not run at that time.
-- Current disposition: **campaign completed; acceptance failed; LIVE-01 remains open**.
+- Current continuation disposition: **LIVE-01 remains open**. The browser compatibility
+  fix passed the three selected source comparisons and containment checks. Extraction
+  iterations C01–C09 preserve their own frozen evidence; C09 stopped on an Alibaba
+  shared-pool HTTP 429, while prior complete outputs still failed source-based quality
+  checks. Later duplicate-mapping diagnostics passed, but are not a complete corpus
+  pass. Three owner judgments settle specific references, not the required full human
+  review. See the continuation report for current checks, costs and dependencies.
+- Initial campaign disposition: **campaign completed; acceptance failed**.
   Nine extraction slots have nine terminal outcomes. The final follow-up completed
   one of three extractions; zero of three passed the bounded Golden gate. There were
   70 completion requests / 78 HTTP attempts, all restricted to the exact model.
