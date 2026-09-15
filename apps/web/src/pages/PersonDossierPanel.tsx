@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   PersonClaim,
   PersonDossier,
-  PersonResearchJob,
+  PersonResearchProfileSummary,
   PersonResearchSettings,
-  PersonResearchStatus,
+  PersonResearchAggregateStatus,
   PersonSourceDocument,
   PersonRelationshipRecord,
   PersonDossierAnalysis,
@@ -15,7 +15,13 @@ import { request, errorMessage } from "../client";
 
 interface DossierView {
   dossier: PersonDossier | null;
-  research: PersonResearchJob | null;
+  /**
+   * The bounded per-profile summary (issue #418, T5), not the whole
+   * PersonResearchJob the dossier response used to embed (#417 F4). Ticket
+   * T9 renders this projection properly; this panel keeps only the fields it
+   * already relied on that still exist on the summary.
+   */
+  research: PersonResearchProfileSummary | null;
 }
 export interface DossierClient {
   read(id: string, revision?: number): Promise<DossierView>;
@@ -24,7 +30,7 @@ export interface DossierClient {
   analysis(id: string): Promise<PersonDossierAnalysis | null>;
   research(id: string): Promise<unknown>;
   detach(id: string, sourceId: string): Promise<unknown>;
-  settings(): Promise<PersonResearchStatus>;
+  settings(): Promise<PersonResearchAggregateStatus>;
   configure(settings: Partial<PersonResearchSettings>): Promise<unknown>;
 }
 const api: DossierClient = {
@@ -106,7 +112,7 @@ export function PersonDossierPanel({
   const [history, setHistory] = useState<PersonRelationshipRecord[]>([]);
   const editingSettings = useRef(false);
   const settingsEditRevision = useRef(0);
-  const [settings, setSettings] = useState<PersonResearchStatus | null>(null);
+  const [settings, setSettings] = useState<PersonResearchAggregateStatus | null>(null);
   const [readError, setReadError] = useState("");
   const [historyError, setHistoryError] = useState("");
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -351,15 +357,14 @@ export function PersonDossierPanel({
             <>
               <p>
                 Backfill:{" "}
-                {
-                  settings.jobs.filter(
-                    (job) => !["queued", "researching", "paused"].includes(job.state),
-                  ).length
-                }{" "}
-                of {settings.jobs.length} Profiles attempted;{" "}
-                {settings.jobs.filter((job) => ["queued", "paused"].includes(job.state)).length}{" "}
-                waiting. {settings.usedCalls} research requests today. Research continues while
-                useful leads remain; individual requests and retries are bounded.
+                {settings.totalJobs -
+                  (settings.byState.queued ?? 0) -
+                  (settings.byState.researching ?? 0) -
+                  (settings.byState.paused ?? 0)}{" "}
+                of {settings.totalJobs} Profiles attempted;{" "}
+                {(settings.byState.queued ?? 0) + (settings.byState.paused ?? 0)} waiting.{" "}
+                {settings.usedCalls} research requests today. Research continues while useful leads
+                remain; individual requests and retries are bounded.
               </p>
               <button
                 type="button"
@@ -422,31 +427,31 @@ export function PersonDossierPanel({
           {error}
         </p>
       ))}
-      {!!view?.research?.diagnostics?.length && (
+      {/* This panel reads only the bounded per-profile summary (issue #418,
+          T5); the diagnostics sample and gaps below are display-limited
+          slices of it, not the full attempt ledger or operation record.
+          Ticket T9 owns building this out into full paged detail. */}
+      {!!view?.research?.diagnostics.sample.length && (
         <details className="card">
           <summary>Source and identity diagnostics</summary>
           <p className="muted">
-            Showing {view.research.diagnostics.length} of{" "}
-            {view.research.operation?.attempts.length ?? view.research.diagnostics.length} recorded
-            attempts. The full history is kept with the research operation.
+            Showing {view.research.diagnostics.sample.length} of{" "}
+            {view.research.diagnostics.totalAttempts} recorded attempts. The full history is kept
+            with the research operation.
           </p>
-          {view.research.diagnostics.map((attempt) => (
-            <p key={attempt.id}>
-              <strong>{attempt.code}</strong> · {attempt.stage} · attempt {attempt.attempt} ·{" "}
-              {attempt.target}
+          {view.research.diagnostics.sample.map((attempt, index) => (
+            <p key={index}>
+              <strong>{attempt.code}</strong> · {attempt.stage} · {attempt.outcome}
               <br />
               {attempt.reason}
-              {attempt.observed?.status ? ` (HTTP ${attempt.observed.status})` : ""}
-              {attempt.impact ? ` ${attempt.impact}` : ""}
-              {attempt.hypothesis ? ` Suspected, not established: ${attempt.hypothesis}` : ""}
             </p>
           ))}
         </details>
       )}
-      {!!view?.research?.operation?.gaps.length && (
+      {!!view?.research?.gaps?.length && (
         <details className="card">
           <summary>What this research did not find</summary>
-          {view.research.operation.gaps.map((gap, index) => (
+          {view.research.gaps.map((gap, index) => (
             <p key={index}>{gap}</p>
           ))}
         </details>

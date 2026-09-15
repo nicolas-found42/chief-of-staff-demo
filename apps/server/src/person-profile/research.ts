@@ -47,6 +47,10 @@ import { synthesizeSections, type PersonDossierStore } from "./dossier-store.js"
 import type { WorkspacePersonProfiles } from "./profiles.js";
 import { ResearchAttemptRecorder, classifyTransportError } from "./research-diagnostics.js";
 import {
+  classifyDecisiveExtraction,
+  describeExtractionBoundaryInterruption,
+} from "./research-summary.js";
+import {
   LeadRegistry,
   buildCoveragePlan,
   deriveLeads,
@@ -137,6 +141,14 @@ const MAX_PAGE_ATTACHMENT_LEADS = 3;
  */
 export interface ResearchAllowance {
   scope?: "current" | "full";
+  /**
+   * The identity this operation should run under (issue #418, T5). The queue
+   * mints this before dispatch so it can scope live progress by operation
+   * identity and revision from the moment the operation starts, rather than
+   * only once it resolves. Falls back to the checkpoint's operationId, then a
+   * fresh one, exactly as before this field existed.
+   */
+  operationId?: string;
   /** Model calls (extraction parts and planning) before the operation is bounded. */
   maxModelCalls: number;
   /** Network requests (discovery and reading) before the operation is bounded. */
@@ -290,7 +302,7 @@ export class PersonResearch {
            has no identity, and reuse stays off. */
       };
     const now = this.deps.now ?? (() => new Date());
-    const operationId = allowance.checkpoint?.operationId ?? randomUUID();
+    const operationId = allowance.operationId ?? allowance.checkpoint?.operationId ?? randomUUID();
     const recorder = new ResearchAttemptRecorder(operationId, now);
     const startedAt = now();
     const started = Date.now();
@@ -1717,16 +1729,18 @@ export class PersonResearch {
 
     /* Tolerating a stalled request must not let an operation that never got a
        single extraction through report anything but an interruption: with no
-       success to reset against, every failure it saw was the provider's. */
-    if (!interruption && extractionHealth.neverAnswered)
+       success to reset against, every failure it saw was the provider's.
+       The wording is derived from the actual observed model-boundary
+       classification (#417 F2) rather than a fixed "provider failure"
+       assertion: an `unusable_shape` empty answer is not itself evidence of
+       provider downtime or token exhaustion. */
+    if (!interruption && extractionHealth.neverAnswered) {
+      const described = describeExtractionBoundaryInterruption(recorder.all());
       interruption = {
-        code: {
-          code: "model-boundary-failed",
-          reason: "The configured model provider failed during extraction.",
-        },
-        reason:
-          "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
+        code: { code: described.code, reason: described.codeReason },
+        reason: described.detail,
       };
+    }
 
     this.updateCoverage(coverage, profile, leads, expansions);
     /* The completion conditions, asked rather than assumed (#238). An
@@ -1768,13 +1782,30 @@ export class PersonResearch {
           ? `Investigated the planned coverage and every actionable lead; ${String(gaps.length)} gaps remain and are listed.`
           : "Investigated the planned coverage without finding evidence that could be attributed to this person; the gaps are listed.";
 
+    const finishedAt = now().toISOString();
+    const attempts = recorder.all();
+    /* Computed from the operation's COMPLETE attempt history, never the
+       truncatable 40-entry display slice below: more than 40 unrelated
+       identity/rendering entries can never evict the decisive cause (#417
+       F3, spec §7). */
+    const decisiveExtraction = classifyDecisiveExtraction({
+      operationId,
+      profileId: profile.id,
+      conclusion,
+      interruption: interruption ? interruption.code : undefined,
+      attempts,
+      claimsPublished,
+      recordedAt: finishedAt,
+    });
+
     const operation: PersonResearchOperationOutcome = {
       operationId,
       profileId: profile.id,
       conclusion,
       ...(interruption ? { interruption: interruption.code } : {}),
       startedAt: startedAt.toISOString(),
-      finishedAt: now().toISOString(),
+      finishedAt,
+      decisiveExtraction,
       rounds,
       modelCalls: budget.spentModelCalls,
       ...(modelCallsReused ? { modelCallsReused } : {}),
@@ -1786,7 +1817,7 @@ export class PersonResearch {
       ...(dossier ? { publishedDossierRevision: dossier.revision } : {}),
       coverage,
       leads: leads.all(),
-      attempts: recorder.all(),
+      attempts,
       gaps,
       detail,
     };
