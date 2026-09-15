@@ -446,11 +446,23 @@ export class PersonResearch {
       const roundProgress = { producedEvidence: false };
 
       /* 1. Discovery. Queries run together, so one slow provider bundle does
-            not decide how long the round takes. */
-      const queryLeads = leads
+            not decide how long the round takes. A Profile's own URL is read
+            before any query though (spec: the URL slug abbreviates the
+            name — "joseceresc" — while the page it serves carries the
+            proper one, so the name every later search uses has to come
+            from the read, not the handle). While such a lead is still
+            pending, discovery waits one round; the read happens this
+            round's selection below. */
+      const pendingSeedUrlLeads = leads
         .pending()
-        .filter((lead) => lead.kind === "query")
-        .slice(0, 4);
+        .filter((lead) => lead.kind === "url" && lead.origin === "seed");
+      const queryLeads =
+        pendingSeedUrlLeads.length > 0
+          ? []
+          : leads
+              .pending()
+              .filter((lead) => lead.kind === "query")
+              .slice(0, 4);
       await Promise.all(
         queryLeads.map(async (lead) => {
           if (!budget.takeRequest()) {
@@ -554,7 +566,15 @@ export class PersonResearch {
       );
       const { batch, deferred: notRead } = selectReadBatch({
         profile,
-        candidates: leads.pending().filter((lead) => lead.kind !== "query"),
+        /* While a seed profile-URL lead is pending it is the round's whole
+           read batch: the spec makes the Profile's own URL the first thing
+           investigated, and resuming (checkpoint results, retained sources)
+           must not outrank it into a later round. Everything else pending
+           stays pending and is scored from the next round on. */
+        candidates:
+          pendingSeedUrlLeads.length > 0
+            ? pendingSeedUrlLeads
+            : leads.pending().filter((lead) => lead.kind !== "query"),
         unsatisfied,
         context: (leadId, target) =>
           leadContext.get(leadId) ?? { title: target, snippet: "", rank: 20 },
@@ -1305,7 +1325,7 @@ export class PersonResearch {
           extracted.fullName &&
           read.text.includes(extracted.fullName) &&
           !profile.fullName
-        )
+        ) {
           factualUpdates.push({
             field: "fullName",
             value: extracted.fullName,
@@ -1314,6 +1334,14 @@ export class PersonResearch {
             authority: extracted.sourceClass,
             reason: "A matched source names this person.",
           });
+          /* The durable adoption happens at the operation's end, but the
+             name has to steer this run's own searches now (spec: a profile
+             URL slug abbreviates the name; the page it served carried the
+             proper one, and every later discovery and planning call must
+             search that, not the handle). `profile` is the operation's own
+             clone, so the assignment cannot leak into the store. */
+          profile.fullName = extracted.fullName;
+        }
 
         if (!privateDocument && read.route === "feed-reader")
           for (const url of read.outboundUrls) {

@@ -1022,8 +1022,15 @@ async function readHtml(
         response.url,
       );
     }
+    /* The page's own <title> (falling back to og:title) is the one place a
+       slug-named profile URL still names the person — LinkedIn serves
+       "Full Name - Employer | LinkedIn" to an anonymous reader — so it
+       heads the text extraction reads (spec: a profile URL abbreviates the
+       name; the page it serves carries it, and later searches use it). */
+    const pageTitle = document.title.trim() || meta("og:title") || null;
+    const documentText = pageTitle ? `Page title: ${pageTitle}\n\n${text}` : text;
     return {
-      text: text.slice(0, MAX_TEXT),
+      text: documentText.slice(0, MAX_TEXT),
       capturedAt: null,
       completeness: text.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
