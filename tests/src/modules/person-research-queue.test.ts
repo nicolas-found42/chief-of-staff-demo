@@ -209,6 +209,33 @@ test("enqueue() rejects on readiness, carrying the actual blocker, without touch
   expect(queue.status().jobs).toHaveLength(0);
 });
 
+test("enqueue() rejects on the queue's own administrative pause via readiness()", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.configure({ paused: true });
+  expect(queue.enqueue(person.id, "explicit")).toEqual({
+    kind: "rejected-readiness",
+    profileId: person.id,
+    readiness: { state: "paused", reason: "administratively-paused" },
+  });
+});
+
 test("enqueue() reports inactive-profile for an archived Profile and for one that does not exist", () => {
   const root = mkdtempSync(join(tmpdir(), "research-queue-decision-"));
   roots.push(root);
