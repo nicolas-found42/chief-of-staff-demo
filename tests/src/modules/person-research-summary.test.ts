@@ -455,8 +455,15 @@ test("fitToByteBudget truncates a summary that is still over budget after digest
     .filter(([code]) => code !== "other")
     .map(([, count]) => count);
   const other = digested.other;
-  /* Every kept code is commoner than anything folded away. */
-  expect(Math.min(...kept)).toBeGreaterThan(Math.min(...Object.values(byCode)));
+  /* Every kept code is commoner than everything folded away. Comparing the
+     least kept against the GLOBAL minimum would pass even if a rare code had
+     displaced a commoner one, so the comparison is against the folded set's
+     own maximum. */
+  const retainedCodes = new Set(Object.keys(digested).filter((code) => code !== "other"));
+  const folded = Object.entries(byCode)
+    .filter(([code]) => !retainedCodes.has(code))
+    .map(([, count]) => count);
+  expect(Math.min(...kept)).toBeGreaterThan(Math.max(...folded));
   /* Nothing is counted twice: each original count lands in exactly one of a
      kept entry or `other`. */
   const total = Object.values(byCode).reduce((sum, n) => sum + n, 0);

@@ -28,7 +28,7 @@
  * directory for local inspection only.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -645,12 +645,17 @@ export async function main(argv: string[]): Promise<number> {
     JSON.stringify({ manifest, results }, null, 2),
   );
   mkdirSync("docs/research", { recursive: true });
-  const committedPath = resolve(OUT_PATH);
-  const suffix = existsSync(committedPath) ? `-${manifest.manifestHash.slice(0, 8)}` : "";
-  writeFileSync(
-    suffix ? committedPath.replace(/\.json$/, `${suffix}.json`) : committedPath,
-    `${JSON.stringify({ manifest, results }, null, 2)}\n`,
+  /* The filename carries the manifest hash unconditionally, so an artifact
+     names the frozen manifest it came from rather than depending on whether a
+     file happened to exist when it was written. Two runs of one manifest
+     collide deliberately: a recorded cell result is evidence, and rewriting it
+     under the same identity would be the rewrite CODING_STANDARDS.md refuses
+     under "A finished record is not rewritten". */
+  const committedPath = resolve(OUT_PATH).replace(
+    /\.json$/,
+    `-${manifest.manifestHash.slice(0, 8)}.json`,
   );
+  writeFileSync(committedPath, `${JSON.stringify({ manifest, results }, null, 2)}\n`);
   process.stdout.write(`Wrote ${results.length} cell(s) of results.\n`);
   return 0;
 }
