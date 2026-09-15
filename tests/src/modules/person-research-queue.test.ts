@@ -700,6 +700,103 @@ test.each(["the instance that removed it", "an instance still holding it"])(
   },
 );
 
+/**
+ * Issue #418, T5, spec §7; #417 F5: starting a new operation must never
+ * present a prior settled conclusion as its own live progress or failure.
+ */
+test("a new operation's live progress never shows the prior operation's conclusion, which stays available as labeled history", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-history-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  let pauseNextSearch = false;
+  const started = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<void>();
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => {
+      if (pauseNextSearch) {
+        pauseNextSearch = false;
+        started.resolve();
+        await gate.promise;
+      }
+      return [{ url: "https://example.com/maya", title: "Maya", snippet: "" }];
+    },
+    fetch: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: "maya@example.com built Atlas.",
+    }),
+    complete: async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.enqueue(person.id, "created");
+  await queue.tick();
+  const jobA = queue.job(person.id);
+  /* A "completed" operation clears its checkpoint (#228), so the NEXT
+     dispatch mints a genuinely new operation identity rather than resuming
+     this one -- the scenario spec §7 asks for. */
+  expect(jobA?.operation?.conclusion).toBe("completed");
+  expect(jobA?.checkpoint).toBeUndefined();
+  const operationAId = jobA?.operation?.operationId;
+  const detailA = jobA?.detail;
+  expect(operationAId).toBeTruthy();
+
+  pauseNextSearch = true;
+  queue.enqueue(person.id, "explicit");
+  const running = queue.tick(person.id);
+  await started.promise;
+
+  const mid = queue.job(person.id);
+  expect(mid?.state).toBe("researching");
+  expect(mid?.currentOperationId).toBeTruthy();
+  expect(mid?.currentOperationId).not.toBe(operationAId);
+  /* The defining fix (#417 F5): an active operation's own `detail` is
+     neutral progress, never the previous operation's terminal conclusion. */
+  expect(mid?.detail).toBe("Research is in progress.");
+  expect(mid?.detail).not.toBe(detailA);
+  expect(mid?.previousConclusion).toMatchObject({
+    operationId: operationAId,
+    conclusion: "completed",
+    detail: detailA,
+  });
+
+  const midSummary = queue.summary(person.id);
+  expect(midSummary?.state).toBe("researching");
+  expect(midSummary?.detail).toBe("Research is in progress.");
+  expect(midSummary?.previousConclusion?.operationId).toBe(operationAId);
+
+  gate.resolve();
+  await running;
+  const jobB = queue.job(person.id);
+  expect(jobB?.operation?.operationId).not.toBe(operationAId);
+  /* A's conclusion is still there, just no longer sitting in `detail`. */
+  expect(jobB?.previousConclusion?.operationId).toBe(operationAId);
+});
+
 /** One Workspace, two Profiles, and the deps every queue instance shares. */
 function shared(label: string) {
   const root = mkdtempSync(join(tmpdir(), `research-queue-${label}-`));
