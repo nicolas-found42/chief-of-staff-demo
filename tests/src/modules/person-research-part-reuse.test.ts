@@ -171,7 +171,6 @@ function policy(overrides: Partial<DossierExtractionPolicy> = {}): DossierExtrac
     outputTokenCeiling: 8192,
     requestedEffort: "low",
     shapeStrategy: "full",
-    fallback: null,
     ...overrides,
   };
 }

@@ -5,12 +5,6 @@ import {
   ExtractionSchema as Extraction,
   extractionPartKey,
   replayGrounded,
-  type ExtractionSlice,
-  IdentitySliceSchema,
-  ClaimsSliceSchema,
-  StructureSliceSchema,
-  mergeExtractionSlices,
-  draftClaimRefs,
 } from "./extraction-parts.js";
 import { SourceScheduler } from "./source-scheduler.js";
 import { WorkLimiter } from "./work-limiter.js";
@@ -110,38 +104,6 @@ const EXTRACTION_BOUNDARY_FAILURE_TOLERANCE = 3;
 export const EXTRACTION_PREFERRED_MIN_THROUGHPUT = 50;
 /** The call site every dossier extraction part is attributed to in the timeline (E1). */
 export const EXTRACTION_CALL_SITE = "person-research:extraction";
-
-/**
- * Thrown when one slice of a `"sliced"` extraction strategy (spec #418 §5)
- * cannot obtain a model-call permit from the operation's remaining budget.
- * Caught locally, right where the single-call path already has this same
- * check (`if (!budget.takeModelCall()) break;`): the document's parts read so
- * far stay resumable, and an incomplete slice plan is never treated as a
- * document failure or published as a complete Extraction.
- */
-class ExtractionSliceBudgetExhausted extends Error {
-  constructor(readonly slice: ExtractionSlice) {
-    super(
-      `Extraction slice "${slice}" could not be dispatched: the operation's model-call budget is exhausted.`,
-    );
-  }
-}
-
-/**
- * Wraps a genuine slice-call failure (a model-boundary error, or the model's
- * reply not satisfying its slice schema) with which slice produced it, so
- * the shared failure handling below can name the failed unit precisely
- * (spec #418 §5) without a separate mutable "which slice is running" flag —
- * the failure itself carries that fact from the one place it is known.
- */
-class ExtractionSliceFailure extends Error {
-  constructor(
-    readonly slice: ExtractionSlice,
-    override readonly cause: unknown,
-  ) {
-    super(`Extraction slice "${slice}" failed.`);
-  }
-}
 
 /**
  * How far below the round's read batch a deferred lead's score may fall before
@@ -1084,265 +1046,104 @@ export class PersonResearch {
             });
             continue;
           }
-          const sliced = dossierExtractionPolicy?.shapeStrategy === "sliced";
-          if (!sliced && !budget.takeModelCall()) break;
+          if (!budget.takeModelCall()) break;
           let partUsage: ModelAttemptEvent["usage"];
           let partBinding: ModelAttemptEvent["binding"] | undefined;
           let raw: unknown;
           try {
-            if (sliced) {
-              const policy = dossierExtractionPolicy;
-              /* Same-model slice strategy (spec #418 §5): three
-                 field-complete requests instead of one. Each call holds a
-                 model permit only for that call (ADR-0092) — a slice that
-                 cannot get one bounds the document exactly as the
-                 single-call path's own pre-call budget check does (the
-                 `break` below), never as a document failure. Any other
-                 failure is rethrown as `ExtractionSliceFailure`, naming
-                 which slice it was (spec #418 §5: "represent a failed slice
-                 so an escalation can target exactly that slice within its
-                 part"), and still reaches the shared catch below — so an
-                 incomplete slice plan is never merged, checkpointed or
-                 published as a complete Extraction. */
-              const runSlice = async (
-                slice: ExtractionSlice,
-                schema: z.ZodType<unknown, z.ZodTypeDef, unknown>,
-                user: string,
-              ): Promise<unknown> => {
-                if (!budget.takeModelCall()) throw new ExtractionSliceBudgetExhausted(slice);
-                try {
-                  const sliceAttemptOf = randomUUID();
-                  let sliceUsage: ModelAttemptEvent["usage"];
-                  let sliceBinding: ModelAttemptEvent["binding"] | undefined;
-                  const answer = await this.modelWork.run(() =>
-                    models.complete({
-                      schema,
-                      preferredBinding: "forced_tool_call",
-                      absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
-                      outputTokenCeiling: policy.outputTokenCeiling,
-                      reasoningEffort: policy.requestedEffort,
+            raw = await this.modelWork.run(() =>
+              models.complete({
+                schema: Extraction,
+                preferredBinding: "forced_tool_call",
+                absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
+                ...(dossierExtractionPolicy
+                  ? {
+                      outputTokenCeiling: dossierExtractionPolicy.outputTokenCeiling,
+                      reasoningEffort: dossierExtractionPolicy.requestedEffort,
                       describeResultShape: true,
-                      retry: {
-                        canRetry: () =>
-                          Date.now() - started < allowance.maxMilliseconds &&
-                          active() &&
-                          (!privateDocument || privateDocument.active()),
-                        onAttempt: (event) => {
-                          if (event.outcome === "failed")
-                            boundaryObservation.failureRecorded = true;
-                          if (event.outcome === "succeeded") {
-                            if (event.usage) sliceUsage = event.usage;
-                            sliceBinding = event.binding;
-                          }
-                          recordModelWireAttempt(recorder, {
-                            stage: "extraction",
-                            collector: "extraction",
-                            target: pending.url,
-                            attemptOf: sliceAttemptOf,
-                            event,
-                            successReason:
-                              "The model boundary returned JSON for this extraction slice; dossier validation and publication follow.",
-                            successImpact: "A model response is available for evidence validation.",
-                            remediation:
-                              "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
-                            configuration: {
-                              preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
-                              extractionPart: `${partIndex + 1}/${partTexts.length}`,
-                              extractionSlice: slice,
-                            },
-                          });
-                        },
+                    }
+                  : {}),
+                retry: {
+                  canRetry: () =>
+                    Date.now() - started < allowance.maxMilliseconds &&
+                    active() &&
+                    (!privateDocument || privateDocument.active()),
+                  onAttempt: (event) => {
+                    if (event.outcome === "failed") boundaryObservation.failureRecorded = true;
+                    if (event.outcome === "succeeded") {
+                      if (event.usage) partUsage = event.usage;
+                      partBinding = event.binding;
+                    }
+                    recordModelWireAttempt(recorder, {
+                      stage: "extraction",
+                      collector: "extraction",
+                      target: pending.url,
+                      attemptOf: extractionAttemptOf,
+                      event,
+                      successReason:
+                        "The model boundary returned JSON; dossier validation and publication follow.",
+                      successImpact: "A model response is available for evidence validation.",
+                      remediation:
+                        "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+                      configuration: {
+                        preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
+                        extractionPart: `${partIndex + 1}/${partTexts.length}`,
                       },
-                      preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
-                      temperature: 0,
-                      compactWireNames: true,
-                      system: EXTRACTION_SYSTEM,
-                      user,
-                      trace: { operationId, callSite: EXTRACTION_CALL_SITE },
-                    }),
-                  );
-                  recorder.record({
-                    stage: "extraction",
-                    code: "model-call-metrics",
-                    outcome: "succeeded",
-                    recovery: "none",
-                    cause: "observed",
-                    target: pending.url,
-                    targetKind: "model",
-                    collector: "extraction",
-                    attemptOf: sliceAttemptOf,
-                    attempt: 1,
-                    configuration: {
-                      logicalCall: sliceAttemptOf,
-                      extractionPart: `${partIndex + 1}/${partTexts.length}`,
-                      extractionSlice: slice,
-                      preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
-                    },
-                    observed: {
-                      modelCallDurationMilliseconds: Date.now() - partStartedAt,
-                      modelInputCharacters: EXTRACTION_SYSTEM.length + user.length,
-                      modelOutputCharacters: JSON.stringify(answer).length,
-                      ...(sliceUsage
-                        ? {
-                            modelUsageTokens: {
-                              input: sliceUsage.inputTokens,
-                              output: sliceUsage.outputTokens,
-                            },
-                          }
-                        : {}),
-                    },
-                    reason: `The "${slice}" extraction slice completed; its size and duration are recorded for call-shape attribution (spec #418 §5).`,
-                  });
-                  /* Provenance for the part-level checkpoint below: the last
-                     slice to answer wins, which in practice agrees with every
-                     other slice since all three share one resolved binding. */
-                  partUsage = sliceUsage ?? partUsage;
-                  partBinding = sliceBinding ?? partBinding;
-                  return answer;
-                } catch (error) {
-                  /* Names which slice failed (spec #418 §5), so a future
-                     fallback escalation can be scoped to re-run only this
-                     slice — never rewrapping a budget refusal, which the
-                     outer loop treats as a bound, not a failure. */
-                  throw error instanceof ExtractionSliceBudgetExhausted
-                    ? error
-                    : new ExtractionSliceFailure(slice, error);
-                }
-              };
-              /* Builds one slice's user payload from the same document/person
-                 context every strategy sends, naming this call's own narrow
-                 responsibility so the model does not have to infer it from
-                 the (necessarily narrower) response schema alone. */
-              const sliceUser = (task: string, extra?: Record<string, unknown>): string =>
-                JSON.stringify({
-                  ...(JSON.parse(partUser) as Record<string, unknown>),
-                  task,
-                  ...(extra ?? {}),
-                });
-              const identityRaw = await runSlice(
-                "identity",
-                IdentitySliceSchema,
-                sliceUser(
-                  "Answer only fullName, employer, sourceClass, author and publishedAt (identity/source metadata). Every other dossier field is requested separately; leave them out.",
-                ),
-              );
-              const claimsRaw = await runSlice(
-                "claims",
-                ClaimsSliceSchema,
-                sliceUser(
-                  "Answer only grounded claim records. Identity/source metadata and dossier structure are requested separately; leave them out.",
-                ),
-              );
-              /* The minimum validated identifiers the structure slice needs
-                 (spec #418 §5): the claims slice's own admitted-so-far local
-                 ids, read directly off its raw reply. Final grounding still
-                 runs once, below, on the merged result — a claim referenced
-                 here that does not survive it drops its dependents there
-                 exactly as today's dependent-record pruning already does. */
-              const structureRaw = await runSlice(
-                "structure",
-                StructureSliceSchema,
-                sliceUser(
-                  "Answer only works, expertise, connections and sections. Reference claims only by the exact ids listed in admittedClaims below; never invent a new claim id.",
-                  { admittedClaims: draftClaimRefs(claimsRaw) },
-                ),
-              );
-              raw = mergeExtractionSlices(identityRaw, claimsRaw, structureRaw);
-            } else {
-              raw = await this.modelWork.run(() =>
-                models.complete({
-                  schema: Extraction,
-                  preferredBinding: "forced_tool_call",
-                  absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
-                  ...(dossierExtractionPolicy
-                    ? {
-                        outputTokenCeiling: dossierExtractionPolicy.outputTokenCeiling,
-                        reasoningEffort: dossierExtractionPolicy.requestedEffort,
-                        describeResultShape: true,
-                      }
-                    : {}),
-                  retry: {
-                    canRetry: () =>
-                      Date.now() - started < allowance.maxMilliseconds &&
-                      active() &&
-                      (!privateDocument || privateDocument.active()),
-                    onAttempt: (event) => {
-                      if (event.outcome === "failed") boundaryObservation.failureRecorded = true;
-                      if (event.outcome === "succeeded") {
-                        if (event.usage) partUsage = event.usage;
-                        partBinding = event.binding;
-                      }
-                      recordModelWireAttempt(recorder, {
-                        stage: "extraction",
-                        collector: "extraction",
-                        target: pending.url,
-                        attemptOf: extractionAttemptOf,
-                        event,
-                        successReason:
-                          "The model boundary returned JSON; dossier validation and publication follow.",
-                        successImpact: "A model response is available for evidence validation.",
-                        remediation:
-                          "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
-                        configuration: {
-                          preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
-                          extractionPart: `${partIndex + 1}/${partTexts.length}`,
-                        },
-                      });
-                    },
+                    });
                   },
-                  /* Steer the first attempt onto a fast route: the routes that lose
-                     an operation generate at 24-28 tok/s against 66-75 on the ones
-                     that complete it (#232). A routing preference, never a model
-                     change — provider and model stay exactly as configured. */
-                  preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
-                  temperature: 0,
-                  /* A dossier repeats its field names once per claim, and they were
-                     a quarter to a third of every answer. Abbreviating them on the
-                     wire cut output tokens 21% and wall time 15% without touching
-                     this schema, which is still what the answer is validated
-                     against (#232). */
-                  compactWireNames: true,
-                  system: EXTRACTION_SYSTEM,
-                  user: partUser,
-                  /* Measurement attribution (#381): the timeline tells this
-                     dossier extraction (E1) from a claim extraction on the same
-                     purpose only because the call says which it is. */
-                  trace: { operationId, callSite: EXTRACTION_CALL_SITE },
-                }),
-              );
-              recorder.record({
-                stage: "extraction",
-                code: "model-call-metrics",
-                outcome: "succeeded",
-                recovery: "none",
-                cause: "observed",
-                target: pending.url,
-                targetKind: "model",
-                collector: "extraction",
-                attemptOf: extractionAttemptOf,
-                attempt: 1,
-                configuration: {
-                  logicalCall: extractionAttemptOf,
-                  extractionPart: `${partIndex + 1}/${partTexts.length}`,
-                  preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
                 },
-                observed: {
-                  modelCallDurationMilliseconds: Date.now() - partStartedAt,
-                  modelInputCharacters: EXTRACTION_SYSTEM.length + partUser.length,
-                  modelOutputCharacters: JSON.stringify(raw).length,
-                  ...(partUsage
-                    ? {
-                        modelUsageTokens: {
-                          input: partUsage.inputTokens,
-                          output: partUsage.outputTokens,
-                        },
-                      }
-                    : {}),
-                },
-                reason:
-                  "The extraction call completed; its size and duration are recorded for call-shape attribution (ADR-0074).",
-              });
-            }
+                /* Steer the first attempt onto a fast route: the routes that lose
+                   an operation generate at 24-28 tok/s against 66-75 on the ones
+                   that complete it (#232). A routing preference, never a model
+                   change — provider and model stay exactly as configured. */
+                preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
+                temperature: 0,
+                /* A dossier repeats its field names once per claim, and they were
+                   a quarter to a third of every answer. Abbreviating them on the
+                   wire cut output tokens 21% and wall time 15% without touching
+                   this schema, which is still what the answer is validated
+                   against (#232). */
+                compactWireNames: true,
+                system: EXTRACTION_SYSTEM,
+                user: partUser,
+                /* Measurement attribution (#381): the timeline tells this
+                   dossier extraction (E1) from a claim extraction on the same
+                   purpose only because the call says which it is. */
+                trace: { operationId, callSite: EXTRACTION_CALL_SITE },
+              }),
+            );
+            recorder.record({
+              stage: "extraction",
+              code: "model-call-metrics",
+              outcome: "succeeded",
+              recovery: "none",
+              cause: "observed",
+              target: pending.url,
+              targetKind: "model",
+              collector: "extraction",
+              attemptOf: extractionAttemptOf,
+              attempt: 1,
+              configuration: {
+                logicalCall: extractionAttemptOf,
+                extractionPart: `${partIndex + 1}/${partTexts.length}`,
+                preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
+              },
+              observed: {
+                modelCallDurationMilliseconds: Date.now() - partStartedAt,
+                modelInputCharacters: EXTRACTION_SYSTEM.length + partUser.length,
+                modelOutputCharacters: JSON.stringify(raw).length,
+                ...(partUsage
+                  ? {
+                      modelUsageTokens: {
+                        input: partUsage.inputTokens,
+                        output: partUsage.outputTokens,
+                      },
+                    }
+                  : {}),
+              },
+              reason:
+                "The extraction call completed; its size and duration are recorded for call-shape attribution (ADR-0074).",
+            });
             const validated = this.parsePartial(
               raw,
               read,
@@ -1373,19 +1174,9 @@ export class PersonResearch {
                 result: validated,
               });
           } catch (error) {
-            /* A slice unable to get a model-call permit bounds the document
-               exactly as the single-call path's own pre-call budget check
-               does: no failure recorded, no strike, the parts read so far
-               stay resumable (spec #418 §5). */
-            if (error instanceof ExtractionSliceBudgetExhausted) break;
-            /* A sliced failure carries which slice it was; every other path
-               (including a "full"-strategy failure) is classified exactly
-               as before. */
-            const sliceFailure = error instanceof ExtractionSliceFailure ? error : null;
-            const underlying = sliceFailure ? sliceFailure.cause : error;
             documentFailed = true;
-            const zod = underlying instanceof z.ZodError;
-            const boundary = modelBoundaryDiagnostic(underlying);
+            const zod = error instanceof z.ZodError;
+            const boundary = modelBoundaryDiagnostic(error);
             if (zod || !boundaryObservation.failureRecorded)
               recorder.record({
                 stage: "extraction",
@@ -1399,21 +1190,13 @@ export class PersonResearch {
                 configuration: {
                   extractionPart: `${partIndex + 1}/${partTexts.length}`,
                   preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
-                  /* Names the failed unit precisely under a sliced strategy
-                     (spec #418 §5), so a future fallback escalation (T7's
-                     dossierFallbackComplete, which "knows nothing about
-                     parts or slices" and dispatches exactly the unit it is
-                     given) can be scoped to re-run only this slice, not the
-                     whole part. Absent under the "full" strategy, where the
-                     part is the whole failed unit as it always was. */
-                  ...(sliceFailure ? { extractionSlice: sliceFailure.slice } : {}),
                 },
                 reason: zod
-                  ? `The model's reply did not satisfy the dossier schema: ${underlying.issues
+                  ? `The model's reply did not satisfy the dossier schema: ${error.issues
                       .map((issue) => `${issue.path.join(".")}: ${issue.code}`)
                       .join("; ")
                       .slice(0, 600)}`
-                  : `The model boundary failed: ${underlying instanceof Error ? underlying.message.slice(0, 600) : "unknown error"}`,
+                  : `The model boundary failed: ${error instanceof Error ? error.message.slice(0, 600) : "unknown error"}`,
                 observed: {
                   modelCallDurationMilliseconds: Date.now() - partStartedAt,
                   modelInputCharacters: EXTRACTION_SYSTEM.length + partUser.length,
@@ -1430,8 +1213,8 @@ export class PersonResearch {
                         },
                       }
                     : {}),
-                  ...(!zod && underlying instanceof Error
-                    ? { modelDiagnostic: underlying.message.slice(0, 2000) }
+                  ...(!zod && error instanceof Error
+                    ? { modelDiagnostic: error.message.slice(0, 2000) }
                     : {}),
                   ...(boundary ? { modelBoundary: boundary } : {}),
                 },

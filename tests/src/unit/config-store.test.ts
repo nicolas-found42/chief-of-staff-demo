@@ -205,33 +205,6 @@ describe("ConfigStore.dossierExtractionPolicy (issue #418, T2)", () => {
       outputTokenCeiling: 65536,
       requestedEffort: "low",
       shapeStrategy: "full",
-      fallback: null,
-    });
-  });
-
-  it("keeps fallback disabled even after a dossier-extraction model override, and stays disabled until explicitly configured", () => {
-    const root = workspaceWithConfig("dossier-policy-no-inheritance", {
-      provider: "openrouter",
-      model: "inception/mercury-2.5",
-      apiKey: "fixture-key",
-    });
-    const store = new ConfigStore(join(root, "config.json"));
-    store.load();
-    store.update({
-      models: { openrouter: { personDossierExtraction: "z-ai/glm-5.3-flash" } },
-    });
-    expect(store.get().dossierExtractionPolicy.fallback).toBeNull();
-
-    store.setDossierExtractionPolicy({
-      version: 1,
-      outputTokenCeiling: 8192,
-      requestedEffort: "low",
-      shapeStrategy: "full",
-      fallback: { provider: "anthropic", model: "claude-sonnet-5" },
-    });
-    expect(store.get().dossierExtractionPolicy.fallback).toEqual({
-      provider: "anthropic",
-      model: "claude-sonnet-5",
     });
   });
 });

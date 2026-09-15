@@ -88,7 +88,6 @@ function defaultConfig(): AppConfig {
       outputTokenCeiling: 65536,
       requestedEffort: "low",
       shapeStrategy: "full",
-      fallback: null,
     },
     modules: {
       "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },

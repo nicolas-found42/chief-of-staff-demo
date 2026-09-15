@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod/v3";
 import {
   makeCompleteJson,
-  dossierFallbackComplete,
   type CompletionRequest,
   type ModelExecutionContext,
 } from "../../../apps/server/src/llm/providers.js";
@@ -183,111 +182,5 @@ describe("provider seam admission and budget integration", () => {
         sourceGrant: grant,
       }),
     ).rejects.toThrow(BudgetExhaustedError);
-  });
-
-  /**
-   * Spec #418 §5: dossier extraction's opt-in model escalation dispatches
-   * through the exact same `makeCompleteJson` seam as every other call, so
-   * unknown pricing, an absent source grant, budget exhaustion and a stale
-   * generation prevent it before any wire dispatch — with no separate check
-   * to keep in sync, and (since these all throw before dispatch) with no
-   * fetch mocking required to observe it.
-   */
-  describe("dossier extraction model fallback preconditions (spec #418 T7)", () => {
-    it("prevents dispatch on unknown fallback model pricing", async () => {
-      const grant = createSourceLifecycleGrant({
-        sourceId: "src_1",
-        purpose: "meeting-debrief",
-        model: "nonexistent/unpriced-fallback-xyz",
-      });
-
-      await expect(
-        dossierFallbackComplete(
-          { provider: "openrouter", model: "nonexistent/unpriced-fallback-xyz", apiKey: "test" },
-          {
-            operationId: "op_fallback_unpriced",
-            system: "system",
-            user: "user",
-            schema: SampleSchema,
-            sourceGrant: grant,
-          },
-          join(workspaceDir, "mock-result.json"),
-          context,
-        ),
-      ).rejects.toThrow(UnknownModelPriceEvidenceError);
-    });
-
-    it("prevents dispatch with no source grant", async () => {
-      await expect(
-        dossierFallbackComplete(
-          { provider: "openrouter", model: "gpt-5.2", apiKey: "test" },
-          {
-            operationId: "op_fallback_no_grant",
-            system: "system",
-            user: "user",
-            schema: SampleSchema,
-          },
-          join(workspaceDir, "mock-result.json"),
-          context,
-        ),
-      ).rejects.toThrow(/source grant/i);
-    });
-
-    it("prevents dispatch when the fallback's own operation budget is exhausted", async () => {
-      const grant = createSourceLifecycleGrant({
-        sourceId: "src_1",
-        purpose: "meeting-debrief",
-        model: "gpt-5.2",
-      });
-      budgetLedger.getOrCreateOperationSnapshot("op_fallback_tiny_budget", "run_1", "debrief", {
-        allowedDollars: 0.0001,
-      });
-
-      await expect(
-        dossierFallbackComplete(
-          { provider: "openrouter", model: "gpt-5.2", apiKey: "test" },
-          {
-            operationId: "op_fallback_tiny_budget",
-            system: "system",
-            user: "user",
-            schema: SampleSchema,
-            sourceGrant: grant,
-          },
-          join(workspaceDir, "mock-result.json"),
-          context,
-        ),
-      ).rejects.toThrow(BudgetExhaustedError);
-    });
-
-    it("prevents dispatch on a cancelled (stale-generation) operation", async () => {
-      const grant = createSourceLifecycleGrant({
-        sourceId: "src_1",
-        purpose: "meeting-debrief",
-        model: "mock",
-      });
-      const op = budgetLedger.getOrCreateOperationSnapshot(
-        "op_fallback_fenced",
-        "run_1",
-        "debrief",
-      );
-      const capturedGeneration = op.generation;
-      budgetLedger.cancelOperation("op_fallback_fenced");
-
-      await expect(
-        dossierFallbackComplete(
-          { provider: "mock", model: "mock", apiKey: "" },
-          {
-            operationId: "op_fallback_fenced",
-            expectedGeneration: capturedGeneration,
-            system: "system",
-            user: "user",
-            schema: SampleSchema,
-            sourceGrant: grant,
-          },
-          join(workspaceDir, "mock-result.json"),
-          context,
-        ),
-      ).rejects.toThrow(StaleOperationGenerationError);
-    });
   });
 });

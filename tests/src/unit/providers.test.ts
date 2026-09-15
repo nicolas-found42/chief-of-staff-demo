@@ -12,9 +12,7 @@ import {
 import {
   makeCompleteJson,
   resolveReasoningEffort,
-  dossierFallbackComplete,
   DEFAULT_REASONING_EFFORT,
-  DOSSIER_FALLBACK_MAX_DISPATCHES,
   REQUEST_TIMEOUT_MS,
   SMALL_REQUEST_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
@@ -4129,73 +4127,5 @@ describe("extraction request policy (spec #418 T1)", () => {
     } finally {
       rmSync(workspaceDir, { recursive: true, force: true });
     }
-  });
-});
-
-/**
- * Spec #418 §5 second half: dossier extraction's opt-in model fallback. These
- * cover dispatch behavior at the wire — exactly one dispatch, no fresh
- * binding-recovery ladder of its own, the real answering model named in the
- * result. Precondition gating (unknown pricing, absent grants, budget
- * exhaustion, cancellation) is covered separately in
- * provider-admission-budget.test.ts, against a real `ModelBudgetLedger`.
- */
-describe("dossier extraction model fallback (spec #418 T7)", () => {
-  it("contributes exactly one dispatch to the finite attempt plan", () => {
-    expect(DOSSIER_FALLBACK_MAX_DISPATCHES).toBe(1);
-  });
-
-  it("dispatches the failed unit's request once against the fallback model and names who actually answered", async () => {
-    declarations.push(declaring("tools", "tool_choice"));
-    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
-    const outcome = await dossierFallbackComplete(
-      { provider: "openrouter", model: "some/fallback-model", apiKey: "ork" },
-      { system: "S", user: "U", schema: ExtractionWireSchema },
-      "/nonexistent/mock-result.json",
-      {},
-    );
-    expect(outcome).toEqual({
-      answer: RESULT,
-      provider: "openrouter",
-      model: "some/fallback-model",
-    });
-    expect(calls).toHaveLength(1);
-  });
-
-  /* A model that declares both bindings would otherwise start a fresh call at
-     response_format and could re-enter the T7 empty-answer recovery step on
-     its own failure, turning "one escalation" into two dispatches. Forcing
-     forced_tool_call keeps the escalation to the one dispatch spec #418 §5
-     requires, whether it succeeds or fails. */
-  it("never starts on response_format and never re-enters the empty-answer recovery step, even on failure", async () => {
-    declarations.push(declaring("response_format", "tools", "tool_choice"));
-    responses.push({
-      sse: ['data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{}}', "data: [DONE]"],
-    });
-    const failure = await dossierFallbackComplete(
-      { provider: "openrouter", model: "some/fallback-both-bindings", apiKey: "ork" },
-      { system: "S", user: "U", schema: ExtractionWireSchema },
-      "/nonexistent/mock-result.json",
-      {},
-    ).catch((error: unknown) => modelBoundaryDiagnostic(error));
-    expect(failure).toMatchObject({
-      classification: "unusable_shape",
-      binding: "forced_tool_call",
-    });
-    expect(calls).toHaveLength(1);
-    expect(calls[0].body).toHaveProperty("tools");
-  });
-
-  it("does not recursively cascade: a failed escalation is not retried with a second fallback", async () => {
-    declarations.push(declaring("tools", "tool_choice"));
-    responses.push({ status: 500, body: { error: "upstream failure" } });
-    const failure = await dossierFallbackComplete(
-      { provider: "openrouter", model: "some/fallback-fails-once", apiKey: "ork" },
-      { system: "S", user: "U", schema: ExtractionWireSchema },
-      "/nonexistent/mock-result.json",
-      {},
-    ).catch((error: unknown) => modelBoundaryDiagnostic(error));
-    expect(failure).toMatchObject({ classification: "http_error", status: 500 });
-    expect(calls).toHaveLength(1);
   });
 });

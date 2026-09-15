@@ -134,7 +134,6 @@ const config: AppConfig = {
     outputTokenCeiling: 8192,
     requestedEffort: "low",
     shapeStrategy: "full",
-    fallback: null,
   },
   modules: {
     "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },

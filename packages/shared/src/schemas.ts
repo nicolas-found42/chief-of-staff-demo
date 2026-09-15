@@ -74,30 +74,13 @@ const PurposeModelsSchema = z.strictObject({
 const ModelsSchema = z.record(ProviderIdSchema, PurposeModelsSchema);
 
 /**
- * Dossier extraction's (E1) shape strategy (spec #418 §§2, 5). `"full"` is
- * the original, unchanged complete Extraction request; `"sliced"` (spec #418
- * §5) asks the same model for the same unchanged Extraction across three
- * field-complete slice requests (identity/source metadata, grounded claims,
- * dossier structure) instead of one. Part of request/reuse identity and
- * benchmark conditions.
- *
- * `"sliced"` is implemented but MUST NOT become the default — T8's live
- * probes decide whether it is ever enabled; see
- * `DossierExtractionPolicySchema.shapeStrategy`'s default below, which stays
- * `"full"`.
+ * Dossier extraction's (E1) shape strategy (spec #418 §§2, 5). Only `"full"`
+ * exists today — the current, unchanged complete Extraction request; a
+ * sliced strategy is added by a later ticket. Part of request/reuse identity
+ * and benchmark conditions once more than one member exists.
  */
-export const EXTRACTION_SHAPE_STRATEGIES = ["full", "sliced"] as const;
+export const EXTRACTION_SHAPE_STRATEGIES = ["full"] as const;
 export type ExtractionShapeStrategy = (typeof EXTRACTION_SHAPE_STRATEGIES)[number];
-
-/**
- * An explicitly chosen fallback provider/model for dossier extraction (spec
- * #418 §§2, 4). Naming only — no stored credential of its own; the provider
- * still answers through the Workspace's existing configured access.
- */
-const DossierExtractionFallbackSchema = z.strictObject({
-  provider: ProviderIdSchema,
-  model: z.string().min(1).max(200),
-});
 
 /**
  * Dossier extraction's (E1) request policy (spec #418 §2): read alongside
@@ -107,11 +90,6 @@ const DossierExtractionFallbackSchema = z.strictObject({
  * policy change is an explicit version bump with its own default handling,
  * never a silent reinterpretation of a stored value.
  *
- * `fallback` is nullable and defaults to `null`. It is off until an operator
- * writes an explicit provider/model here: nothing seeds it, infers it from
- * `personDossierExtraction` or any other purpose, or promotes it from a
- * stronger-model constant. ADR-0094 is the cautionary precedent this is
- * deliberately not repeating.
  */
 export const DossierExtractionPolicySchema = z.strictObject({
   version: z.literal(1),
@@ -120,7 +98,6 @@ export const DossierExtractionPolicySchema = z.strictObject({
   /** Requested effort, resolved through ADR-0096's nearest-advertised-level resolver. */
   requestedEffort: z.string().max(200),
   shapeStrategy: z.enum(EXTRACTION_SHAPE_STRATEGIES),
-  fallback: DossierExtractionFallbackSchema.nullable().default(null),
 });
 export type DossierExtractionPolicy = z.infer<typeof DossierExtractionPolicySchema>;
 
@@ -314,16 +291,15 @@ export const ConfigSchema = z.strictObject({
        reason to choose a smaller candidate, and a larger real dossier keeps
        the same headroom. Every ceiling candidate tested (8192-equivalent via
        "existing-full", 16384, 65536) behaved identically on the
-       forced_tool_call binding this policy currently prefers — the ceiling
-       was never the variable that mattered for that binding's own failure
-       (see the extraction policy's `shapeStrategy`/`fallback` comments and
-       the T8 disposition report for the forced_tool_call finding itself). */
+       forced_tool_call binding this policy prefers. The ceiling was never the
+       variable that mattered: the binding's own failure was a `pattern`
+       keyword in a subschema position, stripped at the wire in #418, and no
+       candidate ceiling changed that outcome either way. */
     outputTokenCeiling: 65536,
     /* The existing low-effort intent (spec #418 §2), matching
        `DEFAULT_REASONING_EFFORT` in the LLM boundary. */
     requestedEffort: "low",
     shapeStrategy: "full",
-    fallback: null,
   }),
   /**
    * Each Module's own configuration, namespaced under the Module rather than
