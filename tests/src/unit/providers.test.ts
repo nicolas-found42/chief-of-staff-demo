@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +22,8 @@ import {
   observeModelUsage,
 } from "../../../apps/server/src/llm/providers";
 import { modelBoundaryDiagnostic } from "../../../apps/server/src/llm/failure";
+import { ModelBudgetLedger } from "../../../apps/server/src/llm/budget";
+import { createSourceLifecycleGrant } from "../../../apps/server/src/llm/grants";
 
 interface Call {
   url: string;
@@ -192,6 +194,18 @@ beforeEach(() => {
 /** An OpenRouter model-capability reply declaring exactly `params`. */
 function declaring(...params: string[]): Reply {
   return { status: 200, body: { data: { endpoints: [{ supported_parameters: params }] } } };
+}
+
+/** A single-route OpenRouter capability reply also declaring a numeric output ceiling. */
+function declaringCapacity(maxCompletionTokens: number, ...params: string[]): Reply {
+  return {
+    status: 200,
+    body: {
+      data: {
+        endpoints: [{ supported_parameters: params, max_completion_tokens: maxCompletionTokens }],
+      },
+    },
+  };
 }
 
 /** An OpenRouter catalogue reply carrying reasoning metadata for `entries`. */
@@ -2489,6 +2503,52 @@ describe("model-boundary failures", () => {
     );
   });
 
+  /* A `length` finish suggests truncation but does not by itself establish
+     that hidden reasoning consumed the budget (spec #418 §4): the empty
+     unusable_shape it produces carries whatever usage the wire actually
+     reported, known rather than guessed. */
+  it("carries known usage on an empty length finish, without claiming truncation", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({
+      sse: [
+        'data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{"prompt_tokens":120,"completion_tokens":512}}',
+        "data: [DONE]",
+      ],
+    });
+    const failure = await failureOf(openrouter("some/length-with-usage-model"));
+    expect(failure.classification).toBe("unusable_shape");
+    expect(failure.finishReason).toBe("length");
+    expect(failure.usage).toEqual({ inputTokens: 120, outputTokens: 512, costUsd: null });
+  });
+
+  /* A `stop` finish does not turn an empty answer into success (spec #418 §4):
+     the reader still has nothing in the binding's field, so it still fails,
+     and it still carries whatever usage the wire reported. */
+  it("carries known usage on an empty stop finish, never as a success", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({
+      sse: [
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":80,"completion_tokens":0}}',
+        "data: [DONE]",
+      ],
+    });
+    const failure = await failureOf(openrouter("some/stop-with-usage-model"));
+    expect(failure.classification).toBe("unusable_shape");
+    expect(failure.finishReason).toBe("stop");
+    expect(failure.usage).toEqual({ inputTokens: 80, outputTokens: 0, costUsd: null });
+  });
+
+  /* No usage at all on the wire stays `null` — unknown, never a claimed zero. */
+  it("carries no usage fact when the wire reported none", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({
+      sse: ['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}', "data: [DONE]"],
+    });
+    const failure = await failureOf(openrouter("some/no-usage-model"));
+    expect(failure.classification).toBe("unusable_shape");
+    expect(failure.usage).toBeNull();
+  });
+
   it("ends a request that hangs before its first token at the idle ceiling", async () => {
     vi.useFakeTimers();
     try {
@@ -3495,5 +3555,354 @@ describe("model usage accounting", () => {
     );
     await anthropic({ system: "S", user: "U", schema: ExtractionWireSchema, seed: 7 });
     expect(calls[2].body).not.toHaveProperty("seed");
+  });
+});
+
+/**
+ * The dossier-extraction request policy at the shared provider boundary
+ * (spec #418 T1): an explicit output-token ceiling mapped to whichever
+ * parameter each adapter and route actually supports, requested-vs-effective
+ * reasoning effort, and opt-in binding-appropriate schema instructions.
+ * Unrelated purposes never set these fields, so their outgoing requests are
+ * covered by the unchanged tests above.
+ */
+describe("extraction request policy (spec #418 T1)", () => {
+  it("openai: sends the explicit output ceiling as max_tokens", async () => {
+    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openai", model: "gpt-5.2", apiKey: "sk-test" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      outputTokenCeiling: 3000,
+    });
+    expect(calls[0].body.max_tokens).toBe(3000);
+  });
+
+  it("anthropic: an explicit output ceiling replaces the hardcoded default", async () => {
+    responses.push({
+      status: 200,
+      body: { content: [{ type: "tool_use", name: "save_extraction", input: RESULT }] },
+    });
+    const complete = makeCompleteJson(
+      { provider: "anthropic", model: "claude-sonnet-5", apiKey: "ak" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      outputTokenCeiling: 2048,
+    });
+    expect(calls[0].body.max_tokens).toBe(2048);
+  });
+
+  it("anthropic: omitting the ceiling keeps the prior hardcoded default", async () => {
+    responses.push({
+      status: 200,
+      body: { content: [{ type: "tool_use", name: "save_extraction", input: RESULT }] },
+    });
+    const complete = makeCompleteJson(
+      { provider: "anthropic", model: "claude-sonnet-5", apiKey: "ak" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
+    expect(calls[0].body.max_tokens).toBe(8192);
+  });
+
+  it("gemini: sends the explicit output ceiling as maxOutputTokens", async () => {
+    responses.push({
+      status: 200,
+      body: { candidates: [{ content: { parts: [{ text: JSON.stringify(RESULT) }] } }] },
+    });
+    const complete = makeCompleteJson(
+      { provider: "gemini", model: "gemini-3.7-flash", apiKey: "gk" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      outputTokenCeiling: 1500,
+    });
+    const generationConfig = calls[0].body.generationConfig as Record<string, unknown>;
+    expect(generationConfig.maxOutputTokens).toBe(1500);
+  });
+
+  it("ollama: sends the explicit output ceiling with no capability check", async () => {
+    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "ollama", model: "nemotron", apiKey: "" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      outputTokenCeiling: 4096,
+    });
+    expect(calls[0].body.max_tokens).toBe(4096);
+  });
+
+  it("openrouter: an output ceiling within declared capacity is sent and dispatches normally", async () => {
+    declarations.push(declaringCapacity(65536, "tools", "tool_choice", "max_tokens"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "inception/mercury-2.5", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    const parsed = await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      outputTokenCeiling: 8192,
+    });
+    expect(parsed).toEqual(RESULT);
+    expect(calls[0].body.max_tokens).toBe(8192);
+  });
+
+  /* Never dispatched over capacity, never silently trimmed or defaulted
+     (spec #418 §2): the declared per-route ceiling is below what was asked. */
+  it("openrouter: an output ceiling past declared capacity fails preflight without dispatching", async () => {
+    declarations.push(declaringCapacity(65536, "tools", "tool_choice", "max_tokens"));
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/tight-capacity-model", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    let caught: unknown;
+    try {
+      await complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        outputTokenCeiling: 100_000,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(modelBoundaryDiagnostic(caught)).toMatchObject({
+      classification: "output_ceiling_unsupported",
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("openrouter: an output ceiling the model does not declare support for fails preflight", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/no-max-tokens-model", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    let caught: unknown;
+    try {
+      await complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        outputTokenCeiling: 4096,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(modelBoundaryDiagnostic(caught)).toMatchObject({
+      classification: "output_ceiling_unsupported",
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  /* An unreadable declaration is not the same as declaring no support — the
+     ceiling is neither provable nor disprovable, so it is left unchecked,
+     exactly like an unreadable binding declaration already is. */
+  it("openrouter: an unreadable capability declaration leaves the ceiling unchecked", async () => {
+    declarations.push({ status: 503, body: { error: "Metadata unavailable" } });
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/unreadable-capability-model", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    const parsed = await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      outputTokenCeiling: 4096,
+    });
+    expect(parsed).toEqual(RESULT);
+    expect(calls[0].body.max_tokens).toBe(4096);
+  });
+
+  it("openrouter: records the requested effort separately from the resolved one", async () => {
+    catalogues.push(
+      reasoningCatalogue([
+        { id: "some/thinking-model", efforts: ["medium", "high"], mandatory: false },
+      ]),
+    );
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const events: ModelAttemptEvent[] = [];
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/thinking-model", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      retry: { onAttempt: (event) => events.push(event) },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      requestedReasoningEffort: DEFAULT_REASONING_EFFORT,
+      reasoningEffort: "medium",
+    });
+  });
+
+  /* The source's native-provider word never reaches a gateway vocabulary
+     that does not accept it (spec #418 §2): an unlisted level resolves to
+     omitted, exactly like any other unsupported value, while the request
+     itself stays on record. */
+  it("openrouter: never sends an unlisted reasoning word like 'instant' to the gateway", async () => {
+    catalogues.push(
+      reasoningCatalogue([
+        { id: "some/instant-model", efforts: ["low", "medium"], mandatory: false },
+      ]),
+    );
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const events: ModelAttemptEvent[] = [];
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/instant-model", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      reasoningEffort: "instant",
+      retry: { onAttempt: (event) => events.push(event) },
+    });
+    expect(calls[0].body.reasoning).toEqual({ exclude: true });
+    expect(events[0]).toMatchObject({ requestedReasoningEffort: "instant" });
+    expect(events[0]?.reasoningEffort).toBeUndefined();
+  });
+
+  it("openai: describeResultShape adds the response_format instruction after the caller's system text", async () => {
+    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openai", model: "gpt-5.2", apiKey: "sk-test" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      describeResultShape: true,
+    });
+    const messages = calls[0].body.messages as { role: string; content: string }[];
+    expect(messages[0]?.content).toMatch(/^S\n\nReturn the one result conforming to this schema:/);
+    expect(messages[0]?.content).toContain('"tasks"');
+  });
+
+  it("anthropic: describeResultShape adds the forced_tool_call instruction naming the tool", async () => {
+    responses.push({
+      status: 200,
+      body: { content: [{ type: "tool_use", name: "save_extraction", input: RESULT }] },
+    });
+    const complete = makeCompleteJson(
+      { provider: "anthropic", model: "claude-sonnet-5", apiKey: "ak" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      describeResultShape: true,
+    });
+    expect(calls[0].body.system).toMatch(
+      /^S\n\nCall the "save_extraction" tool with arguments conforming to this schema:/,
+    );
+  });
+
+  it("gemini: describeResultShape adds the response_format instruction", async () => {
+    responses.push({
+      status: 200,
+      body: { candidates: [{ content: { parts: [{ text: JSON.stringify(RESULT) }] } }] },
+    });
+    const complete = makeCompleteJson(
+      { provider: "gemini", model: "gemini-3.7-flash", apiKey: "gk" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      describeResultShape: true,
+    });
+    const systemInstruction = calls[0].body.systemInstruction as { parts: { text: string }[] };
+    expect(systemInstruction.parts[0]?.text).toMatch(
+      /^S\n\nReturn the one result conforming to this schema:/,
+    );
+  });
+
+  it("openrouter: describeResultShape adds the forced_tool_call instruction when that binding is chosen", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/described-tool-model", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      describeResultShape: true,
+    });
+    const messages = calls[0].body.messages as { role: string; content: string }[];
+    expect(messages[0]?.content).toMatch(
+      /^S\n\nCall the "save_extraction" tool with arguments conforming to this schema:/,
+    );
+  });
+
+  /* Sizing only, never a behavior change to the caller's own prompt: the
+     reservation for a describeResultShape call counts the added instructions
+     so an operation's input-token accounting never undercounts them (spec
+     #418 §2, §4). The mock provider still reserves and settles through the
+     same ledger, so no fetch mocking is needed to observe it. */
+  it("counts the added schema instructions in the budget reservation", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "describe-shape-budget-"));
+    try {
+      const budgetLedger = new ModelBudgetLedger(workspaceDir);
+      const complete = makeCompleteJson(
+        { provider: "mock", model: "mock", apiKey: "" },
+        "/nonexistent/mock-result.json",
+        { budgetLedger },
+      );
+      const sourceGrant = createSourceLifecycleGrant({
+        sourceId: "src_1",
+        purpose: "meeting-debrief",
+        model: "mock",
+      });
+      await complete({
+        operationId: "op-plain",
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        sourceGrant,
+      });
+      await complete({
+        operationId: "op-described",
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        describeResultShape: true,
+        sourceGrant,
+      });
+      const plain = budgetLedger.getOperationSnapshot("op-plain");
+      const described = budgetLedger.getOperationSnapshot("op-described");
+      expect(described?.spentInputTokens ?? 0).toBeGreaterThan(plain?.spentInputTokens ?? 0);
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
   });
 });
