@@ -202,7 +202,7 @@ describe("ConfigStore.dossierExtractionPolicy (issue #418, T2)", () => {
     const config = store.load();
     expect(config.dossierExtractionPolicy).toEqual({
       version: 1,
-      outputTokenCeiling: 8192,
+      outputTokenCeiling: 65536,
       requestedEffort: "low",
       shapeStrategy: "full",
       fallback: null,

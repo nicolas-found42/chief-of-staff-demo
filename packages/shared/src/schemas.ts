@@ -301,11 +301,24 @@ export const ConfigSchema = z.strictObject({
    */
   dossierExtractionPolicy: DossierExtractionPolicySchema.default({
     version: 1,
-    /* Existing precedent, not a probed production value: the Anthropic
-       shape-recovery path already sends this ceiling today. A later ticket
-       replaces it with a value chosen from a predeclared live-probe set and
-       records that evidence here (spec #418 §2, §3). */
-    outputTokenCeiling: 8192,
+    /* Selected by spec #418 T8's live probe manifest
+       (docs/research/person-extraction-probes-2026-09-15.json), replacing
+       the unprobed 8192 placeholder. 65536 is `inception/mercury-2.5`'s own
+       declared per-route completion ceiling (mercury-capabilities-evidence.md;
+       read live via the capability fetch T1 already wires up), well inside
+       its 260,000-token context window and the ledger's separate context
+       check. The probe's one live success (response_format, deliberately
+       forced for the recovery cell — see the forced_tool_call finding below)
+       used only 2,249 of 65,536 output tokens on the densest fixture, so the
+       ceiling never bound the observed answer; there is no cost or latency
+       reason to choose a smaller candidate, and a larger real dossier keeps
+       the same headroom. Every ceiling candidate tested (8192-equivalent via
+       "existing-full", 16384, 65536) behaved identically on the
+       forced_tool_call binding this policy currently prefers — the ceiling
+       was never the variable that mattered for that binding's own failure
+       (see the extraction policy's `shapeStrategy`/`fallback` comments and
+       the T8 disposition report for the forced_tool_call finding itself). */
+    outputTokenCeiling: 65536,
     /* The existing low-effort intent (spec #418 §2), matching
        `DEFAULT_REASONING_EFFORT` in the LLM boundary. */
     requestedEffort: "low",

@@ -82,7 +82,10 @@ function defaultConfig(): AppConfig {
     search: {},
     dossierExtractionPolicy: {
       version: 1,
-      outputTokenCeiling: 8192,
+      // Selected by spec #418 T8's live probe manifest; see the evidence
+      // comment on DossierExtractionPolicySchema's own default in
+      // packages/shared/src/schemas.ts.
+      outputTokenCeiling: 65536,
       requestedEffort: "low",
       shapeStrategy: "full",
       fallback: null,
