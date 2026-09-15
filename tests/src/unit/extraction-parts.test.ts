@@ -33,6 +33,13 @@ const BASELINE = {
     temperature: 0,
     compactWireNames: true,
     preferredMinThroughput: 50,
+    /* The effective dossier-extraction policy (spec #418 §6), which rides
+       in `options` alongside the provider settings above. */
+    policyVersion: 1,
+    shapeStrategy: "full",
+    outputTokenCeiling: 8192,
+    requestedEffort: "low",
+    describeResultShape: true,
   },
 };
 
@@ -66,6 +73,29 @@ describe("extractionPartKey", () => {
       { options: { ...BASELINE.options, preferredBinding: "json_object" } },
     ],
   ])("misses when only the resolved model's %s changes", (_label, overrides) => {
+    expect(key(overrides)).not.toBe(key());
+  });
+
+  /**
+   * The effective dossier-extraction policy (spec #418 §6) rides in
+   * `options` alongside the pre-existing provider settings above: a budget,
+   * effort, strategy or policy-version change is exactly as request-affecting
+   * as a temperature or binding change, and must invalidate only the parts
+   * that depended on the changed value.
+   */
+  it.each<[string, Partial<PartIdentity>]>([
+    ["the output token ceiling", { options: { ...BASELINE.options, outputTokenCeiling: 4096 } }],
+    [
+      "the requested reasoning effort",
+      { options: { ...BASELINE.options, requestedEffort: "medium" } },
+    ],
+    ["the shape strategy", { options: { ...BASELINE.options, shapeStrategy: "slices" } }],
+    ["the policy version", { options: { ...BASELINE.options, policyVersion: 2 } }],
+    [
+      "whether the Result Shape is described",
+      { options: { ...BASELINE.options, describeResultShape: false } },
+    ],
+  ])("misses when only %s changes", (_label, overrides) => {
     expect(key(overrides)).not.toBe(key());
   });
 
