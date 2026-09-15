@@ -28,6 +28,7 @@ import {
   normalizeDebriefExtraction,
   groundTranscriptQuotes,
   parseTranscriptTurn,
+  TRANSCRIPT_HEADER_PATTERN,
 } from "./extraction.js";
 
 const Discovery = z.strictObject({
@@ -471,8 +472,7 @@ function prepareDebriefExtraction(options: CandidateExtractionOptions) {
       const line = sourceLineFor(quote);
       const turn = line ? line.turn : null;
       // A label is metadata, but unlabelled prose can still support a quote.
-      if (line && !turn && /^([^:\n]+?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s*$/.test(line.text))
-        return [];
+      if (line && (turn ? !turn.text.trim() : TRANSCRIPT_HEADER_PATTERN.test(line.text))) return [];
       // A selected source ID resolves one exact turn even when its speech is
       // repeated elsewhere (for example a short acceptance such as "Okay").
       return turn

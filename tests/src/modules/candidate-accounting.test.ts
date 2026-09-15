@@ -2120,22 +2120,15 @@ it("checks adoption against the source without anchoring on unfinished implement
   });
   const detail = await extract(async (request) => {
     const reply = await model(request);
-    if (
-      request.system.startsWith("OVERVIEW ONLY") &&
-      request.user.includes("<untrusted-dispositions>")
-    ) {
-      return { ...overview, decisions: [] };
-    }
-    if (
-      request.system.startsWith("VERIFY DECISION STATUS") &&
-      request.user.includes("<assembled-actions>")
-    ) {
-      const result = reply as { decisions: Array<Record<string, unknown>> };
+    if (request.system.startsWith("VERIFY DECISION STATUS")) {
+      expect(request.user).toContain("<proposed-decisions>");
+      const result = reply as { decisions: Array<{ decisionId: string }> };
       return {
         decisions: result.decisions.map((row) => ({
-          ...row,
-          status: "pending_action",
-          reason: "The checklist has not been written yet",
+          decisionId: row.decisionId,
+          reason: "The choice is agreed; the checklist is still pending",
+          evidence: ["@line:1"],
+          adopted: true,
         })),
       };
     }

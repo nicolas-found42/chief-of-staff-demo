@@ -200,6 +200,9 @@ export function dropActionItemEvidence(raw: unknown): unknown {
   };
 }
 
+/** A speaker label and its standalone turn timestamp, with no speech. */
+export const TRANSCRIPT_HEADER_PATTERN = /^([^:\n]+?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s*$/;
+
 /** Share turn metadata across evidence grounding and responsibility checks so
  * retained Markdown exports carry the same identities as plain transcripts. */
 export function parseTranscriptTurn(
@@ -218,8 +221,8 @@ export function parseTranscriptTurn(
   // Some exports separate the label from its speech. Only the immediately
   // following nonblank line belongs to that header; never carry it across a gap.
   // A colon within that speech is prose unless it has its own turn timestamp.
-  const header = previousLine?.match(/^([^:\n]+?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s*$/);
-  if (header && line.trim())
+  const header = previousLine?.match(TRANSCRIPT_HEADER_PATTERN);
+  if (header && line.trim() && !TRANSCRIPT_HEADER_PATTERN.test(line))
     return { speaker: header[1]!.trim(), timestamp: header[2]!, text: line };
   return plain ? { speaker: plain[2]!.trim(), timestamp: null, text: plain[3]! } : null;
 }
