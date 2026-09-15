@@ -176,8 +176,18 @@ export interface ModelBoundaryDiagnostic {
   } | null;
 }
 
-/** Bounded wire contract for durable, shape-only model failures. */
-export const ModelBoundaryDiagnosticSchema: z.ZodType<ModelBoundaryDiagnostic> = z.object({
+/**
+ * Bounded wire contract for durable, shape-only model failures. Input is
+ * deliberately `unknown` rather than `ModelBoundaryDiagnostic`: this parses
+ * committed artifacts written before a field like `usage` existed, and a
+ * missing key there is the same fact as a provider reporting none, not a
+ * schema break.
+ */
+export const ModelBoundaryDiagnosticSchema: z.ZodType<
+  ModelBoundaryDiagnostic,
+  z.ZodTypeDef,
+  unknown
+> = z.object({
   classification: z.enum(MODEL_BOUNDARY_CLASSIFICATIONS),
   provider: ProviderIdSchema,
   model: z.string().max(200),
@@ -191,13 +201,18 @@ export const ModelBoundaryDiagnosticSchema: z.ZodType<ModelBoundaryDiagnostic> =
   populatedFields: z.array(z.string().max(200)).max(64),
   emptyFields: z.array(z.string().max(200)).max(64),
   timeoutMs: z.number().int().nonnegative().safe().nullable(),
+  /* `.default(null)` rather than a plain `.nullable()`: a diagnostic
+     persisted before this field existed carries no `usage` key at all, and
+     that is the same fact as a provider reporting none — never a schema
+     break on a committed artifact. */
   usage: z
     .object({
       inputTokens: z.number().int().nonnegative().nullable(),
       outputTokens: z.number().int().nonnegative().nullable(),
       costUsd: z.number().nonnegative().nullable(),
     })
-    .nullable(),
+    .nullable()
+    .default(null),
 });
 
 /** Shape-only observation of one completion wire attempt, including recovered failures. */
