@@ -379,6 +379,11 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     complete: peopleCompleteJson,
     completeClaims: peopleClaimsCompleteJson,
     completeDossier: peopleDossierCompleteJson,
+    /* Read fresh per operation, like the purposes above, so a Settings edit
+       to the ceiling/effort/strategy lands without a restart (spec #418
+       §2, §6 — the gap found after T1 merged: T1 and T2 each landed their
+       half, but nothing carried the value between them until now). */
+    dossierExtractionPolicy: () => configStore.get().dossierExtractionPolicy,
     plan: () => completeForPurpose("researchPlanning"),
     confirmedTranscripts: (profileId) =>
       transcriptIdentityService.confirmedMentions(profileId).flatMap((mention) => {

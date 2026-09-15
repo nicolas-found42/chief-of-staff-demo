@@ -19,6 +19,7 @@ import {
   PersonConnectionSchema,
   MODEL_SMALL_REQUEST_TIMEOUT_MS,
   summarizeResearchAttempts,
+  type DossierExtractionPolicy,
   type PersonClaim,
   type PersonDossierContent,
   type PersonProfile,
@@ -246,6 +247,17 @@ export class PersonResearch {
        * checkpoints already stored stay where they are and stay valid.
        */
       reuseExtractionParts?: boolean;
+      /**
+       * Dossier extraction's effective request policy (spec #418 §2, §6),
+       * read fresh so a Settings edit lands without a restart, exactly like
+       * the resolved model above. Absent leaves every extraction request
+       * exactly as it was before this policy existed — no output ceiling, no
+       * requested effort, no Result Shape description on the wire, and none
+       * of those values in the reuse key — which keeps every caller that
+       * never supplies it (most tests, the benchmark unless it opts in)
+       * byte-identical to prior behaviour.
+       */
+      dossierExtractionPolicy?: () => DossierExtractionPolicy;
       /** The planning model. Absent means deterministic planning only. */
       plan?: CompleteJson;
       /**
@@ -308,6 +320,28 @@ export class PersonResearch {
        model calls, never as them (#381). */
     let modelCallsReused = 0;
     const reuseParts = this.deps.reuseExtractionParts !== false && models.identity !== undefined;
+    /* Resolved once per operation, exactly like `models` above: a Settings
+       edit mid-operation must not retroactively change what an in-flight
+       request already sent (spec #418 §2, §6). Absent means every extraction
+       request and reuse key stays exactly as it was before this policy
+       existed (see the constructor doc). */
+    const dossierExtractionPolicy = this.deps.dossierExtractionPolicy?.();
+    /* The subset of the effective policy that changes what goes on the wire
+       and therefore what a checkpoint answers (spec #418 §6): shared between
+       the request below and `extractionPartKey`'s `options` so the two can
+       never drift apart. `describeResultShape` is unconditionally requested
+       once a policy exists — spec #418 §2 asks every binding to state the
+       Result Shape, not only the bindings that already did. */
+    const extractionPolicyOptions: Record<string, string | number | boolean | null> =
+      dossierExtractionPolicy
+        ? {
+            policyVersion: dossierExtractionPolicy.version,
+            shapeStrategy: dossierExtractionPolicy.shapeStrategy,
+            outputTokenCeiling: dossierExtractionPolicy.outputTokenCeiling,
+            requestedEffort: dossierExtractionPolicy.requestedEffort,
+            describeResultShape: true,
+          }
+        : {};
     let interruption: {
       code: PersonResearchOperationOutcome["interruption"];
       reason: string;
@@ -950,6 +984,7 @@ export class PersonResearch {
                     temperature: 0,
                     compactWireNames: true,
                     preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
+                    ...extractionPolicyOptions,
                   },
                 })
               : null;
@@ -1001,6 +1036,7 @@ export class PersonResearch {
           }
           if (!budget.takeModelCall()) break;
           let partUsage: ModelAttemptEvent["usage"];
+          let partBinding: ModelAttemptEvent["binding"] | undefined;
           let raw: unknown;
           try {
             raw = await this.modelWork.run(() =>
@@ -1008,6 +1044,13 @@ export class PersonResearch {
                 schema: Extraction,
                 preferredBinding: "forced_tool_call",
                 absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
+                ...(dossierExtractionPolicy
+                  ? {
+                      outputTokenCeiling: dossierExtractionPolicy.outputTokenCeiling,
+                      reasoningEffort: dossierExtractionPolicy.requestedEffort,
+                      describeResultShape: true,
+                    }
+                  : {}),
                 retry: {
                   canRetry: () =>
                     Date.now() - started < allowance.maxMilliseconds &&
@@ -1015,7 +1058,10 @@ export class PersonResearch {
                     (!privateDocument || privateDocument.active()),
                   onAttempt: (event) => {
                     if (event.outcome === "failed") boundaryObservation.failureRecorded = true;
-                    if (event.outcome === "succeeded" && event.usage) partUsage = event.usage;
+                    if (event.outcome === "succeeded") {
+                      if (event.usage) partUsage = event.usage;
+                      partBinding = event.binding;
+                    }
                     recordModelWireAttempt(recorder, {
                       stage: "extraction",
                       collector: "extraction",
@@ -1105,6 +1151,14 @@ export class PersonResearch {
                 textHash,
                 part: `${partIndex + 1}/${partTexts.length}`,
                 ...(privateDocument ? { transcriptId: privateDocument.transcriptId } : {}),
+                /* Provenance (spec #418 §6): this call is always the
+                   Profile's ordinarily configured model — T4 dispatches no
+                   fallback — so every checkpoint it writes is explicitly
+                   `"primary"`, never guessed for older checkpoints that
+                   predate this field. `binding` is the Result Shape Binding
+                   that actually answered, when the boundary reported one. */
+                ...(partBinding ? { binding: partBinding } : {}),
+                modelRole: "primary",
                 result: validated,
               });
           } catch (error) {
