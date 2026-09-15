@@ -29,7 +29,7 @@ const queue = new PersonResearchQueue({
   workspaceDir: root,
   people,
   research,
-  enabled: () => true,
+  readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
 });
 queue.configure({ profileCalls: 4 });
 queue.enqueue(person.id, "created");

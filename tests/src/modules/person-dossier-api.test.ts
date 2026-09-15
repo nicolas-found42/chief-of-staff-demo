@@ -29,7 +29,7 @@ test("owner can inspect research states, change research bounds, and enqueue wit
       workspaceDir: root,
       people,
       research,
-      enabled: () => true,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
     });
     registerPersonDossierApi(app, { people, dossiers, queue });
     const response = await app.inject({ method: "POST", url: `/api/people/${person.id}/research` });
@@ -133,7 +133,7 @@ test.each(["queued", "retrieving"])(
             throw new Error("Late model dispatch");
           },
         }),
-        enabled: () => true,
+        readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
       });
       registerPersonDossierApi(app, { people, dossiers, queue });
       await app.inject({ method: "POST", url: `/api/people/${person.id}/research` });

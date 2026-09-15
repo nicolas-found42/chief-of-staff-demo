@@ -27,7 +27,13 @@ test("queue coalesces creation requests and counts failed calls without deferrin
     complete: async () => ({}),
   });
   let now = new Date("2026-09-05T12:00:00Z");
-  const deps = { workspaceDir: root, people, research, now: () => now, enabled: () => true };
+  const deps = {
+    workspaceDir: root,
+    people,
+    research,
+    now: () => now,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  };
   const first = new PersonResearchQueue(deps);
   first.configure({ paused: false });
   first.enqueue(person.id, "created");
@@ -63,7 +69,7 @@ test("one named lookup returns one Profile's queue record", () => {
     workspaceDir: root,
     people,
     research,
-    enabled: () => true,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
   });
   queue.enqueue(person.id, "created");
   const job = queue.job(person.id);
@@ -114,7 +120,10 @@ test.each(["archive", "correction", "merge", "privacy", "pause", "gate", "stop",
       workspaceDir: root,
       people,
       research,
-      enabled: () => enabled,
+      readiness: () =>
+        enabled
+          ? { state: "ready" as const, reason: "ready" as const }
+          : { state: "setup-required" as const, reason: "provider-not-configured" as const },
       evidenceRevision: () => evidence,
     });
     queue.enqueue(person.id, "created");
@@ -156,7 +165,7 @@ test("repeated enqueues and absent removes do not rewrite the queue state file",
     people,
     research,
     now: () => now,
-    enabled: () => true,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
   });
   queue.enqueue(person.id, "created");
   const stateFile = join(root, "person-research.json");
@@ -233,7 +242,12 @@ test("resumes the retained document after interruption during extraction without
       };
     },
   });
-  const deps = { workspaceDir: root, people, research, enabled: () => true };
+  const deps = {
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  };
   const first = new PersonResearchQueue(deps);
   first.enqueue(person.id, "created");
   const work = first.tick();
@@ -301,7 +315,13 @@ test("continuous research finishes pending extraction before daily rollover", as
       };
     },
   });
-  const deps = { workspaceDir: root, people, research, now: () => now, enabled: () => true };
+  const deps = {
+    workspaceDir: root,
+    people,
+    research,
+    now: () => now,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  };
   const queue = new PersonResearchQueue(deps);
   queue.configure({ profileCalls: 3 });
   queue.enqueue(person.id, "created");
@@ -368,7 +388,7 @@ test("SIGKILL during extraction resumes durable evidence and remaining calls in 
       workspaceDir: root,
       people,
       research,
-      enabled: () => true,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
     });
     /* One model call was reserved before the process died; the retained
        document and that reservation both survive into the new owner. */
@@ -411,7 +431,7 @@ test("aged backfill wins fairly while concurrent ticks enforce configured concur
     people,
     research,
     now: () => now,
-    enabled: () => true,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
   });
   queue.configure({ concurrency: 1 });
   queue.enqueue(older.id, "backfill");
@@ -486,7 +506,12 @@ function shared(label: string) {
     root,
     kept,
     dropped,
-    deps: { workspaceDir: root, people, research, enabled: () => true },
+    deps: {
+      workspaceDir: root,
+      people,
+      research,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+    },
   };
 }
 
