@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import type { PersonResearchStatus } from "@chief-of-staff-demo/shared";
+import type { PersonResearchProfileSummary } from "@chief-of-staff-demo/shared";
 import { expect, test } from "./fixture";
 
 test("automatic dossier journey — add, research, inspect source, and query demonstrated work", async ({
@@ -306,8 +306,11 @@ test("completed research explains gaps and provider interruption keeps retained 
     await page.getByLabel("Email or profile URL").fill(email);
     await page.getByRole("button", { name: "Add and research" }).click();
     await expect(page).toHaveURL(/\/people\/person_/);
+    /* A legitimate validated extraction with no supported facts reads
+       differently from an interrupted run (issue #418, T9, spec §7): both
+       used to render as the same generic "No matched evidence found". */
     await expect(
-      page.getByText(interrupted ? "Research interrupted" : "No matched evidence found", {
+      page.getByText(interrupted ? "Research interrupted" : "No supported facts found", {
         exact: true,
       }),
     ).toBeVisible({ timeout: 30000 });
@@ -382,11 +385,14 @@ test("published claims remain readable while the same operation awaits another e
     await page.getByRole("button", { name: "Add and research" }).click();
     await expect(page).toHaveURL(/\/people\/person_/);
     const profileId = new URL(page.url()).pathname.split("/").at(-1)!;
-    const job = async () => {
-      const status = (await (
-        await page.request.get("/api/people/research/status")
-      ).json()) as PersonResearchStatus;
-      return status.jobs.find((entry) => entry.profileId === profileId);
+    /* The bounded per-profile summary (issue #418, T5/T9, spec §7) — the
+       whole-queue `/api/people/research/status` route now returns only
+       queue-wide counts, never one Profile's operation identity. */
+    const summary = async () => {
+      const body = (await (
+        await page.request.get(`/api/people/${profileId}/research/summary`)
+      ).json()) as { summary: PersonResearchProfileSummary | null };
+      return body.summary;
     };
     await expect
       .poll(async () => {
@@ -400,9 +406,9 @@ test("published claims remain readable while the same operation awaits another e
     await expect(page.getByRole("article").getByText(firstQuote, { exact: true })).toBeVisible();
     await expect(page.getByText("Researching", { exact: true })).toBeVisible();
     await expect(page.getByText(secondQuote, { exact: true })).toHaveCount(0);
-    const active = await job();
+    const active = await summary();
     expect(active?.state).toBe("researching");
-    const operationId = active?.checkpoint?.operationId;
+    const operationId = active?.currentOperationId;
     expect(operationId).toBeTruthy();
     await page
       .getByRole("button", { name: /^Evidence 1:/ })
@@ -415,7 +421,7 @@ test("published claims remain readable while the same operation awaits another e
     });
     await expect(page.getByRole("article").getByText(secondQuote, { exact: true })).toBeVisible();
     await expect(page.getByText("Current within completed scope", { exact: true })).toBeVisible();
-    expect((await job())?.operation).toMatchObject({ operationId, conclusion: "completed" });
+    expect((await summary())?.decisive).toMatchObject({ operationId, disposition: "completed" });
   } finally {
     await page.request.post("/api/test/person-dossier-extraction/release", {
       data: { url: heldUrl },
