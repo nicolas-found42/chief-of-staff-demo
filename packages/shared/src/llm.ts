@@ -116,6 +116,15 @@ export const MODEL_BOUNDARY_CLASSIFICATIONS = [
   "unusable_shape",
   /** The binding's field held text, and that text is not JSON. */
   "answer_not_json",
+  /**
+   * The requested output-token ceiling cannot be honored on this model's
+   * declared capability — either the adapter's ceiling parameter is not
+   * among its declared parameters, or the ceiling exceeds the declared
+   * per-route completion capacity. Raised before any wire dispatch, never
+   * silently substituted with an unstated upstream default or trimmed to
+   * fit (spec #418 §2).
+   */
+  "output_ceiling_unsupported",
 ] as const;
 export type ModelBoundaryClassification = (typeof MODEL_BOUNDARY_CLASSIFICATIONS)[number];
 
@@ -153,6 +162,18 @@ export interface ModelBoundaryDiagnostic {
   emptyFields: string[];
   /** The ceiling that fired, for `request_timeout`; `null` otherwise. */
   timeoutMs: number | null;
+  /**
+   * Token facts the provider reported alongside this failed reply, when it
+   * reported any. A `length` finish carrying a populated `outputTokens`
+   * says the model spent its ceiling; the same finish with no usage at all
+   * says nothing about why generation stopped short. `null` means the
+   * provider reported no usage, never that usage was zero.
+   */
+  usage: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    costUsd: number | null;
+  } | null;
 }
 
 /** Bounded wire contract for durable, shape-only model failures. */
@@ -170,6 +191,13 @@ export const ModelBoundaryDiagnosticSchema: z.ZodType<ModelBoundaryDiagnostic> =
   populatedFields: z.array(z.string().max(200)).max(64),
   emptyFields: z.array(z.string().max(200)).max(64),
   timeoutMs: z.number().int().nonnegative().safe().nullable(),
+  usage: z
+    .object({
+      inputTokens: z.number().int().nonnegative().nullable(),
+      outputTokens: z.number().int().nonnegative().nullable(),
+      costUsd: z.number().nonnegative().nullable(),
+    })
+    .nullable(),
 });
 
 /** Shape-only observation of one completion wire attempt, including recovered failures. */
@@ -192,6 +220,13 @@ export const ModelAttemptEventSchema = z.object({
      when the attempt sent no effort level (provider default applied) —
      populated from the reasoning send, never guessed. */
   reasoningEffort: z.string().max(20).optional(),
+  /* The thinking depth the caller asked for — the low-effort intent or an
+     explicit override — before ADR-0096 resolved it against the model's
+     advertised efforts. Distinct from `reasoningEffort` above, which is the
+     value actually sent; recorded so a resolution can be told apart from an
+     identical request (spec #418 §2). Omitted on providers that never
+     resolve an effort at all. */
+  requestedReasoningEffort: z.string().max(20).optional(),
   /* Who served a succeeded attempt, when the wire names it: evidence a route
      silently swapped mid-arm, which is a condition change no policy sees. */
   systemFingerprint: z.string().max(200).optional(),
