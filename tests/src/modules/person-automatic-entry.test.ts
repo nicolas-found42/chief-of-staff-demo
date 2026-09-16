@@ -212,3 +212,46 @@ test("identifier lookup reuses a stored handle even when its profile URL is abse
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test.each(["publication", "account"])(
+  "publication URLs do not alias their owner's account when %s is added first",
+  (first) => {
+    const root = mkdtempSync(join(tmpdir(), "person-entry-publication-"));
+    try {
+      const people = new WorkspacePersonProfiles({
+        store: new PersonProfileStore(root),
+        lifecycle: [],
+      });
+      const publication = "https://github.com/example-owner/project";
+      const account = "https://github.com/example-owner";
+      const urls = first === "publication" ? [publication, account] : [account, publication];
+      const created = urls.map((url) => people.ensureIdentifier(url));
+      expect(created[0].id).not.toBe(created[1].id);
+      for (const [index, url] of urls.entries())
+        expect(people.ensureIdentifier(url).id).toBe(created[index].id);
+      expect(people.search({ includeArchived: true })).toHaveLength(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test("deleting a publication URL blocks its recreation without deleting its owner's account identity", () => {
+  const root = mkdtempSync(join(tmpdir(), "person-entry-publication-delete-"));
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const publication = "https://github.com/example-owner/project";
+    const person = people.create({
+      primaryEmail: "contributor@example.com",
+      profileUrls: [publication],
+    });
+    people.privacyDelete(person.id, { confirmation: "DELETE PROFILE" });
+    expect(() => people.ensureIdentifier(publication)).toThrow(/deleted/i);
+    expect(people.ensureIdentifier("https://github.com/example-owner").id).not.toBe(person.id);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

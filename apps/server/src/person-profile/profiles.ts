@@ -159,7 +159,8 @@ function heldHandles(profile: PersonProfile): Record<string, string[]> {
   const handles = structuredClone(profile.handles);
   for (const url of profile.profileUrls) {
     const social = socialUrl(url);
-    if (social?.handle) (handles[social.platform] ??= []).push(social.handle);
+    if (social?.kind === "profile" && social.handle)
+      (handles[social.platform] ??= []).push(social.handle);
   }
   return handles;
 }

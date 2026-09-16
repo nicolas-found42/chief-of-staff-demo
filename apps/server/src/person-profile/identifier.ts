@@ -54,6 +54,7 @@ export function parsePersonIdentifier(raw: string): PersonIdentitySignals {
 
   signals.profileUrls = [url.toString()];
   const social = socialUrl(url.toString());
-  if (social?.handle) signals.handles = { [social.platform]: [social.handle] };
+  if (social?.kind === "profile" && social.handle)
+    signals.handles = { [social.platform]: [social.handle] };
   return signals;
 }
