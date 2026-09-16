@@ -426,3 +426,21 @@ test("jobless polling updates readiness without enqueueing a read", async () => 
   expect(container.textContent).toContain("Research ready");
   expect(read).toHaveBeenCalledTimes(1);
 });
+
+test("readiness-only summary changes replace a stale top-level refusal without reloading the dossier", async () => {
+  vi.useFakeTimers();
+  const api = client();
+  const initial = research();
+  const readiness = { state: "setup-required" as const, reason: "owner-not-confirmed" as const };
+  const read = vi.fn(async () => ({ ...view(), research: { ...initial, readiness }, readiness }));
+  api.read = read;
+  api.summary = vi.fn(async () => ({
+    ...initial,
+    readiness: { state: "ready" as const, reason: "ready" as const },
+  }));
+  const container = await mount(api);
+  expect(container.textContent).toContain("An owner has not yet confirmed");
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
+  expect(container.textContent).not.toContain("An owner has not yet confirmed");
+  expect(read).toHaveBeenCalledTimes(1);
+});

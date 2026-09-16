@@ -401,7 +401,11 @@ export function PersonDossierPanel({
         await refresh();
         return;
       }
-      setView((current) => (current ? { ...current, research: summary } : current));
+      setView((current) =>
+        current
+          ? { ...current, research: summary, ...(summary ? { readiness: summary.readiness } : {}) }
+          : current,
+      );
     } catch {
       /* A side-effect-free status poll failing does not overwrite the
          primary read error; the next full refresh reports a persistent
@@ -556,7 +560,7 @@ export function PersonDossierPanel({
         Evidence {index + 1}: “
         {citation.quote.trim().replace(/\s+/g, " ").length > 180
           ? `${citation.quote.trim().replace(/\s+/g, " ").slice(0, 180)}…`
-          : citation.quote}
+          : citation.quote.trim().replace(/\s+/g, " ")}
         ”
       </button>
     ));
@@ -584,7 +588,7 @@ export function PersonDossierPanel({
           Source {index + 1}: “
           {citation.quote.trim().replace(/\s+/g, " ").length > 180
             ? `${citation.quote.trim().replace(/\s+/g, " ").slice(0, 180)}…`
-            : citation.quote}
+            : citation.quote.trim().replace(/\s+/g, " ")}
           ”
         </button>
       ))}
@@ -653,7 +657,7 @@ export function PersonDossierPanel({
             : (surface?.detail ??
               (settings?.settings.paused
                 ? "An owner paused automatic research for the workspace."
-                : "Only retained, supported evidence appears in this dossier."))}
+                : "Only retained evidence appears in this dossier."))}
         </p>
         {surface?.nextAction && (
           <p>

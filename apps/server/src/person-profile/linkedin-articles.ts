@@ -1,8 +1,16 @@
 import type { PersonDossierContent, PersonSourceDocument } from "@chief-of-staff-demo/shared";
 
+export function linkedInProfileIdentity(url: string): string | null {
+  return (
+    /^https?:\/\/(?:[\w-]+\.)?linkedin\.com\/in\/([^/?#]+)\/?(?:[?#].*)?$/i
+      .exec(url)?.[1]
+      ?.toLowerCase() ?? null
+  );
+}
+
 /** Only the public profile's attributed article section, never activity or suggestions. */
 export function linkedInProfileText(document: Document, url: string): string {
-  if (!/^https?:\/\/(?:[\w-]+\.)?linkedin\.com\/in\/[^/]+\/?(?:[?#].*)?$/i.test(url)) return "";
+  if (!linkedInProfileIdentity(url)) return "";
   const section = document.querySelector('section[data-section="articles"]');
   const heading = section?.querySelector("h2")?.textContent.trim();
   const author = document.querySelector("h1")?.textContent.trim().replace(/\s+/g, " ");
@@ -47,15 +55,11 @@ export function retainLinkedInArticles(
   profileUrls: string[],
   finalUrl: string,
 ): PersonDossierContent {
-  const identity = (url: string) =>
-    /^https?:\/\/(?:[\w-]+\.)?linkedin\.com\/in\/([^/?#]+)\/?(?:[?#].*)?$/i
-      .exec(url)?.[1]
-      ?.toLowerCase();
-  const subject = identity(source.url);
+  const subject = linkedInProfileIdentity(source.url);
   if (
     !subject ||
-    identity(finalUrl) !== subject ||
-    !profileUrls.some((url) => identity(url) === subject)
+    linkedInProfileIdentity(finalUrl) !== subject ||
+    !profileUrls.some((url) => linkedInProfileIdentity(url) === subject)
   )
     return content;
   const claims = [...content.claims];
@@ -136,15 +140,11 @@ export function linkedInProfileName(
   profileUrls: string[],
   finalUrl: string,
 ): string | null {
-  const identity = (url: string) =>
-    /^https?:\/\/(?:[\w-]+\.)?linkedin\.com\/in\/([^/?#]+)\/?(?:[?#].*)?$/i
-      .exec(url)?.[1]
-      ?.toLowerCase();
-  const subject = identity(source.url);
+  const subject = linkedInProfileIdentity(source.url);
   if (
     !subject ||
-    identity(finalUrl) !== subject ||
-    !profileUrls.some((url) => identity(url) === subject)
+    linkedInProfileIdentity(finalUrl) !== subject ||
+    !profileUrls.some((url) => linkedInProfileIdentity(url) === subject)
   )
     return null;
   return /^Public profile name: ([^\n]{1,200})$/m.exec(source.text)?.[1] ?? null;

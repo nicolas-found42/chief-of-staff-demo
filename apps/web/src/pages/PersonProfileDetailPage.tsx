@@ -261,6 +261,12 @@ function described(profile: PersonProfile): string {
  */
 export function PersonProfileDetailPage({ client = peopleApi }: { client?: PeopleClient }) {
   const { profileId = "" } = useParams();
+  // Route changes own independent state, including pending repairs and history.
+  return <PersonProfileDetail key={profileId} client={client} />;
+}
+
+function PersonProfileDetail({ client }: { client: PeopleClient }) {
+  const { profileId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const revisionParam = searchParams.get("revision");
   const viewRevision = revisionParam === null ? null : Number(revisionParam);

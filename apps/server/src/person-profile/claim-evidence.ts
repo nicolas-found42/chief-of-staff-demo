@@ -1,3 +1,4 @@
+import { linkedInProfileIdentity } from "./linkedin-articles.js";
 import type { PersonClaim, PersonSourceDocument } from "@chief-of-staff-demo/shared";
 
 // Conservative recognition of an explicit relation in prose. This is a
@@ -89,7 +90,11 @@ export function qualifyClaimEvidence(
           .filter(Boolean)
           .join(" — "),
     );
-  if (structured && source.attribution === "self-report")
+  if (
+    structured &&
+    source.attribution === "self-report" &&
+    !["role", "currentEmployer"].includes(claim.fact?.field ?? "")
+  )
     return {
       ...claim,
       status: "claimed",
@@ -134,12 +139,19 @@ export function qualifyClaimEvidence(
 /** Recover only explicit adjacent fields in a LinkedIn profile's structured
  * sections. Never infer an employer, institution, issuer or date from a name. */
 export function retainClaimContext(claim: PersonClaim, source: PersonSourceDocument): PersonClaim {
-  if (!/^https?:\/\/(?:www\.)?linkedin\.com\/in\//i.test(source.url)) return claim;
+  if (!linkedInProfileIdentity(source.url)) return claim;
   const first = claim.citations[0];
   if (!first) return claim;
-  const start = source.text.indexOf(first.quote);
-  if (start < 0 || source.text.indexOf(first.quote, start + 1) !== -1) {
-    return locationContext(claim);
+  let start = source.text.indexOf(first.quote);
+  if (start < 0) return locationContext(claim);
+  if (source.text.indexOf(first.quote, start + 1) !== -1) {
+    // An article heading may contain a credential title as a substring. A
+    // unique complete field still identifies its own structured entry.
+    const exact = [...source.text.matchAll(/[^\n]+/g)].filter(
+      (line) => line[0].trim() === first.quote.trim(),
+    );
+    if (exact.length !== 1) return locationContext(claim);
+    start = exact[0]!.index + exact[0]![0].indexOf(first.quote.trim());
   }
   const lines = [...source.text.matchAll(/[^\n]+/g)]
     .map((match) => ({
@@ -272,15 +284,11 @@ export function recoverStructuredClaims(
   profileUrls: string[],
   finalUrl: string,
 ): PersonClaim[] {
-  const identity = (url: string) =>
-    /^https?:\/\/(?:www\.)?linkedin\.com\/in\/([^/?#]+)\/?(?:[?#].*)?$/i
-      .exec(url)?.[1]
-      ?.toLowerCase();
-  const subject = identity(source.url);
+  const subject = linkedInProfileIdentity(source.url);
   if (
     !subject ||
-    identity(finalUrl) !== subject ||
-    !profileUrls.some((url) => identity(url) === subject)
+    linkedInProfileIdentity(finalUrl) !== subject ||
+    !profileUrls.some((url) => linkedInProfileIdentity(url) === subject)
   )
     return claims;
   const result = claims.map((claim) => retainClaimContext(claim, source));

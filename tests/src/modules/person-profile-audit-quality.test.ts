@@ -624,3 +624,50 @@ test("live remediation: a generic program description retains the dated educatio
   expect(entry.changeReason).not.toContain("does not establish");
   expect(entry.changeReason).toContain("no independent verification");
 });
+
+test("live remediation: credential titles repeated inside article headings still retain their unique structured context", async () => {
+  const quote = "KindWork Customer Experience Fellowship";
+  const { dossier } = await replay(
+    `Title: ${quote} Training Recap\nLicenses & Certifications\n${quote}\nKindWork\nIssued Oct 2022`,
+    url,
+    {
+      ...extraction,
+      claims: [
+        {
+          ...claim("credential", quote),
+          statement: "Licensed KindWork Customer Experience Fellowship",
+          effectiveFrom: "2022-10",
+        },
+      ],
+    },
+  );
+  expect(dossier?.claims).toHaveLength(1);
+  expect(dossier?.claims[0]?.statement).toBe(
+    "KindWork Customer Experience Fellowship — KindWork — Issued Oct 2022",
+  );
+  expect(dossier?.claims[0]?.citations[0]?.quote).toContain("Issued Oct 2022");
+  expect(dossier?.claims[0]?.changeReason).not.toContain("does not establish");
+});
+
+test("review: structured fields survive an equivalent LinkedIn subdomain redirect", async () => {
+  const { dossier } = await replay(
+    "Education\nExample College\n2018 - 2021",
+    url,
+    extraction,
+    "https://uk.linkedin.com/in/morgan-example/",
+  );
+  expect(dossier?.claims.some((claim) => claim.statement.includes("Example College"))).toBe(true);
+});
+
+test("a literal employer title remains unresolved even when the model repeats it verbatim", async () => {
+  const { dossier } = await replay("Example Labs", url, {
+    ...extraction,
+    claims: [
+      {
+        ...claim("employer", "Example Labs"),
+        fact: { field: "currentEmployer", value: "Example Labs" },
+      },
+    ],
+  });
+  expect(dossier?.claims[0]?.statement).toContain("Unresolved source fragment");
+});

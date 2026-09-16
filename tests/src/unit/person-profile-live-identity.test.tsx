@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { expect, test, vi } from "vitest";
 import type { PersonProfile } from "@chief-of-staff-demo/shared";
@@ -17,11 +17,11 @@ vi.mock("../../../apps/web/src/pages/PersonDossierPanel", () => ({
 }));
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
-test("live identity adopts newer revisions and ignores late research responses after a correction", async () => {
-  const initial = fromPartial<PersonProfile>({
-    id: "person",
+function profile(id: string, fullName: string | null = null): PersonProfile {
+  return fromPartial<PersonProfile>({
+    id,
     revision: 1,
-    fullName: null,
+    fullName,
     role: null,
     currentEmployer: null,
     background: null,
@@ -39,6 +39,10 @@ test("live identity adopts newer revisions and ignores late research responses a
     evidence: [],
     sourceDiagnostics: [],
   });
+}
+
+test("live identity adopts newer revisions and ignores late research responses after a correction", async () => {
+  const initial = profile("person");
   const client = fromPartial<PeopleClient>({
     personProfile: async () => initial,
     personProfileRevisions: async () => [initial],
@@ -81,5 +85,54 @@ test("live identity adopts newer revisions and ignores late research responses a
     await act(async () => root.unmount());
     container.remove();
     delivery.receive = null;
+  }
+});
+
+test("navigation to another profile cannot receive the previous profile's late async response", async () => {
+  const client = fromPartial<PeopleClient>({
+    personProfile: async (id: string) => profile(id, id === "a" ? "Person A" : "Person B"),
+    personProfileRevisions: async (id: string) => [profile(id)],
+    personProfileLifecycle: async () => {
+      throw new Error("No lifecycle fixture");
+    },
+  });
+  function Navigate() {
+    const navigate = useNavigate();
+    return createElement("button", { onClick: () => navigate("/people/b") }, "Open B");
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          MemoryRouter,
+          { initialEntries: ["/people/a"] },
+          createElement(
+            "div",
+            null,
+            createElement(Navigate),
+            createElement(
+              Routes,
+              null,
+              createElement(Route, {
+                path: "/people/:profileId",
+                element: createElement(PersonProfileDetailPage, { client }),
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(container.querySelector("h1")?.textContent).toBe("Person A");
+    const lateResponse = delivery.receive!;
+    await act(async () => container.querySelector("button")!.click());
+    expect(container.querySelector("h1")?.textContent).toBe("Person B");
+    await act(async () => lateResponse({ ...profile("a", "Stale Person A"), revision: 99 }));
+    expect(container.querySelector("h1")?.textContent).toBe("Person B");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
   }
 });
