@@ -1246,13 +1246,13 @@ export class PersonResearch {
               /* A provider that keeps failing is an interruption of the
                  operation; one that failed on this document is a gap in it. */
               if (extractionHealth.failure()) {
+                /* The latch's wording is the observed classification's
+                   wording (#417 F2): a schema-breaking or empty answer is
+                   not a provider outage, and this operation did observe one. */
+                const described = describeExtractionBoundaryInterruption([...recorder.all()]);
                 interruption = {
-                  code: {
-                    code: "model-boundary-failed",
-                    reason: "The configured model provider failed during extraction.",
-                  },
-                  reason:
-                    "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
+                  code: { code: described.code, reason: described.codeReason },
+                  reason: described.detail,
                 };
                 documentInterrupted = true;
               }
