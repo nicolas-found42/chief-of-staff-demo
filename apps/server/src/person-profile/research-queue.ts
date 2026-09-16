@@ -13,6 +13,7 @@ import {
   type PersonResearchEnqueueDecision,
   type PersonResearchProfileSummary,
   type PersonResearchDiagnosticsPage,
+  type PersonResearchRunSummary,
 } from "@chief-of-staff-demo/shared";
 import type { WorkspacePersonProfiles } from "./profiles.js";
 import type { PersonResearch } from "./research.js";
@@ -184,6 +185,81 @@ export class PersonResearchQueue {
       byState,
       running: this.running.size,
     };
+  }
+  /**
+   * Retained operation identities for unified history (#417 F8), not a claim
+   * to a full archive. Read scalar facts directly: neither job() nor status()
+   * belongs on a list path because both clone attempt/checkpoint payloads.
+   * Keep at most the requested page while scanning the in-memory queue.
+   */
+  history(
+    options: {
+      limit?: number;
+      before?: { createdAt: string; id: string };
+    } = {},
+  ): PersonResearchRunSummary[] {
+    const rows: PersonResearchRunSummary[] = [];
+    const limit = options.limit ?? Infinity;
+    const compare = (a: { createdAt: string; id: string }, b: { createdAt: string; id: string }) =>
+      b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id);
+    const add = (row: PersonResearchRunSummary) => {
+      if (options.before && compare(row, options.before) <= 0) return;
+      if (rows.length >= limit && compare(row, rows[rows.length - 1]!) >= 0) return;
+      const index = rows.findIndex((existing) => compare(row, existing) < 0);
+      rows.splice(index < 0 ? rows.length : index, 0, row);
+      if (rows.length > limit) rows.pop();
+    };
+    for (const job of this.state.jobs) {
+      const operation = job.operation;
+      const liveId = job.currentOperationId;
+      const live = liveId && (job.state === "researching" || liveId !== operation?.operationId);
+      const currentId = live ? liveId : operation?.operationId;
+      const seen = new Set<string>();
+      const retain = (row: Omit<PersonResearchRunSummary, "kind" | "id" | "profileId">) => {
+        if (seen.has(row.operationId)) return;
+        seen.add(row.operationId);
+        add({
+          ...row,
+          kind: "person-research",
+          id: `person-research:${job.profileId}:${row.operationId}`,
+          profileId: job.profileId,
+          summary: row.summary.slice(0, 300),
+        });
+      };
+      if (live && liveId)
+        retain({
+          operationId: liveId,
+          ...(job.currentOperationRevision !== undefined
+            ? { revision: job.currentOperationRevision }
+            : {}),
+          phase: "current",
+          createdAt: job.startedAt ?? job.queuedAt,
+          status: job.state,
+          summary: job.detail,
+        });
+      if (operation)
+        retain({
+          operationId: operation.operationId,
+          ...(job.operationRevision !== undefined ? { revision: job.operationRevision } : {}),
+          phase: operation.operationId === currentId ? "current" : "previous",
+          createdAt: operation.startedAt,
+          finishedAt: operation.finishedAt,
+          status: operation.conclusion,
+          summary: operation.detail,
+        });
+      const previous = job.previousConclusion;
+      if (previous)
+        retain({
+          operationId: previous.operationId,
+          revision: previous.revision,
+          phase: "previous",
+          createdAt: previous.finishedAt,
+          finishedAt: previous.finishedAt,
+          status: previous.conclusion,
+          summary: previous.detail,
+        });
+    }
+    return rows;
   }
   configure(input: PersonResearchSettingsPatch): PersonResearchStatus {
     /* A patch names only the settings the owner changed: an absent key leaves

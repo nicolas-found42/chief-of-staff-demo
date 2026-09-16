@@ -94,7 +94,7 @@ interface RunQuery {
 export interface Runs {
   create(input: NewRun): RunHandle;
   open(id: string): RunHandle | null;
-  list(query?: RunQuery): RunPage;
+  list(query?: RunQuery): RunPage<RunSummary>;
   detail(id: string): RunDetail | null;
 }
 
@@ -487,7 +487,7 @@ export function openRuns(workspaceDir: string): Runs {
      * reading anything — which is what lets a page of 25 read 25 files rather
      * than every Run on disk.
      */
-    list(query: RunQuery = {}): RunPage {
+    list(query: RunQuery = {}): RunPage<RunSummary> {
       let entries: string[];
       try {
         entries = readdirSync(layout.runsDir);

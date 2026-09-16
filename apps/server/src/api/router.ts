@@ -1,6 +1,6 @@
 import type { PersonResearchQueue } from "../person-profile/research-queue.js";
 import type { FastifyInstance } from "fastify";
-import { DEFAULT_MODELS, ConfigUpdateSchema } from "@chief-of-staff-demo/shared";
+import { DEFAULT_MODELS, ConfigUpdateSchema, type RunActivity } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
 import {
@@ -95,22 +95,61 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   const runs = ctx.runs;
   app.get("/api/health", async () => ({ ok: true }));
 
-  /**
-   * One list of Runs with a filter, rather than two endpoints that can
-   * disagree. `module` is what each Module's own page passes; `limit` and
-   * `cursor` are what the Runs list pages with. No `limit` means every Run,
-   * which is what Home asks for because its sentence counts every failure.
-   */
-  app.get("/api/runs", async (request) => {
+  /** Module pages keep engine pagination; unified history also includes the
+   * queue's retained operation identities, never synthetic engine Runs. */
+  app.get("/api/runs", async (request, reply) => {
     const query = request.query as { module?: string; limit?: string; cursor?: string };
-    const limit = query.limit === undefined ? undefined : Number(query.limit);
-    return runs.list({
-      ...(query.module ? { module: query.module } : {}),
-      ...(limit !== undefined && Number.isFinite(limit) && limit > 0
-        ? { limit: Math.min(Math.floor(limit), MAX_RUN_PAGE) }
-        : {}),
-      ...(query.cursor ? { cursor: query.cursor } : {}),
-    });
+    const requested = query.limit === undefined ? undefined : Number(query.limit);
+    const limit =
+      requested !== undefined && Number.isFinite(requested) && requested > 0
+        ? Math.max(1, Math.min(Math.floor(requested), MAX_RUN_PAGE))
+        : undefined;
+    if (query.module) {
+      const page = runs.list({
+        module: query.module,
+        ...(limit !== undefined ? { limit } : {}),
+        ...(query.cursor ? { cursor: query.cursor } : {}),
+      });
+      return { ...page, runs: page.runs.map((run) => ({ ...run, kind: "module-run" })) };
+    }
+    let before: { createdAt: string; id: string } | undefined;
+    if (query.cursor) {
+      try {
+        const parsed: unknown = JSON.parse(Buffer.from(query.cursor, "base64url").toString("utf8"));
+        if (
+          !Array.isArray(parsed) ||
+          parsed.length !== 2 ||
+          typeof parsed[0] !== "string" ||
+          typeof parsed[1] !== "string"
+        )
+          throw new Error("cursor");
+        before = { createdAt: parsed[0], id: parsed[1] };
+      } catch {
+        return reply.code(400).send({ error: "invalid-runs-cursor" });
+      }
+    }
+    const compare = (a: { createdAt: string; id: string }, b: { createdAt: string; id: string }) =>
+      b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id);
+    const activity: RunActivity[] = runs
+      .list()
+      .runs.filter((run) => !before || compare(run, before) > 0)
+      .map((run) => ({ ...run, kind: "module-run" }));
+    activity.push(
+      ...(ctx.personResearchQueue?.history({
+        ...(limit !== undefined ? { limit: limit + 1 } : {}),
+        ...(before ? { before } : {}),
+      }) ?? []),
+    );
+    activity.sort(compare);
+    const page = limit === undefined ? activity : activity.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      runs: page,
+      nextCursor:
+        last && page.length < activity.length
+          ? Buffer.from(JSON.stringify([last.createdAt, last.id])).toString("base64url")
+          : null,
+    };
   });
 
   app.get("/api/runs/:id", async (request, reply) => {

@@ -1,5 +1,16 @@
-import type { ProviderId, RunSummary } from "@chief-of-staff-demo/shared";
-import { isExpectedConnectionExpiry, runDisplayName, statusLabel } from "./display";
+import type {
+  ProviderId,
+  PersonResearchRunSummary,
+  RunActivity,
+} from "@chief-of-staff-demo/shared";
+import {
+  isActiveRunActivity,
+  isExpectedConnectionExpiry,
+  personResearchPhaseLabel,
+  runActivityLink,
+  runDisplayName,
+  statusLabel,
+} from "./display";
 
 interface RailRow {
   /** React key, and the identity of the thing the row is about. */
@@ -29,7 +40,8 @@ interface FeedEntry {
  * Transcript Module is retired. A Module with no product surface left at all
  * falls back to the Shell's diagnostics list, which Settings links to.
  */
-function owningSurfaceForRun(run: RunSummary): string {
+function owningSurfaceForRun(run: RunActivity): string {
+  if (run.kind === "person-research") return runActivityLink(run);
   switch (run.module) {
     case "meeting-brief-generator":
       return "/meetings/brief";
@@ -72,6 +84,17 @@ const MAX_FAILED_ROWS = 3;
 /** The feed is a headline, not an inventory (ADR-0014). */
 const MAX_FEED = 5;
 
+/* A previous conclusion is history, not a standing condition on the new work. */
+function researchNeedsAttention(run: PersonResearchRunSummary): boolean {
+  return (
+    run.phase === "current" &&
+    (run.status === "interrupted" ||
+      run.status === "incomplete" ||
+      run.status === "unavailable" ||
+      run.status === "bounded")
+  );
+}
+
 /**
  * Home's sentence and attention rail, from what the Shell can observe.
  *
@@ -91,17 +114,22 @@ const MAX_FEED = 5;
  * speaks for the whole page rather than for the part Home owns.
  */
 export function homeStatus(
-  runs: RunSummary[],
+  runs: RunActivity[],
   provider: ProviderId,
   hasNotice: boolean,
 ): HomeStatus {
-  const needsAction = runs.filter((run) => run.status === "failed");
+  const moduleRuns = runs.filter((run) => run.kind === "module-run");
+  const researchAttention = runs.filter(
+    (run): run is PersonResearchRunSummary =>
+      run.kind === "person-research" && researchNeedsAttention(run),
+  );
+  const needsAction = moduleRuns.filter((run) => run.status === "failed");
   const interrupted = needsAction.filter((run) => isExpectedConnectionExpiry(run.connectionState));
   const failed = needsAction.filter((run) => !isExpectedConnectionExpiry(run.connectionState));
-  const blocked = runs.filter(
+  const blocked = moduleRuns.filter(
     (run) => run.status === "blocked" && run.module !== "meeting-debrief",
   );
-  const active = runs.filter((run) => run.status === "pending" || run.status === "running");
+  const active = runs.filter(isActiveRunActivity);
   /* A fresh workspace defaults to `mock`, so this is the likeliest reason a
      beginner's first upload quietly does nothing useful. It speaks only at the
      level the Shell legitimately knows: the provider is Shell configuration,
@@ -157,6 +185,14 @@ export function homeStatus(
       to: `/runs/${run.id}`,
     });
   }
+  for (const run of researchAttention) {
+    rows.push({
+      id: run.id,
+      text: `${runDisplayName(run)} · ${personResearchPhaseLabel(run)} · ${statusLabel(run.status)}${run.summary ? ` — ${run.summary}` : ""}`,
+      cta: "Open profile",
+      to: runActivityLink(run),
+    });
+  }
   if (mock) {
     rows.push({
       id: "mock-provider",
@@ -170,9 +206,22 @@ export function homeStatus(
      without a stored createdAt sort last by falling back to their id — a
      comparison that never lies about being arbitrary. */
   const finished = runs
-    .filter((run) => run.status === "done" || run.status === "skipped")
+    .filter((run) =>
+      run.kind === "person-research"
+        ? !isActiveRunActivity(run) && !researchNeedsAttention(run)
+        : run.status === "done" || run.status === "skipped",
+    )
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   const feed: FeedEntry[] = finished.slice(0, MAX_FEED).map((run) => {
+    if (run.kind === "person-research") {
+      return {
+        id: run.id,
+        title: runDisplayName(run),
+        outcome: `${personResearchPhaseLabel(run)} · ${statusLabel(run.status)}${run.summary ? ` — ${run.summary}` : ""}`,
+        at: run.createdAt,
+        to: runActivityLink(run),
+      };
+    }
     /* The Module's own line about what it did, or why it stopped. The Shell
        does not derive either — it renders what the Run recorded. */
     const detail =
@@ -203,6 +252,11 @@ export function homeStatus(
   }
   if (blocked.length > 0) {
     clauses.push(`${blocked.length} run${blocked.length === 1 ? " is" : "s are"} waiting for you`);
+  }
+  if (researchAttention.length > 0) {
+    clauses.push(
+      `${researchAttention.length} person research operation${researchAttention.length === 1 ? " needs" : "s need"} attention`,
+    );
   }
   if (mock) {
     clauses.push("the extraction provider is a stand-in");

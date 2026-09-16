@@ -5,6 +5,7 @@ import { z } from "zod/v3";
 import { YoutubeChannelSchema } from "./youtube.js";
 import { ACTION_ITEM_POLICIES } from "./task.js";
 import type { OperationBudgetSnapshot, ModelTimelineEntry } from "./model-admission.js";
+import type { PersonResearchConclusion, PersonResearchJobState } from "./person-research.js";
 
 // Meeting Brief Generator — Internal Domain normalization helper (issue://83)
 export function normalizeInternalDomains(domains: string[]): string[] {
@@ -727,16 +728,31 @@ export interface RunDetail extends RunSummary {
   interrupted?: boolean | undefined;
 }
 
+/** Compact retained operation activity, not a stored engine Run or a full archive (#417 F8). */
+export interface PersonResearchRunSummary {
+  kind: "person-research";
+  id: string;
+  profileId: string;
+  operationId: string;
+  revision?: number;
+  phase: "current" | "previous";
+  /** Start when retained; otherwise the operation's last known timestamp. */
+  createdAt: string;
+  finishedAt?: string;
+  status: PersonResearchJobState | PersonResearchConclusion;
+  summary: string;
+}
+
+/** Discriminated at the HTTP boundary; Module storage and detail remain RunSummary. */
+export type RunActivity = (RunSummary & { kind: "module-run" }) | PersonResearchRunSummary;
+
 /**
- * GET /api/runs. Newest first, filtered to one Module or across all of them.
- *
- * `nextCursor` is the id of the last Run on this page; asking again with it
- * continues below. Null means this page reached the end. Absent `limit` means
- * every Run: Home counts every failure, so it asks for the lot, while the Runs
- * list pages.
+ * GET /api/runs: newest-first activity, or one Module's Runs when filtered.
+ * The opaque cursor continues below the last row; null means the end.
+ * Absent limit includes all compact retained rows for Home's attention counts.
  */
-export interface RunPage {
-  runs: RunSummary[];
+export interface RunPage<Row = RunActivity> {
+  runs: Row[];
   nextCursor: string | null;
 }
 

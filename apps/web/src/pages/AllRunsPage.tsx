@@ -48,7 +48,7 @@ export function AllRunsPage() {
         </h1>
       </div>
       <p className="muted">
-        Every Module's runs, newest first. A Module's own tab shows only its own.
+        Module runs and Person research, newest first. Person research opens its profile.
       </p>
       {googleStatus?.state === "connected" && intake?.configured && intake.enabled && (
         <p className="muted" data-testid="intake-liveness">
@@ -64,8 +64,8 @@ export function AllRunsPage() {
       <RunsList
         empty={
           <p className="muted">
-            No runs yet. A Module starts one when its Intake finds work — see{" "}
-            <Link to="/">Home</Link> for what is live.
+            No activity yet. Module runs and Person research appear here — see{" "}
+            <Link to="/">Home</Link> for the products.
           </p>
         }
       />

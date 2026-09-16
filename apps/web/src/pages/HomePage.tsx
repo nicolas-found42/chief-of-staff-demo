@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { ProviderId, RunSummary, TaskOverview } from "@chief-of-staff-demo/shared";
+import type { ProviderId, RunActivity, TaskOverview } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
 import { configApi, migrationApi, runsApi, type OnboardingStatus } from "../clients/workspace";
 import { tasksApi } from "../clients/tasks";
@@ -8,7 +8,7 @@ import { WorkSummary } from "../components/WorkSummary";
 import { connectionNotice } from "../connectionNotice";
 import { homeStatus } from "../homeStatus";
 import { useGoogleConnection } from "../useGoogleConnection";
-import { formatTime, relativeTime } from "../display";
+import { formatTime, isActiveRunActivity, relativeTime } from "../display";
 import { PRODUCT_AREAS } from "../productAreas";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -18,8 +18,6 @@ const prototypeVariants = () => import("./homePrototypeVariants");
 const VariantA = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantA })));
 const VariantB = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantB })));
 const VariantC = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantC })));
-
-const TERMINAL = new Set(["done", "skipped", "failed"]);
 
 /**
  * The Shell's front door: where the workspace stands, and the way into the
@@ -39,7 +37,7 @@ export function HomePage() {
   const areas = PRODUCT_AREAS;
   // PROTOTYPE — read unconditionally; hooks cannot sit behind the loading gate.
   const [searchParams] = useSearchParams();
-  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [runs, setRuns] = useState<RunActivity[] | null>(null);
   const [provider, setProvider] = useState<ProviderId | null>(null);
   const [work, setWork] = useState<TaskOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +122,14 @@ export function HomePage() {
     void load();
   }, []);
 
-  const activeCount = runs === null ? 0 : runs.filter((run) => !TERMINAL.has(run.status)).length;
+  const activeCount =
+    runs === null
+      ? 0
+      : runs.filter((run) =>
+          run.kind === "person-research"
+            ? isActiveRunActivity(run)
+            : run.status !== "done" && run.status !== "skipped" && run.status !== "failed",
+        ).length;
 
   /* The same rule the runs list uses: an interval that exists only while a Run
      can still change (WCAG 2.2.2). The connection refreshes on the same tick

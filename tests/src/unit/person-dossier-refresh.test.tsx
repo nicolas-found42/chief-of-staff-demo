@@ -49,7 +49,10 @@ function client(): DossierClient {
         refreshHours: 168,
       },
     })),
-    summary: vi.fn<DossierClient["summary"]>(async () => null),
+    summary: vi.fn<DossierClient["summary"]>(async () => ({
+      summary: null,
+      readiness: { state: "ready", reason: "ready" },
+    })),
     diagnostics: vi.fn<DossierClient["diagnostics"]>(async () => null),
   };
 }
@@ -157,7 +160,10 @@ test("normal polling requests only the summary and does not re-read the dossier"
     ...view(),
     research: research({ attempts: 0 }),
   }));
-  const summary = vi.fn<DossierClient["summary"]>(async () => research({ attempts: 0 }));
+  const summary = vi.fn<DossierClient["summary"]>(async () => ({
+    summary: research({ attempts: 0 }),
+    readiness: { state: "ready", reason: "ready" },
+  }));
   api.read = read;
   api.summary = summary;
   const container = await mount(api);
@@ -178,7 +184,10 @@ test("a poll noticing forward progress triggers exactly one reactive dossier ref
     .fn<DossierClient["read"]>()
     .mockResolvedValueOnce({ ...view(), research: research({ attempts: 0 }) })
     .mockResolvedValue({ ...view(), research: researching });
-  const summary = vi.fn<DossierClient["summary"]>(async () => researching);
+  const summary = vi.fn<DossierClient["summary"]>(async () => ({
+    summary: researching,
+    readiness: { state: "ready", reason: "ready" },
+  }));
   api.read = read;
   api.summary = summary;
   const container = await mount(api);
@@ -205,7 +214,10 @@ test("a stale summary poll cannot overwrite a fresher action refresh", async () 
   await click(container, "Prioritise research");
   expect(container.textContent).toContain("New evidence");
   await act(async () =>
-    pendingSummary.resolve(research({ state: "researching", attempts: 1, calls: 1, sources: 1 })),
+    pendingSummary.resolve({
+      summary: research({ state: "researching", attempts: 1, calls: 1, sources: 1 }),
+      readiness: { state: "ready", reason: "ready" },
+    }),
   );
   expect(container.textContent).toContain("New evidence");
   expect(container.textContent).not.toContain("Researching");
@@ -406,12 +418,13 @@ test("retry preserves the server's actionable readiness refusal", async () => {
   expect(container.querySelector('a[href="/settings"]')?.textContent).toBe("Configure provider");
 });
 
-test("jobless polling updates readiness without enqueueing a read", async () => {
+test("jobless polling updates readiness from the summary envelope without enqueueing a read or an aggregate poll", async () => {
   vi.useFakeTimers();
   const api = client();
-  const settings = await api.settings();
-  api.settings = vi.fn(async () => ({
-    ...settings,
+  // The blocked readiness is what the dossier read reported; the no-job
+  // summary poll is what notices the pipeline became ready (#417 F1).
+  api.summary = vi.fn<DossierClient["summary"]>(async () => ({
+    summary: null,
     readiness: { state: "ready" as const, reason: "ready" as const },
   }));
   const read = vi.fn(async () => ({
@@ -424,7 +437,71 @@ test("jobless polling updates readiness without enqueueing a read", async () => 
   await act(async () => vi.advanceTimersByTimeAsync(4000));
   expect(container.textContent).not.toContain("An owner has not yet confirmed");
   expect(container.textContent).toContain("Research ready");
+  // One dossier read (the initial one), and no second aggregate status
+  // request beyond the initial refresh — the envelope carried the readiness.
   expect(read).toHaveBeenCalledTimes(1);
+  expect(api.settings).toHaveBeenCalledTimes(1);
+});
+
+test("renderer failures beyond the bounded sample are counted as an aggregate without claiming saturation", async () => {
+  const api = client();
+  api.read = vi.fn(async () => ({
+    ...view(),
+    research: research({
+      diagnostics: {
+        totalAttempts: 40,
+        byCode: { "rendering-failed": 8, "identity-unmatched": 30 },
+        sample: [],
+        truncated: true,
+      },
+    }),
+  }));
+  api.summary = vi.fn<DossierClient["summary"]>(async () => ({
+    summary: research({
+      diagnostics: {
+        totalAttempts: 40,
+        byCode: { "rendering-failed": 8, "identity-unmatched": 30 },
+        sample: [],
+        truncated: true,
+      },
+    }),
+    readiness: { state: "ready", reason: "ready" },
+  }));
+  const container = await mount(api);
+  expect(container.textContent).toContain("8 source reads failed at rendering.");
+  // Saturation is not claimed without recorded renderer-busy evidence.
+  expect(container.textContent).toContain("records no renderer-busy reason");
+  // The digest details must remain reachable even though the sample is empty.
+  expect(container.textContent).toContain("Source and identity diagnostics");
+});
+
+test("recorded renderer-busy evidence is named as sheds in the aggregate", async () => {
+  const api = client();
+  const sample = [
+    {
+      code: "rendering-failed" as const,
+      stage: "reading" as const,
+      outcome: "failed" as const,
+      occurredAt: "2026-09-15T10:00:00Z",
+      reason: "Browser source renderer is busy; retry later.",
+    },
+  ];
+  const diagnostics = {
+    totalAttempts: 40,
+    byCode: { "rendering-failed": 8 },
+    sample,
+    truncated: true,
+  } as PersonResearchProfileSummary["diagnostics"];
+  api.read = vi.fn(async () => ({ ...view(), research: research({ diagnostics }) }));
+  api.summary = vi.fn<DossierClient["summary"]>(async () => ({
+    summary: research({ diagnostics }),
+    readiness: { state: "ready", reason: "ready" },
+  }));
+  const container = await mount(api);
+  expect(container.textContent).toContain("8 source reads failed at rendering.");
+  expect(container.textContent).toContain(
+    "1 was shed because the browser source renderer was busy",
+  );
 });
 
 test("readiness-only summary changes replace a stale top-level refusal without reloading the dossier", async () => {
@@ -434,8 +511,8 @@ test("readiness-only summary changes replace a stale top-level refusal without r
   const readiness = { state: "setup-required" as const, reason: "owner-not-confirmed" as const };
   const read = vi.fn(async () => ({ ...view(), research: { ...initial, readiness }, readiness }));
   api.read = read;
-  api.summary = vi.fn(async () => ({
-    ...initial,
+  api.summary = vi.fn<DossierClient["summary"]>(async () => ({
+    summary: { ...initial, readiness: { state: "ready" as const, reason: "ready" as const } },
     readiness: { state: "ready" as const, reason: "ready" as const },
   }));
   const container = await mount(api);
