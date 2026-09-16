@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createWikipediaProvider } from "../../../apps/server/src/source-adapters/providers/wikipedia";
 import { ProviderRefusedError } from "../../../apps/server/src/source-adapters/providers/types";
+import {
+  createPublicSearch,
+  PublicSearchUnavailableError,
+} from "../../../apps/server/src/source-adapters/search";
 
 const IO = {
   timeoutMs: 10_000,
@@ -9,7 +13,7 @@ const IO = {
   },
 };
 
-function respondWith(status: number, body: string) {
+function respondWith(status: number, body: string, retryAfter: string | null = null) {
   const calls: string[] = [];
   const fetch = async (url: string) => {
     calls.push(url);
@@ -19,7 +23,7 @@ function respondWith(status: number, body: string) {
       contentType: "application/json",
       etag: null,
       lastModified: null,
-      retryAfter: null,
+      retryAfter,
       body,
     };
   };
@@ -77,6 +81,40 @@ describe("createWikipediaProvider", () => {
     expect(error).toBeInstanceOf(ProviderRefusedError);
     expect((error as ProviderRefusedError).reason).toBe("error");
   });
+
+  it.each([
+    { retryAfter: null, waitMs: 3_600_000 },
+    { retryAfter: "7200", waitMs: 7_200_000 },
+  ])(
+    "rests after HTTP 429 with Retry-After $retryAfter across queries",
+    async ({ retryAfter, waitMs }) => {
+      // #432 captured HTTP 429 but no body/header. The longer wait is a
+      // synthetic contract case, not a reconstruction of the historical response.
+      const refused = respondWith(429, "", retryAfter);
+      const recovered = respondWith(200, JSON.stringify(FIXTURE));
+      let now = 0;
+      const search = createPublicSearch(
+        async (url) => (refused.calls.length === 0 ? refused.fetch(url) : recovered.fetch(url)),
+        undefined,
+        { now: () => now, providerFilter: (name) => name === "wikipedia" },
+      );
+
+      await expect(search("Richard Achee")).rejects.toBeInstanceOf(PublicSearchUnavailableError);
+      now = waitMs - 1;
+      await expect(search("Ada Lovelace")).rejects.toBeInstanceOf(PublicSearchUnavailableError);
+      expect(recovered.calls).toEqual([]);
+
+      now = waitMs;
+      await expect(search("Ada Lovelace")).resolves.toEqual([
+        expect.objectContaining({ url: "https://en.wikipedia.org/wiki/Ada_Lovelace" }),
+        expect.objectContaining({
+          url: "https://en.wikipedia.org/wiki/Ada_(programming_language)",
+        }),
+      ]);
+      expect(refused.calls).toHaveLength(1);
+      expect(recovered.calls).toHaveLength(1);
+    },
+  );
 
   it("classifies an unparseable 200 body as an error refusal", async () => {
     const { fetch } = respondWith(200, "not json");
