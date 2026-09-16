@@ -4,7 +4,7 @@ import type { PersonClaim, PersonSourceDocument } from "@chief-of-staff-demo/sha
 // publication safeguard, not an entailment judge: recognizing a verb does
 // not prove a claim true. Unrecognized fragments remain available as claims.
 const predicate =
-  /\b(?:am|is|are|was|were|has|have|had|built|builds|designed|developed|created|founded|co-founded|joined|led|leads|worked|works|served|serves|appointed|became|launched|released|published|wrote|authored|earned|received|studied|graduated|completed|deployed|maintains|maintained|manages|managed|runs|ran|directs|directed|teaches|taught|researches|researched|invented|discovered|contributed|contributes|supported|says|said|reports|reported|verified|verifies|financed|held|moved|lists|argues|demonstrates|contains|recommends|recommended|executed|operated|remained|began)\b/i;
+  /\b(?:am|is|are|was|were|has|have|had|built|builds|designed|developed|created|founded|co-founded|joined|led|leads|worked|works|served|serves|appointed|became|launched|released|published|wrote|authored|earned|received|studied|graduated|completed|deployed|maintains|maintained|manages|managed|runs|ran|directs|directed|teaches|taught|researches|researched|invented|discovered|contributed|contributes|supported|says|said|reports|reported|verified|verifies|financed|held|moved|lists|listed|argues|demonstrates|contains|recommends|recommended|executed|operated|remained|began|spent)\b/i;
 
 function hasPredicate(quote: string): boolean {
   const match = predicate.exec(quote);
@@ -20,6 +20,23 @@ export function qualifyClaimEvidence(
   source: PersonSourceDocument,
 ): PersonClaim {
   if (claim.status !== "supported" && claim.status !== "claimed") return claim;
+  const publicName = /^Public profile name: (.+)$/m.exec(source.text)?.[1];
+  if (
+    source.attribution === "self-report" &&
+    publicName &&
+    claim.fact?.field === "fullName" &&
+    claim.fact.value === publicName
+  )
+    return {
+      ...claim,
+      statement: `The public profile lists the name ${publicName}.`,
+      status: "claimed",
+      effectiveFrom: null,
+      effectiveTo: null,
+      citations: [{ sourceId: source.id, quote: `Public profile name: ${publicName}` }],
+      changeReason:
+        "Name attributed to the matched public profile heading; no independent verification.",
+    };
   const reasons: string[] = [];
   for (const { quote } of claim.citations) {
     const start = source.text.indexOf(quote);
@@ -45,11 +62,61 @@ export function qualifyClaimEvidence(
         "The cited passage is truncated and describes a past period; it does not establish a current role or employer.",
       );
   }
+  if (
+    source.attribution === "self-report" &&
+    claim.effectiveFrom === null &&
+    /\b(currently|attending|current work)\b/i.test(claim.statement)
+  )
+    reasons.push(
+      "This is an undated self-report; current status has not been independently established.",
+    );
+  const founding = /\b(?:founded|co-founded|founder|co-founder)\b/i;
+  const unestablishedFounding =
+    founding.test(claim.statement) && !claim.citations.some(({ quote }) => founding.test(quote));
+  if (unestablishedFounding)
+    reasons.push(
+      "The citation does not establish founding or co-founding; affiliation or teaching is not founding evidence.",
+    );
   if (reasons.length === 0) return claim;
+  const structured =
+    claim.changeReason?.startsWith("Preserved explicit structured fields") ||
+    claim.citations.some(
+      (c) =>
+        claim.statement ===
+        c.quote
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .join(" — "),
+    );
+  const fragmentAssertion =
+    source.attribution === "self-report" &&
+    hasPredicate(claim.statement) &&
+    !structured &&
+    claim.citations.every((c) => !hasPredicate(c.quote) && c.quote.trim().length <= 160) &&
+    !claim.citations.some((c) => c.quote.trim() === claim.statement.trim());
+  const unresolved =
+    unestablishedFounding ||
+    fragmentAssertion ||
+    (claim.fact && ["role", "currentEmployer"].includes(claim.fact.field)) ||
+    /\b(currently|attending|current work|current role|current employer|works at|works for)\b/i.test(
+      claim.statement,
+    );
   return {
     ...claim,
     status: "claimed",
-    changeReason: [...new Set(reasons), claim.changeReason]
+    ...(unresolved ? { effectiveFrom: null, effectiveTo: null } : {}),
+    statement: unresolved
+      ? `Unresolved source fragment: “${claim.citations
+          .map((c) => c.quote.trim().replace(/\s+/g, " "))
+          .join("”; “")
+          .slice(0, 3000)}”. The asserted relationship and current status are not established.`
+      : claim.statement,
+    changeReason: [
+      ...new Set(reasons),
+      `Proposed assertion not established: ${claim.statement}`,
+      claim.changeReason,
+    ]
       .filter(Boolean)
       .join(" ")
       .slice(0, 4000),
@@ -129,7 +196,7 @@ export function retainClaimContext(claim: PersonClaim, source: PersonSourceDocum
   revised.statement = span
     .split(/\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => line && line !== "-")
     .join(" — ");
   if (revised.statement.length > 4000) return claim;
   revised.citations = [{ ...first, quote: span }, ...claim.citations.slice(1)];
@@ -296,7 +363,7 @@ export function recoverStructuredClaims(
       description && /\b(programme?|school|degree|studies)\b/i.test(description.text)
         ? description.end
         : line.end;
-    const start = institution?.start ?? previous?.start ?? line.start;
+    const start = institution?.start ?? line.start;
     append(
       "career",
       start,

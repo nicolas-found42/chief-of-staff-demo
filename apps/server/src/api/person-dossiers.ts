@@ -24,6 +24,8 @@ export function registerPersonDossierApi(
      lists) alongside the dossier itself (#417 F4). */
   const view = (id: string) => ({
     dossier: deps.dossiers.get(id),
+    profile: deps.people.get(id),
+    readiness: deps.queue.readiness(),
     research: deps.queue.summary(id),
   });
   app.get<{ Params: { profileId: string; revision: string } }>(
@@ -73,7 +75,10 @@ export function registerPersonDossierApi(
   /* The independently bounded queue-wide projection (issue #418, T5, spec
      §7), not the whole-queue clone `status()` deep-copies every job for
      (#417 F4): this route is what the dossier panel polled every cycle. */
-  app.get("/api/people/research/status", async () => deps.queue.aggregate());
+  app.get("/api/people/research/status", async () => ({
+    ...deps.queue.aggregate(),
+    readiness: deps.queue.readiness(),
+  }));
   app.patch("/api/people/research/settings", async (request, reply) => {
     const parsed = PersonResearchSettingsSchema.partial().strict().safeParse(request.body);
     if (!parsed.success)

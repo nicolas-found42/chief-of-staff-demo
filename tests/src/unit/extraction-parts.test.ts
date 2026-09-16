@@ -116,6 +116,6 @@ describe("extractionPartKey", () => {
    */
   it("hashes one fixed input set, with the schema and the version inside it", () => {
     expect(key()).toMatch(/^[0-9a-f]{64}$/);
-    expect(EXTRACTION_PART_REUSE_VERSION).toBe(2);
+    expect(EXTRACTION_PART_REUSE_VERSION).toBe(3);
   });
 });

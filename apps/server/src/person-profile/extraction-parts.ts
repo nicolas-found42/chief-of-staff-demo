@@ -30,7 +30,7 @@ export type Extraction = z.infer<typeof ExtractionSchema>;
  * `extraction-passages.ts` or the reader route it feeds) would not — bump
  * this version alongside any such change so it invalidates unconditionally.
  */
-export const EXTRACTION_PART_REUSE_VERSION = 2;
+export const EXTRACTION_PART_REUSE_VERSION = 3;
 
 /**
  * A validated Extraction Part result, checkpointed so a resumed document can

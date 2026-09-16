@@ -11,6 +11,7 @@ import {
 import { join } from "node:path";
 import {
   summarizePersonClaims,
+  personOverviewClaims,
   PersonDossierContentSchema,
   PersonDossierSchema,
   PersonDossierSectionSchema,
@@ -34,11 +35,10 @@ type PersonDossierSection = PersonDossierContent["sections"][number];
  */
 export function synthesizeSections(claims: PersonClaim[]): PersonDossierSection[] {
   return PersonDossierSectionSchema.options.map((key) => {
-    const relevant = claims
-      .filter(
-        (claim) => claim.status !== "superseded" && (key === "overview" || claim.section === key),
-      )
-      .slice(0, key === "overview" ? 8 : 20);
+    const active = claims.filter(
+      (claim) => claim.status !== "superseded" && (key === "overview" || claim.section === key),
+    );
+    const relevant = key === "overview" ? personOverviewClaims(active) : active.slice(0, 20);
     return {
       key,
       summary: summarizePersonClaims(relevant),

@@ -1,3 +1,4 @@
+import { linkedInProfileText } from "./linkedin-articles.js";
 import { createHash } from "node:crypto";
 import { load } from "cheerio";
 import { JSDOM } from "jsdom";
@@ -980,6 +981,7 @@ async function readHtml(
       document
         .querySelector(`meta[property="${name}"], meta[name="${name}"], meta[itemprop="${name}"]`)
         ?.getAttribute("content") ?? null;
+    const articleMetadata = linkedInProfileText(document, response.url);
     const article = new Readability(document).parse();
     const text = article?.textContent?.trim() ?? "";
     if (!text || challenge) {
@@ -1028,7 +1030,9 @@ async function readHtml(
        heads the text extraction reads (spec: a profile URL abbreviates the
        name; the page it serves carries it, and later searches use it). */
     const pageTitle = document.title.trim() || meta("og:title") || null;
-    const documentText = pageTitle ? `Page title: ${pageTitle}\n\n${text}` : text;
+    const documentText = [pageTitle ? `Page title: ${pageTitle}` : "", articleMetadata, text]
+      .filter(Boolean)
+      .join("\n\n");
     return {
       text: documentText.slice(0, MAX_TEXT),
       capturedAt: null,
@@ -1046,7 +1050,11 @@ async function readHtml(
         meta("article:published_time") ?? meta("datePublished") ?? meta("publish_date") ?? null,
       author: meta("article:author") ?? meta("author") ?? null,
       anchors: [],
-      provenanceNote: null,
+      provenanceNote: articleMetadata.includes("Article capture limitation:")
+        ? articleMetadata
+        : articleMetadata.includes("Article listed by ")
+          ? `Anonymous LinkedIn capture retained ${(articleMetadata.match(/^Article listed by /gm) ?? []).length} attributed article records. Public page variants may expose different records; this is not a complete bibliography. Article contents were not retrieved.`
+          : null,
       sourceVersion: null,
       rights: null,
       finalUrl: response.url,

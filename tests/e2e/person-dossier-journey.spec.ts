@@ -87,6 +87,7 @@ test("automatic dossier journey — add, research, inspect source, and query dem
     timeout: 30000,
   });
   await expect(page.getByText("200 sites", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Maya Chen", exact: true })).toBeVisible();
   await page
     .getByRole("button", { name: /^Evidence 1:/ })
     .first()

@@ -355,3 +355,74 @@ test("history reports loading and failed reads honestly, then retries independen
   expect(container.textContent).not.toContain("History unavailable");
   expect(container.textContent).toContain("1 retained claims");
 });
+
+test("readiness is actionable before any research job exists", async () => {
+  const api = client();
+  api.read = vi.fn(async () => ({
+    ...view(),
+    researchDecision: {
+      kind: "rejected-readiness" as const,
+      profileId: "maya",
+      readiness: {
+        state: "setup-required" as const,
+        reason: "owner-not-confirmed" as const,
+        nextAction: { label: "Open Settings", href: "/settings" },
+      },
+    },
+  }));
+  const container = await mount(api);
+  expect(container.textContent).toContain("An owner has not yet confirmed");
+  expect(container.querySelector('a[href="/settings"]')?.textContent).toBe("Open Settings");
+});
+
+test("partial dossier counts describe retained evidence rather than completed operations", async () => {
+  const api = client();
+  api.read = vi.fn(async () => ({
+    ...view(),
+    dossier: { ...view().dossier, sourceIds: ["one", "two"] },
+    research: research({ state: "researching", sources: 0, calls: 2 }),
+  }));
+  const container = await mount(api);
+  expect(container.textContent).toContain("2 retained sources");
+  expect(container.textContent).not.toContain("0 sources processed");
+});
+
+test("retry preserves the server's actionable readiness refusal", async () => {
+  const { ApiError } = await import("../../../apps/web/src/client");
+  const api = client();
+  api.research = vi.fn(async () => {
+    throw new ApiError(409, "research-disabled", {
+      readiness: {
+        state: "setup-required",
+        reason: "provider-not-configured",
+        nextAction: { label: "Configure provider", href: "/settings" },
+      },
+    });
+  });
+  const container = await mount(api);
+  await click(container, "Prioritise research");
+  expect(container.textContent).toContain("No model provider is configured");
+  expect(container.textContent).not.toContain("research-disabled");
+  expect(container.querySelector('a[href="/settings"]')?.textContent).toBe("Configure provider");
+});
+
+test("jobless polling updates readiness without enqueueing a read", async () => {
+  vi.useFakeTimers();
+  const api = client();
+  const settings = await api.settings();
+  api.settings = vi.fn(async () => ({
+    ...settings,
+    readiness: { state: "ready" as const, reason: "ready" as const },
+  }));
+  const read = vi.fn(async () => ({
+    ...view(),
+    readiness: { state: "setup-required" as const, reason: "owner-not-confirmed" as const },
+  }));
+  api.read = read;
+  const container = await mount(api);
+  expect(container.textContent).toContain("An owner has not yet confirmed");
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
+  expect(container.textContent).not.toContain("An owner has not yet confirmed");
+  expect(container.textContent).toContain("Research ready");
+  expect(read).toHaveBeenCalledTimes(1);
+});

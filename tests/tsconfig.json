@@ -9,7 +9,7 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "types": ["node", "../apps/web/node_modules/vite/client"],
     "noEmit": true,
     "incremental": true,
     "declaration": false,

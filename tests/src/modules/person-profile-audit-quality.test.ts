@@ -40,6 +40,7 @@ async function replay(
   sourceUrl = url,
   answer: unknown = extraction,
   finalUrl = sourceUrl,
+  html?: string,
 ) {
   const root = mkdtempSync(join(tmpdir(), "person-audit-quality-"));
   roots.push(root);
@@ -61,7 +62,7 @@ async function replay(
       etag: null,
       lastModified: null,
       retryAfter: null,
-      body: asHtml(text),
+      body: html ?? asHtml(text),
     }),
     complete: async () => answer,
   });
@@ -394,4 +395,206 @@ test("audit F10: structured recovery does not attribute a redirected profile to 
     "https://www.linkedin.com/in/another-example/",
   );
   expect(dossier?.claims ?? []).toHaveLength(0);
+});
+
+test("PP-02: a title fragment cannot lead with an unsupported current association", async () => {
+  const quote = "Example Labs | LinkedIn";
+  const { dossier } = await replay(
+    `Page title: Morgan Example - ${quote}\nAbout\nMorgan builds systems.`,
+    url,
+    {
+      ...extraction,
+      claims: [{ ...claim("title", quote), statement: "Morgan currently works at Example Labs." }],
+    },
+  );
+  expect(dossier?.claims[0]?.statement).not.toContain("currently works");
+  expect(dossier?.claims[0]?.statement).toContain(quote);
+  expect(dossier?.claims[0]?.changeReason).toContain("Morgan currently works at Example Labs");
+});
+
+test("PP-02: incomplete education is one summary limitation with meaningful dated citations", async () => {
+  const { dossier } = await replay(
+    "Education\nExample College\n2018 - 2021\n-\n2015 - 2017\n-\n2012 - 2014\nLicenses & Certifications",
+  );
+  const summary = dossier?.sections.find((s) => s.key === "overview")?.summary ?? "";
+  expect(summary).toContain("Example College");
+  expect(summary).not.toContain("Education — Institution unknown");
+  expect(summary).toContain("2 incomplete education records");
+  for (const c of dossier?.claims.filter((c) => c.statement.includes("Institution unknown")) ?? [])
+    expect(c.citations[0]?.quote.trim()).toMatch(/^\d{4}/);
+});
+
+test("PP-03: attributed public article cards survive capture and valid extraction omissions", async () => {
+  const html = `<html><head><title>Morgan Example | LinkedIn</title></head><body><h1>Morgan Example</h1><article><p>Morgan builds systems and writes about their work.</p></article><section data-section="articles"><h2>Articles by Morgan</h2>${[1, 2, 3, 4].map((i) => `<div class="main-article-card"><a href="https://www.linkedin.com/pulse/article-${i}">Read</a><h3>Article ${i}</h3><span class="base-main-card__metadata-item">Oct 13, 2022</span></div>`).join("")}</section><aside><a href="https://linkedin.com/pulse/unrelated">Someone else's article</a></aside></body></html>`;
+  const { dossier, source } = await replay("", url, extraction, url, html);
+  expect(dossier?.works).toHaveLength(4);
+  expect(dossier?.works.map((w) => w.title)).toEqual([
+    "Article 1",
+    "Article 2",
+    "Article 3",
+    "Article 4",
+  ]);
+  for (const work of dossier!.works) {
+    expect(work.startedAt).toBe("2022-10-13");
+    expect(work.contribution).toBeNull();
+    const evidence = dossier!.claims.find((c) => c.id === work.claimIds[0])!;
+    expect(evidence.statement).toContain("Morgan Example");
+    expect(evidence.status).toBe("claimed");
+    expect(source.text).toContain(evidence.citations[0].quote);
+    expect(evidence.citations[0].quote).toContain(work.url);
+  }
+  expect(dossier?.sections.find((s) => s.key === "ideas")?.summary).toContain("Article 1");
+  const redirected = await replay("", url, extraction, "https://linkedin.com/in/other", html);
+  expect(redirected.dossier?.works ?? []).toHaveLength(0);
+});
+test("PP-03: an empty article section discloses capture loss without inventing work", async () => {
+  const html =
+    '<html><body><h1>Morgan Example</h1><article><p>Morgan builds systems and writes about their work.</p></article><section data-section="articles"><h2>Articles by Morgan</h2></section></body></html>';
+  const { source, dossier } = await replay("", url, extraction, url, html);
+  expect(source.provenanceNote).toContain("Article capture limitation");
+  expect(dossier?.works ?? []).toEqual([]);
+});
+
+test("live remediation: profile recommendations cannot locate the subject", async () => {
+  const quote = "4 others named Morgan Example in United States are on LinkedIn";
+  const { dossier } = await replay(`Page title: Morgan Example | LinkedIn\n${quote}`, url, {
+    ...extraction,
+    claims: [{ ...claim("other", quote), statement: "Morgan is located in the United States." }],
+  });
+  expect(dossier?.claims ?? []).toEqual([]);
+});
+
+test("live remediation: nonprofit affiliation fragments cannot establish co-founding", async () => {
+  const quote = "his nonprofit ExampleCode, which teaches coding through music remixing.";
+  const { dossier } = await replay(quote, url, {
+    ...extraction,
+    claims: [{ ...claim("founder", quote), statement: "Morgan co-founded ExampleCode." }],
+  });
+  expect(dossier?.claims[0]?.statement).toContain(quote);
+  expect(dossier?.claims[0]?.statement).not.toContain("co-founded");
+});
+
+test("live remediation: matched public profile heading resolves a name omitted by a valid model answer", async () => {
+  const html =
+    "<html><body><h1>Morgan Example</h1><article><p>Morgan Example builds systems and writes about their work.</p></article></body></html>";
+  const { profile } = await replay("", url, extraction, url, html);
+  expect(profile?.fullName).toBe("Morgan Example");
+  const other = await replay("", url, extraction, "https://linkedin.com/in/other", html);
+  expect(other.profile?.fullName).toBeNull();
+});
+
+test("live remediation: unresolved work mentions cannot establish contribution, authority, or dates", async () => {
+  const quote = "ExampleCode";
+  const { dossier } = await replay(quote, url, {
+    ...extraction,
+    claims: [
+      { ...claim("work", quote), statement: "Morgan founded ExampleCode.", effectiveFrom: "2026" },
+    ],
+    works: [
+      {
+        id: "work",
+        title: "ExampleCode",
+        kind: "company",
+        url,
+        startedAt: "2026",
+        endedAt: null,
+        claimIds: ["work"],
+        contribution: { text: "Founded the organization", claimIds: ["work"] },
+        teamContribution: null,
+        authority: [{ role: "decided", claimIds: ["work"] }],
+        scale: [],
+        constraints: [],
+        outcomes: [],
+      },
+    ],
+  });
+  expect(dossier?.claims[0]?.effectiveFrom).toBeNull();
+  expect(dossier?.works[0]).toMatchObject({
+    title: "ExampleCode",
+    kind: "other",
+    startedAt: null,
+    contribution: null,
+    authority: [],
+  });
+  expect(dossier?.claims[0]?.statement).toContain("Unresolved source fragment");
+});
+
+test("live remediation: different background statements are not mutually exclusive facts", async () => {
+  const quotes = ["Morgan built a music application.", "Morgan taught computer science."];
+  const { dossier } = await replay(quotes.join("\n"), url, {
+    ...extraction,
+    claims: quotes.map((quote, index) => ({
+      ...claim(String(index), quote),
+      fact: { field: "background", value: quote },
+    })),
+  });
+  expect(dossier?.claims).toHaveLength(2);
+  expect(dossier?.claims.every((claim) => claim.status !== "contested")).toBe(true);
+});
+
+test("live remediation: an exact matched public name is an attributed heading rather than an unknown relation", async () => {
+  const html =
+    "<html><body><h1>Morgan Example</h1><article><p>Morgan Example builds systems and writes about their work.</p></article></body></html>";
+  const { dossier } = await replay(
+    "",
+    url,
+    {
+      ...extraction,
+      claims: [
+        {
+          ...claim("name", "Morgan Example"),
+          fact: { field: "fullName", value: "Morgan Example" },
+          statement: "The full name is Morgan Example.",
+        },
+      ],
+    },
+    url,
+    html,
+  );
+  expect(dossier?.claims[0]?.statement).toBe("The public profile lists the name Morgan Example.");
+  expect(dossier?.claims[0]?.citations[0]?.quote).toBe("Public profile name: Morgan Example");
+});
+
+test("live remediation: captured article metadata repairs an existing model work's unrelated citation", async () => {
+  const html =
+    '<html><body><h1>Morgan Example</h1><article><p>Morgan works at Example Labs.</p></article><section data-section="articles"><h2>Articles by Morgan</h2><div class="main-article-card"><a href="https://www.linkedin.com/pulse/article-1">Read</a><h3>Article 1</h3><span class="base-main-card__metadata-item">Oct 13, 2022</span></div></section></body></html>';
+  const { dossier } = await replay(
+    "",
+    url,
+    {
+      ...extraction,
+      claims: [claim("unrelated", "Morgan works at Example Labs.")],
+      works: [
+        {
+          id: "model-work",
+          title: "Article 1",
+          kind: "post",
+          url: "https://www.linkedin.com/pulse/article-1",
+          startedAt: null,
+          endedAt: null,
+          claimIds: ["unrelated"],
+          contribution: {
+            text: "Argues that technology solves all problems",
+            claimIds: ["unrelated"],
+          },
+          teamContribution: null,
+          authority: [],
+          scale: [],
+          constraints: [],
+          outcomes: [],
+        },
+      ],
+    },
+    url,
+    html,
+  );
+  expect(dossier?.works).toHaveLength(1);
+  const work = dossier!.works[0];
+  expect(work).toMatchObject({ kind: "post", startedAt: "2022-10-13", contribution: null });
+  const supporting = dossier!.claims.find((claim) => claim.id === work.claimIds[0])!;
+  expect(supporting.citations[0]?.quote).toContain("Title: Article 1");
+  expect(supporting.citations[0]?.quote).toContain("URL: https://www.linkedin.com/pulse/article-1");
+  expect(dossier?.sections.find((section) => section.key === "overview")?.summary).toContain(
+    "Morgan Example",
+  );
 });
