@@ -1050,11 +1050,7 @@ async function readHtml(
         meta("article:published_time") ?? meta("datePublished") ?? meta("publish_date") ?? null,
       author: meta("article:author") ?? meta("author") ?? null,
       anchors: [],
-      provenanceNote: articleMetadata.includes("Article capture limitation:")
-        ? articleMetadata
-        : articleMetadata.includes("Article listed by ")
-          ? `Anonymous LinkedIn capture retained ${(articleMetadata.match(/^Article listed by /gm) ?? []).length} attributed article records. Public page variants may expose different records; this is not a complete bibliography. Article contents were not retrieved.`
-          : null,
+      provenanceNote: articleCaptureNote(articleMetadata),
       sourceVersion: null,
       rights: null,
       finalUrl: response.url,
@@ -1062,6 +1058,14 @@ async function readHtml(
   } finally {
     dom.window.close();
   }
+}
+
+function articleCaptureNote(metadata: string): string | null {
+  return metadata.includes("Article capture limitation:")
+    ? metadata
+    : metadata.includes("Article listed by ")
+      ? `Anonymous LinkedIn capture retained ${(metadata.match(/^Article listed by /gm) ?? []).length} attributed article records. Public page variants may expose different records; this is not a complete bibliography. Article contents were not retrieved.`
+      : null;
 }
 
 async function tryRender(
@@ -1127,7 +1131,12 @@ async function tryRender(
         publishedAt: null,
         author: null,
         anchors: [],
-        provenanceNote: "Text came from a bounded anonymous render, not the raw response.",
+        provenanceNote: [
+          "Text came from a bounded anonymous render, not the raw response.",
+          articleCaptureNote(articleMetadata),
+        ]
+          .filter(Boolean)
+          .join(" "),
         sourceVersion: null,
         rights: null,
         finalUrl: rendered.url,
@@ -2347,12 +2356,14 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
         // retaining the original readable text and never seeking signed-in content.
         if (
           context.render &&
+          linkedInProfileIdentity(read.finalUrl) &&
           read.route !== "browser-renderer" &&
           /Article listed by |Article capture limitation:/.test(read.text)
         ) {
           const rendered = await tryRender(url, "public-social", context);
           if (
             rendered &&
+            /^Public profile name: (.+)$/m.test(read.text) &&
             linkedInProfileIdentity(rendered.finalUrl) === linkedInProfileIdentity(read.finalUrl) &&
             /^Public profile name: (.+)$/m.exec(rendered.text)?.[1] ===
               /^Public profile name: (.+)$/m.exec(read.text)?.[1]
@@ -2361,11 +2372,15 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
               rendered.text.match(
                 /^Article listed by .+\nTitle: .+\nDate: .+\nURL: https?:\/\/[^\s]+$/gm,
               ) ?? [];
-            const missing = cards.filter((card) => !read.text.includes(card.split("\n").at(-1)!));
+            let capacity = MAX_TEXT - read.text.length;
+            const missing = cards.filter((card) => {
+              if (read.text.includes(card.split("\n").at(-1)!)) return false;
+              if (card.length + 2 > capacity) return false;
+              capacity -= card.length + 2;
+              return true;
+            });
             if (missing.length) {
-              const combined = `${missing.join("\n\n")}\n\n${read.text}`;
-              read.text = combined.slice(0, MAX_TEXT);
-              if (combined.length > MAX_TEXT) read.completeness = "partial";
+              read.text = `${missing.join("\n\n")}\n\n${read.text}`;
               read.route = "html-reader+browser-renderer";
               read.outboundUrls = [
                 ...new Set([
