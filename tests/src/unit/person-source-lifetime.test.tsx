@@ -7,6 +7,7 @@ import type {
   PersonDossier,
   PersonSourceDocument,
   PersonResearchAggregateStatus,
+  PersonResearchProfileSummary,
 } from "@chief-of-staff-demo/shared";
 import {
   PersonDossierPanel,
@@ -148,12 +149,15 @@ test("a poll notices external detachment while the reader is pending", async () 
        the summary's live counters show the operation moved. Advancing the
        job's `attempts` is what turns this into a reactive full refresh,
        which is what actually notices the external detachment. */
-    api.summary = vi.fn(async () =>
-      fromPartial<Awaited<ReturnType<DossierClient["summary"]>>>({
-        state: "researching",
-        attempts: 1,
-        calls: 0,
-        sources: 0,
+    api.summary = vi.fn<DossierClient["summary"]>(() =>
+      Promise.resolve({
+        summary: fromPartial<PersonResearchProfileSummary>({
+          state: "researching",
+          attempts: 1,
+          calls: 0,
+          sources: 0,
+        }),
+        readiness: { state: "ready" as const, reason: "ready" as const },
       }),
     );
     await act(async () => vi.advanceTimersByTimeAsync(4000));
