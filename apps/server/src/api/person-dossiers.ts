@@ -99,7 +99,7 @@ export function registerPersonDossierApi(
       if (!deps.people.get(id)) return reply.code(404).send({ error: "profile-not-found" });
       /* Side-effect-free (issue #418, T5, spec §7): this is what normal
          polling reads instead of the dossier route, and it never enqueues. */
-      return { summary: deps.queue.summary(id) };
+      return { summary: deps.queue.summary(id), readiness: deps.queue.readiness() };
     },
   );
   app.get<{ Params: { profileId: string }; Querystring: { cursor?: string } }>(
