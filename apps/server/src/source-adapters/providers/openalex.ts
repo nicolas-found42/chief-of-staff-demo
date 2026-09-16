@@ -3,8 +3,8 @@ import type { PublicSearchResult } from "../search.js";
 import { ProviderRefusedError, type SearchProvider, type SearchProviderIo } from "./types.js";
 
 const MAX_RESULTS = 8;
-// The polite pool is OpenAlex's whole access model: a mailto param buys 10 req/s
-// and 100k/day without an account (research doc, Layer 3).
+// This adapter uses OpenAlex's shared keyless budget. A mailto parameter
+// is not authentication and does not establish a larger request allowance.
 const ENDPOINT = "https://api.openalex.org/authors";
 const MAILTO = "owner@found42.local";
 

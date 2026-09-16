@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createStackExchangeProvider } from "../../../apps/server/src/source-adapters/providers/stackexchange";
 import { ProviderRefusedError } from "../../../apps/server/src/source-adapters/providers/types";
 import type { SearchProviderIo } from "../../../apps/server/src/source-adapters/providers/types";
@@ -52,6 +52,22 @@ const FIXTURE = JSON.stringify({
 });
 
 describe("createStackExchangeProvider", () => {
+  it("honors the IP throttle carried by a real HTTP 400 API error", async () => {
+    const { fetch } = fetchAnswering(
+      400,
+      JSON.stringify({
+        error_id: 502,
+        error_name: "throttle_violation",
+        error_message: "too many requests from this IP, more requests available in 13630 seconds",
+      }),
+    );
+    const error = await refused(
+      createStackExchangeProvider().search("Richard Achee", { fetch, timeoutMs: 5000 }),
+    );
+    expect(error.reason).toBe("rate-limited");
+    expect(error.retryAfterMs).toBe(13_630_000);
+  });
+
   it("maps excerpt hits to results, keeping the highlighted words without the markup", async () => {
     const { fetch, urls } = fetchAnswering(200, FIXTURE);
     const results = await createStackExchangeProvider().search("await inside foreach", {
@@ -84,14 +100,17 @@ describe("createStackExchangeProvider", () => {
     expect(error.retryAfterMs).toBe(120_000);
   });
 
-  it("reads the daily throttle's backoff seconds out of a 200 body", async () => {
-    const body = JSON.stringify({ items: [], backoff: 10 });
+  it("preserves a successful answer while honoring its method backoff", async () => {
+    const body = JSON.stringify({ ...JSON.parse(FIXTURE), backoff: 10 });
     const { fetch } = fetchAnswering(200, body);
-    const error = await refused(
-      createStackExchangeProvider().search("q", { fetch, timeoutMs: 5_000 }),
-    );
-    expect(error.reason).toBe("rate-limited");
-    expect(error.retryAfterMs).toBe(10_000);
+    const onBackoff = vi.fn();
+    const results = await createStackExchangeProvider().search("q", {
+      fetch,
+      timeoutMs: 5_000,
+      onBackoff,
+    });
+    expect(results).toHaveLength(2);
+    expect(onBackoff).toHaveBeenCalledExactlyOnceWith(10_000);
   });
 
   it("refuses a 200 that is not the excerpts shape", async () => {

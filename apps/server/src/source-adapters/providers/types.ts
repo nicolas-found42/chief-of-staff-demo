@@ -11,6 +11,8 @@ import type { PublicSearchResult } from "../search.js";
 export type SearchProviderIo = {
   fetch: PublicHttpFetch;
   timeoutMs: number;
+  /** A successful response can require a wait before later method calls. */
+  onBackoff?: (milliseconds: number) => void;
 };
 
 /**

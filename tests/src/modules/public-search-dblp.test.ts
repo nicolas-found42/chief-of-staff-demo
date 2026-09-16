@@ -26,6 +26,15 @@ function respondWith(status: number, body: string, calls: { url: string }[] = []
 }
 
 describe("createDblpProvider", () => {
+  it("classifies an HTML Anubis challenge as a refusal that must cool down", async () => {
+    const provider = createDblpProvider({
+      fetch: respondWith(
+        200,
+        '<html><head><title>Making sure you&#39;re not a bot!</title><script id="anubis_version" type="application/json">"1.27"</script></head></html>',
+      ),
+    });
+    await expect(provider.search("Richard Achee", io)).rejects.toMatchObject({ reason: "captcha" });
+  });
   it("maps the publication fixture to normalized results", async () => {
     const body = JSON.stringify({
       result: {

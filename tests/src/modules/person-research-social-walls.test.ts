@@ -20,7 +20,7 @@ import {
 const ports = (recorder: ResearchAttemptRecorder, fetch: ReaderPorts["fetch"]): ReaderPorts =>
   fromPartial({ fetch, recorder, timeoutMs: 1000 });
 
-function read(url: string, body: string) {
+function read(url: string, body: string, status = 200) {
   const recorder = new ResearchAttemptRecorder(
     "social-walls",
     () => new Date("2026-09-09T12:00:00.000Z"),
@@ -30,7 +30,7 @@ function read(url: string, body: string) {
     "search snippet",
     ports(recorder, async (target) => ({
       url: target,
-      status: 200,
+      status,
       contentType: "text/html",
       etag: null,
       lastModified: null,
@@ -40,6 +40,19 @@ function read(url: string, body: string) {
   );
   return { recorder, result };
 }
+
+test("a LinkedIn 999 authentication redirect is a login restriction, not a generic HTTP failure", async () => {
+  const body =
+    '<script>window.onload = function() { window.location.href = "https://" + domain + "/authwall?trk=" + trk; };</script>';
+  const { recorder, result } = read("https://www.linkedin.com/in/maya-okafor", body, 999);
+  expect((await result).access).toBe("blocked");
+  expect(recorder.failures()).toContainEqual(
+    expect.objectContaining({
+      code: "login-required",
+      observed: expect.objectContaining({ status: 999 }),
+    }),
+  );
+});
 
 const paragraph =
   "Maya Okafor has spent a decade leading coastal sensor deployments across West Africa, " +

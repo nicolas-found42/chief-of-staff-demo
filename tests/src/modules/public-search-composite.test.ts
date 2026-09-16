@@ -353,6 +353,50 @@ describe("the PublicSearch composite", () => {
     expect(calls.length).toBeGreaterThan(afterFirst);
   });
 
+  it("does not call a cooled-down source or report its silence as an empty search", async () => {
+    const { fetch, calls } = makeFetch([
+      {
+        match: (url) => hostOf(url) === "api.stackexchange.com",
+        status: 400,
+        body: JSON.stringify({
+          error_name: "throttle_violation",
+          error_message: "more requests available in 13630 seconds",
+        }),
+      },
+    ]);
+    const { now } = clock();
+    const search = createPublicSearch(fetch, undefined, {
+      now,
+      providerFilter: (name) => name === "stackexchange",
+    });
+    await expect(search("first person")).rejects.toBeInstanceOf(PublicSearchUnavailableError);
+    await expect(search("second person")).rejects.toBeInstanceOf(PublicSearchUnavailableError);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("retains Stack Exchange results and waits before the next query when a successful reply requests backoff", async () => {
+    const { fetch, calls } = makeFetch([
+      {
+        match: (url) => hostOf(url) === "api.stackexchange.com",
+        body: JSON.stringify({
+          items: [{ question_id: 42, title: "A useful answer", excerpt: "A source passage" }],
+          backoff: 10,
+        }),
+      },
+    ]);
+    const { now, advance } = clock();
+    const search = createPublicSearch(fetch, undefined, {
+      now,
+      providerFilter: (name) => name === "stackexchange",
+    });
+    await expect(search("first topic")).resolves.toHaveLength(1);
+    await expect(search("second topic")).rejects.toBeInstanceOf(PublicSearchUnavailableError);
+    expect(calls).toHaveLength(1);
+    advance(10_001);
+    await expect(search("second topic")).resolves.toHaveLength(1);
+    expect(calls).toHaveLength(2);
+  });
+
   it("rests a rate-limited provider for its cooldown and refetches after", async () => {
     const { fetch, calls, bodies } = makeFetch([
       {
