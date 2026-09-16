@@ -477,6 +477,16 @@ test("live remediation: nonprofit affiliation fragments cannot establish co-foun
   expect(dossier?.claims[0]?.statement).not.toContain("co-founded");
 });
 
+test("live remediation: paraphrased recommendation fragments do not establish services", async () => {
+  const quote = "as well as to individuals navigating major career transitions.";
+  const { dossier } = await replay(quote, url, {
+    ...extraction,
+    claims: [{ ...claim("service", quote), statement: "Morgan helps people change careers." }],
+  });
+  expect(dossier?.claims[0]?.statement).toContain("Unresolved source fragment");
+  expect(dossier?.claims[0]?.statement).toContain(quote);
+});
+
 test("live remediation: matched public profile heading resolves a name omitted by a valid model answer", async () => {
   const html =
     "<html><body><h1>Morgan Example</h1><article><p>Morgan Example builds systems and writes about their work.</p></article></body></html>";

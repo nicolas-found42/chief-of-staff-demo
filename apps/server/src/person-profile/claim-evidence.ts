@@ -104,7 +104,6 @@ export function qualifyClaimEvidence(
     };
   const fragmentAssertion =
     source.attribution === "self-report" &&
-    hasPredicate(claim.statement) &&
     !structured &&
     claim.citations.every((c) => !hasPredicate(c.quote) && c.quote.trim().length <= 160) &&
     !claim.citations.some((c) => c.quote.trim() === claim.statement.trim());
