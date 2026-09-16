@@ -450,6 +450,44 @@ describe("durable resume", () => {
     });
   });
 
+  it("leaves another intake's live Run untouched when its recovery plan declines", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const owner = new Runner({ runs, module: fakeModule() });
+    const id = await owner.startRun(
+      { ...record, intake: "backfill" },
+      {
+        work: async () => {
+          entered();
+          await hold;
+        },
+      },
+    );
+    await started;
+    const otherIntake = new Runner({
+      runs: openRuns(workspaceDir),
+      module: fakeModule({ planRecovery: () => null }),
+    });
+    try {
+      expect(await otherIntake.recoverRuns()).toBe(0);
+      expect(openRuns(workspaceDir).detail(id)).toMatchObject({
+        status: "running",
+        failedStage: null,
+        failureHint: null,
+      });
+    } finally {
+      release();
+      await owner.idle();
+    }
+    expect(openRuns(workspaceDir).detail(id)?.status).toBe("done");
+  });
+
   it("does not enqueue the same recovered Run twice while it is active", async () => {
     let release!: () => void;
     const hold = new Promise<void>((resolve) => {

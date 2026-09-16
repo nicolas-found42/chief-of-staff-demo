@@ -125,6 +125,40 @@ describe("Content Research setup admission", () => {
     },
   );
 
+  it.each([
+    { intake: CONTENT_RESEARCH_BACKFILL_INTAKE, stage: "collect", externalId: "backfill:30" },
+    { intake: CONTENT_RESEARCH_DISCOVERY_INTAKE, stage: "discover", externalId: null },
+  ])(
+    "recovers persisted running $intake through its owning intake after restart",
+    async ({ intake, stage, externalId }) => {
+      const f = fixture();
+      const run = f.runs.create({
+        module: "content-research",
+        moduleVersion: 1,
+        intake,
+        sourceUrl: null,
+        externalId,
+      });
+      run.started(stage);
+      f.ready();
+      f.host.start();
+      await f.host.idle();
+      const detail = openRuns(f.dir).detail(run.id);
+      expect(detail?.status).toBe("done");
+      expect(detail?.events.filter((event) => event.type === "run_recovered")).toMatchObject([
+        { detail: { previousStatus: "running", fromStage: stage } },
+      ]);
+      f.host.stop();
+      f.host.start();
+      await f.host.idle();
+      expect(
+        openRuns(f.dir)
+          .detail(run.id)
+          ?.events.filter((event) => event.type === "run_recovered"),
+      ).toHaveLength(1);
+    },
+  );
+
   it("rechecks queued execution before provider work and recovers the pending intent", async () => {
     const f = fixture();
     f.ready();
