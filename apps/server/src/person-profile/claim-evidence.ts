@@ -89,6 +89,14 @@ export function qualifyClaimEvidence(
           .filter(Boolean)
           .join(" — "),
     );
+  if (structured && source.attribution === "self-report")
+    return {
+      ...claim,
+      status: "claimed",
+      changeReason:
+        claim.changeReason ??
+        "Structured fields retained from the public self-report; no independent verification.",
+    };
   const fragmentAssertion =
     source.attribution === "self-report" &&
     hasPredicate(claim.statement) &&
@@ -142,7 +150,7 @@ export function retainClaimContext(claim: PersonClaim, source: PersonSourceDocum
     .filter((line) => line.text);
   const index = lines.findIndex((line) => line.start <= start && line.end > start);
   const current = lines[index];
-  if (!current || current.text !== first.quote.trim()) return locationContext(claim);
+  if (!current) return locationContext(claim);
   const before = lines[index - 1];
   const next = lines[index + 1];
   const after = lines[index + 2];
@@ -156,6 +164,43 @@ export function retainClaimContext(claim: PersonClaim, source: PersonSourceDocum
       section = line.text.toLowerCase();
   let span: string | undefined;
   const revised = { ...claim };
+  // A program description describes the program, not the person's participation.
+  // Keep the surrounding explicit education entry instead of strengthening it.
+  if (
+    section === "education" &&
+    before &&
+    /\b(programme?|school|degree|studies)\b/i.test(current.text)
+  ) {
+    const dates = /^(\d{4})\s*[-–]\s*(\d{4})$/.exec(before.text);
+    const candidate = lines[index - 2];
+    const institution = candidate?.text === "-" ? lines[index - 3] : candidate;
+    if (
+      dates &&
+      institution &&
+      institution.text !== "Education" &&
+      institution.text !== "-" &&
+      !/\d{4}\s*[-–]/.test(institution.text)
+    ) {
+      const quote = source.text.slice(institution.start, current.end);
+      if (quote.length <= 4000)
+        return {
+          ...claim,
+          section: "career",
+          statement: `Education — ${quote
+            .split("\n")
+            .map((line) => line.trim())
+            .filter((line) => line && line !== "-")
+            .join(" — ")}`,
+          fact: undefined,
+          effectiveFrom: dates[1]!,
+          effectiveTo: dates[2]!,
+          citations: [{ ...first, quote }, ...claim.citations.slice(1)],
+          changeReason:
+            "Preserved explicit structured fields from the retained self-report; no independent verification.",
+        };
+    }
+  }
+  if (current.text !== first.quote.trim()) return locationContext(claim);
   if (section === "licenses & certifications" && next && after && /^Issued\s/i.test(after.text)) {
     span = source.text.slice(current.start, after.end);
     revised.section = "recognition";

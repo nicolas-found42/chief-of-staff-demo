@@ -598,3 +598,29 @@ test("live remediation: captured article metadata repairs an existing model work
     "Morgan Example",
   );
 });
+
+test("live remediation: a generic program description retains the dated education context without claiming completion", async () => {
+  const quote = "Example School is an industry-led night school for creatives.";
+  const { dossier } = await replay(
+    `Education\nExample School\n-\n2026 - 2026\n${quote} The program includes professional mentorship.`,
+    url,
+    {
+      ...extraction,
+      claims: [
+        {
+          ...claim("education", quote),
+          statement: "Morgan participated in Example School.",
+          effectiveFrom: "2026",
+          effectiveTo: "2026",
+        },
+      ],
+    },
+  );
+  expect(dossier?.claims).toHaveLength(1);
+  const entry = dossier!.claims[0];
+  expect(entry.statement).toContain("Education — Example School — 2026 - 2026");
+  expect(entry.statement).not.toContain("participated");
+  expect(entry.citations[0]?.quote).toContain("2026 - 2026");
+  expect(entry.changeReason).not.toContain("does not establish");
+  expect(entry.changeReason).toContain("no independent verification");
+});
