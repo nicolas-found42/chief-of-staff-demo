@@ -52,6 +52,21 @@ export function parsePersonIdentifier(raw: string): PersonIdentitySignals {
       `Not an email address or a profile URL: ${value}. Enter something like "someone@example.com" or "linkedin.com/in/someone".`,
     );
 
+  if (
+    /(^|\.)linkedin\.com$/i.test(url.hostname) &&
+    !/^\/in\/[a-z0-9][a-z0-9_-]*\/?$/i.test(url.pathname)
+  )
+    throw new PersonIdentifierError(
+      'Enter a LinkedIn person profile with an identifier, such as "linkedin.com/in/someone".',
+    );
+
+  if (/(^|\.)linkedin\.com$/i.test(url.hostname)) {
+    url.protocol = "https:";
+    url.hostname = "www.linkedin.com";
+    url.pathname = url.pathname.replace(/\/$/, "").toLowerCase();
+    url.search = "";
+    url.hash = "";
+  }
   signals.profileUrls = [url.toString()];
   const social = socialUrl(url.toString());
   if (social?.kind === "profile" && social.handle)

@@ -1,10 +1,11 @@
+import { linkedInProfileIdentity } from "./linkedin-articles.js";
 import type { PersonClaim, PersonSourceDocument } from "@chief-of-staff-demo/shared";
 
 // Conservative recognition of an explicit relation in prose. This is a
 // publication safeguard, not an entailment judge: recognizing a verb does
 // not prove a claim true. Unrecognized fragments remain available as claims.
 const predicate =
-  /\b(?:am|is|are|was|were|has|have|had|built|builds|designed|developed|created|founded|co-founded|joined|led|leads|worked|works|served|serves|appointed|became|launched|released|published|wrote|authored|earned|received|studied|graduated|completed|deployed|maintains|maintained|manages|managed|runs|ran|directs|directed|teaches|taught|researches|researched|invented|discovered|contributed|contributes|supported|says|said|reports|reported|verified|verifies|financed|held|moved|lists|argues|demonstrates|contains|recommends|recommended|executed|operated|remained|began)\b/i;
+  /\b(?:am|is|are|was|were|has|have|had|built|builds|designed|developed|created|founded|co-founded|joined|led|leads|worked|works|served|serves|appointed|became|launched|released|published|wrote|authored|earned|received|studied|graduated|completed|deployed|maintains|maintained|manages|managed|runs|ran|directs|directed|teaches|taught|researches|researched|invented|discovered|contributed|contributes|supported|says|said|reports|reported|verified|verifies|financed|held|moved|lists|listed|argues|demonstrates|contains|recommends|recommended|executed|operated|remained|began|spent)\b/i;
 
 function hasPredicate(quote: string): boolean {
   const match = predicate.exec(quote);
@@ -20,6 +21,23 @@ export function qualifyClaimEvidence(
   source: PersonSourceDocument,
 ): PersonClaim {
   if (claim.status !== "supported" && claim.status !== "claimed") return claim;
+  const publicName = /^Public profile name: (.+)$/m.exec(source.text)?.[1];
+  if (
+    source.attribution === "self-report" &&
+    publicName &&
+    claim.fact?.field === "fullName" &&
+    claim.fact.value === publicName
+  )
+    return {
+      ...claim,
+      statement: `The public profile lists the name ${publicName}.`,
+      status: "claimed",
+      effectiveFrom: null,
+      effectiveTo: null,
+      citations: [{ sourceId: source.id, quote: `Public profile name: ${publicName}` }],
+      changeReason:
+        "Name attributed to the matched public profile heading; no independent verification.",
+    };
   const reasons: string[] = [];
   for (const { quote } of claim.citations) {
     const start = source.text.indexOf(quote);
@@ -45,11 +63,72 @@ export function qualifyClaimEvidence(
         "The cited passage is truncated and describes a past period; it does not establish a current role or employer.",
       );
   }
+  if (
+    source.attribution === "self-report" &&
+    claim.effectiveFrom === null &&
+    /\b(currently|attending|current work)\b/i.test(claim.statement)
+  )
+    reasons.push(
+      "This is an undated self-report; current status has not been independently established.",
+    );
+  const founding = /\b(?:founded|co-founded|founder|co-founder)\b/i;
+  const unestablishedFounding =
+    founding.test(claim.statement) && !claim.citations.some(({ quote }) => founding.test(quote));
+  if (unestablishedFounding)
+    reasons.push(
+      "The citation does not establish founding or co-founding; affiliation or teaching is not founding evidence.",
+    );
   if (reasons.length === 0) return claim;
+  const structured =
+    claim.changeReason?.startsWith("Preserved explicit structured fields") ||
+    claim.citations.some(
+      (c) =>
+        claim.statement ===
+        c.quote
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .join(" — "),
+    );
+  if (
+    structured &&
+    source.attribution === "self-report" &&
+    !["role", "currentEmployer"].includes(claim.fact?.field ?? "")
+  )
+    return {
+      ...claim,
+      status: "claimed",
+      changeReason:
+        claim.changeReason ??
+        "Structured fields retained from the public self-report; no independent verification.",
+    };
+  const fragmentAssertion =
+    source.attribution === "self-report" &&
+    !structured &&
+    claim.citations.every((c) => !hasPredicate(c.quote) && c.quote.trim().length <= 160) &&
+    !claim.citations.some((c) => c.quote.trim() === claim.statement.trim());
+  const unresolved =
+    unestablishedFounding ||
+    fragmentAssertion ||
+    (claim.fact && ["role", "currentEmployer"].includes(claim.fact.field)) ||
+    /\b(currently|attending|current work|current role|current employer|works at|works for)\b/i.test(
+      claim.statement,
+    );
   return {
     ...claim,
     status: "claimed",
-    changeReason: [...new Set(reasons), claim.changeReason]
+    ...(unresolved ? { effectiveFrom: null, effectiveTo: null } : {}),
+    statement: unresolved
+      ? `Unresolved source fragment: “${claim.citations
+          .map((c) => c.quote.trim().replace(/\s+/g, " "))
+          .join("”; “")
+          .slice(0, 3000)}”. The asserted relationship and current status are not established.`
+      : claim.statement,
+    changeReason: [
+      ...new Set(reasons),
+      `Proposed assertion not established: ${claim.statement}`,
+      claim.changeReason,
+    ]
       .filter(Boolean)
       .join(" ")
       .slice(0, 4000),
@@ -59,12 +138,19 @@ export function qualifyClaimEvidence(
 /** Recover only explicit adjacent fields in a LinkedIn profile's structured
  * sections. Never infer an employer, institution, issuer or date from a name. */
 export function retainClaimContext(claim: PersonClaim, source: PersonSourceDocument): PersonClaim {
-  if (!/^https?:\/\/(?:www\.)?linkedin\.com\/in\//i.test(source.url)) return claim;
+  if (!linkedInProfileIdentity(source.url)) return claim;
   const first = claim.citations[0];
   if (!first) return claim;
-  const start = source.text.indexOf(first.quote);
-  if (start < 0 || source.text.indexOf(first.quote, start + 1) !== -1) {
-    return locationContext(claim);
+  let start = source.text.indexOf(first.quote);
+  if (start < 0) return locationContext(claim);
+  if (source.text.indexOf(first.quote, start + 1) !== -1) {
+    // An article heading may contain a credential title as a substring. A
+    // unique complete field still identifies its own structured entry.
+    const exact = [...source.text.matchAll(/[^\n]+/g)].filter(
+      (line) => line[0].trim() === first.quote.trim(),
+    );
+    if (exact.length !== 1) return locationContext(claim);
+    start = exact[0]!.index + exact[0]![0].indexOf(first.quote.trim());
   }
   const lines = [...source.text.matchAll(/[^\n]+/g)]
     .map((match) => ({
@@ -75,7 +161,7 @@ export function retainClaimContext(claim: PersonClaim, source: PersonSourceDocum
     .filter((line) => line.text);
   const index = lines.findIndex((line) => line.start <= start && line.end > start);
   const current = lines[index];
-  if (!current || current.text !== first.quote.trim()) return locationContext(claim);
+  if (!current) return locationContext(claim);
   const before = lines[index - 1];
   const next = lines[index + 1];
   const after = lines[index + 2];
@@ -89,6 +175,43 @@ export function retainClaimContext(claim: PersonClaim, source: PersonSourceDocum
       section = line.text.toLowerCase();
   let span: string | undefined;
   const revised = { ...claim };
+  // A program description describes the program, not the person's participation.
+  // Keep the surrounding explicit education entry instead of strengthening it.
+  if (
+    section === "education" &&
+    before &&
+    /\b(programme?|school|degree|studies)\b/i.test(current.text)
+  ) {
+    const dates = /^(\d{4})\s*[-–]\s*(\d{4})$/.exec(before.text);
+    const candidate = lines[index - 2];
+    const institution = candidate?.text === "-" ? lines[index - 3] : candidate;
+    if (
+      dates &&
+      institution &&
+      institution.text !== "Education" &&
+      institution.text !== "-" &&
+      !/\d{4}\s*[-–]/.test(institution.text)
+    ) {
+      const quote = source.text.slice(institution.start, current.end);
+      if (quote.length <= 4000)
+        return {
+          ...claim,
+          section: "career",
+          statement: `Education — ${quote
+            .split("\n")
+            .map((line) => line.trim())
+            .filter((line) => line && line !== "-")
+            .join(" — ")}`,
+          fact: undefined,
+          effectiveFrom: dates[1]!,
+          effectiveTo: dates[2]!,
+          citations: [{ ...first, quote }, ...claim.citations.slice(1)],
+          changeReason:
+            "Preserved explicit structured fields from the retained self-report; no independent verification.",
+        };
+    }
+  }
+  if (current.text !== first.quote.trim()) return locationContext(claim);
   if (section === "licenses & certifications" && next && after && /^Issued\s/i.test(after.text)) {
     span = source.text.slice(current.start, after.end);
     revised.section = "recognition";
@@ -129,7 +252,7 @@ export function retainClaimContext(claim: PersonClaim, source: PersonSourceDocum
   revised.statement = span
     .split(/\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => line && line !== "-")
     .join(" — ");
   if (revised.statement.length > 4000) return claim;
   revised.citations = [{ ...first, quote: span }, ...claim.citations.slice(1)];
@@ -160,15 +283,11 @@ export function recoverStructuredClaims(
   profileUrls: string[],
   finalUrl: string,
 ): PersonClaim[] {
-  const identity = (url: string) =>
-    /^https?:\/\/(?:www\.)?linkedin\.com\/in\/([^/?#]+)\/?(?:[?#].*)?$/i
-      .exec(url)?.[1]
-      ?.toLowerCase();
-  const subject = identity(source.url);
+  const subject = linkedInProfileIdentity(source.url);
   if (
     !subject ||
-    identity(finalUrl) !== subject ||
-    !profileUrls.some((url) => identity(url) === subject)
+    linkedInProfileIdentity(finalUrl) !== subject ||
+    !profileUrls.some((url) => linkedInProfileIdentity(url) === subject)
   )
     return claims;
   const result = claims.map((claim) => retainClaimContext(claim, source));
@@ -296,7 +415,7 @@ export function recoverStructuredClaims(
       description && /\b(programme?|school|degree|studies)\b/i.test(description.text)
         ? description.end
         : line.end;
-    const start = institution?.start ?? previous?.start ?? line.start;
+    const start = institution?.start ?? line.start;
     append(
       "career",
       start,

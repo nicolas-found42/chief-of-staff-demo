@@ -261,6 +261,28 @@ function described(profile: PersonProfile): string {
  */
 export function PersonProfileDetailPage({ client = peopleApi }: { client?: PeopleClient }) {
   const { profileId = "" } = useParams();
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  // Keep the reader's disclosure preference while isolating route-owned data.
+  return (
+    <PersonProfileDetail
+      key={profileId}
+      client={client}
+      maintenanceOpen={maintenanceOpen}
+      setMaintenanceOpen={setMaintenanceOpen}
+    />
+  );
+}
+
+function PersonProfileDetail({
+  client,
+  maintenanceOpen,
+  setMaintenanceOpen,
+}: {
+  client: PeopleClient;
+  maintenanceOpen: boolean;
+  setMaintenanceOpen: (open: boolean) => void;
+}) {
+  const { profileId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const revisionParam = searchParams.get("revision");
   const viewRevision = revisionParam === null ? null : Number(revisionParam);
@@ -286,11 +308,24 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
   /* Profile lifecycle (ticket #122): archive is reversible state; privacy
      deletion is the audited exception, behind its own confirmation. */
   const [lifecycle, setLifecycle] = useState<PersonProfileLifecycleState | null>(null);
-  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [receipt, setReceipt] = useState<PersonProfileDeletionReceipt | null>(null);
   const [deleted, setDeleted] = useState<PersonProfilePrivacyDeleted | null>(null);
+
+  const receiveProfile = useCallback(
+    (profile: PersonProfile) => {
+      if (profile.id !== profileId) return;
+      setCurrent((previous) =>
+        previous?.id === profile.id && previous.revision >= profile.revision ? previous : profile,
+      );
+      setRevisions((previous) =>
+        [...new Set([...previous, profile.revision])].sort((a, b) => b - a),
+      );
+    },
+    [profileId],
+  );
 
   const loadLifecycle = useCallback(async () => {
     try {
@@ -309,11 +344,13 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
       .personProfile(profileId)
       .then((profile) => {
         if (cancelled) return;
-        setCurrent(profile);
+        receiveProfile(profile);
         setError(null);
         return client.personProfileRevisions(profileId).then((history) => {
           if (cancelled) return;
-          setRevisions(history.map((p) => p.revision));
+          setRevisions((previous) =>
+            [...new Set([...previous, ...history.map((p) => p.revision)])].sort((a, b) => b - a),
+          );
         });
       })
       .catch((err: unknown) => {
@@ -327,7 +364,7 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
     return () => {
       cancelled = true;
     };
-  }, [client, profileId, loadLifecycle]);
+  }, [client, profileId, loadLifecycle, receiveProfile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -409,7 +446,7 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
       setBusy(true);
       setActionError(null);
       try {
-        setCurrent(await apply());
+        receiveProfile(await apply());
         const history = await client.personProfileRevisions(profileId);
         setRevisions(history.map((profile) => profile.revision));
       } catch (err) {
@@ -418,7 +455,7 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
         setBusy(false);
       }
     },
-    [client, profileId],
+    [client, profileId, receiveProfile],
   );
 
   /**
@@ -431,7 +468,10 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
       setBusy(true);
       setActionError(null);
       try {
-        setCurrent(await apply());
+        const profile = await apply();
+        setCurrent((previous) =>
+          previous && previous.revision > profile.revision ? previous : profile,
+        );
       } catch (err) {
         const refusal = lifecycleRefusal(err);
         if (refusal) setLifecycle(refusal.lifecycle);
@@ -542,7 +582,7 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
   useEffect(() => {
     if (viewed !== null && current !== null && viewed.revision !== current.revision)
       setMaintenanceOpen(true);
-  }, [viewed, current]);
+  }, [viewed, current, setMaintenanceOpen]);
 
   /* The receipt for a deletion this surface just performed, and the tombstone
      for one performed earlier, are the same fact seen at two moments. */
@@ -702,7 +742,7 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
       <PrototypeSwitcher current={variant} variants={PROFILE_VARIANTS} />
 
       {!current.mergedInto && !isHistorical && (
-        <PersonDossierPanel key={profileId} profileId={profileId} />
+        <PersonDossierPanel key={profileId} profileId={profileId} onProfile={receiveProfile} />
       )}
       <details
         open={maintenanceOpen}

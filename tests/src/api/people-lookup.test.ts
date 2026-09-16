@@ -78,7 +78,7 @@ describe("parsePersonIdentifier", () => {
 
   it("reads a schemeless LinkedIn address as a profile URL and a handle", () => {
     const signals = parsePersonIdentifier("linkedin.com/in/ada-lovelace");
-    expect(signals.profileUrls).toEqual(["https://linkedin.com/in/ada-lovelace"]);
+    expect(signals.profileUrls).toEqual(["https://www.linkedin.com/in/ada-lovelace"]);
     expect(signals.handles).toEqual({ linkedin: ["ada-lovelace"] });
   });
 
@@ -113,7 +113,7 @@ describe("POST /api/people/lookup", () => {
       url: "/api/people/lookup",
       payload: { identifier: "linkedin.com/in/ada-lovelace" },
     });
-    expect(queries).toContain('"https://linkedin.com/in/ada-lovelace"');
+    expect(queries).toContain('"https://www.linkedin.com/in/ada-lovelace"');
     expect(fetchedSites.some((site) => site.includes("linkedin.com"))).toBe(false);
   });
 
@@ -200,4 +200,22 @@ describe("POST /api/people/:profileId/enrich", () => {
     expect(response.statusCode).toBe(409);
     expect(response.json<{ error: string }>().error).toBe("profile-archived");
   });
+});
+
+it.each([
+  "https://www.linkedin.com/in/",
+  "linkedin.com/in",
+  "https://linkedin.com/",
+  "https://linkedin.com/company/acme",
+  "https://linkedin.com/in/name/extra",
+  "https://linkedin.com/in/%20",
+])("rejects incomplete or non-person LinkedIn identifier %s before saving", async (identifier) => {
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/people/lookup/accept",
+    payload: { identifier },
+  });
+  expect(response.statusCode).toBe(400);
+  expect(store.list()).toEqual([]);
+  expect(response.json<{ message: string }>().message).toContain("linkedin.com/in/someone");
 });

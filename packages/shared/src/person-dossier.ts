@@ -529,19 +529,55 @@ export interface PersonConnectionStep {
   citations: { sourceId: string; quote: string }[];
 }
 
+/** Keep incomplete education in the coverage account, without displacing useful overview evidence. */
+export function personOverviewClaims(claims: PersonClaim[]): PersonClaim[] {
+  const incomplete = claims.filter((claim) =>
+    claim.statement.includes("Education — Institution unknown"),
+  );
+  const unresolved = claims.filter((claim) =>
+    claim.statement.startsWith("Unresolved source fragment:"),
+  );
+  return [
+    ...claims
+      .filter((claim) => !incomplete.includes(claim) && !unresolved.includes(claim))
+      .slice(0, 6),
+    ...incomplete,
+    ...unresolved,
+  ];
+}
+
 /** The same readable claim account for publication and historical dossier display. */
 export function summarizePersonClaims(claims: PersonClaim[]): string {
-  return [
+  const incomplete = claims.filter((claim) =>
+    claim.statement.includes("Education — Institution unknown"),
+  );
+  const unresolved = claims.filter((claim) =>
+    claim.statement.startsWith("Unresolved source fragment:"),
+  );
+  const account = [
     ...new Set(
-      claims.map(
-        (claim) =>
-          `${claim.status === "contested" ? "Contested account: " : claim.status === "claimed" ? "Claimed: " : claim.nature === "interpretation" ? "Interpretation: " : ""}${claim.statement}`,
-      ),
+      claims
+        .filter((claim) => !incomplete.includes(claim) && !unresolved.includes(claim))
+        .map(
+          (claim) =>
+            `${claim.status === "contested" ? "Contested account: " : claim.status === "claimed" ? "Claimed: " : claim.nature === "interpretation" ? "Interpretation: " : ""}${claim.statement}`,
+        ),
     ),
   ]
     .map((statement) =>
       /[.!?…]["”’)]?$/.test(statement.trim()) ? statement.trim() : `${statement.trim()}.`,
     )
     .join(" ")
-    .slice(0, 8000);
+    .slice(0, 7000);
+  return [
+    account,
+    unresolved.length
+      ? `${unresolved.length} source fragments do not establish the proposed relationships or dates; inspect the unresolved evidence and retained sources.`
+      : "",
+    incomplete.length
+      ? `${incomplete.length} incomplete education records contain dates but no institution or qualification; see Career and retained sources for these limitations.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }

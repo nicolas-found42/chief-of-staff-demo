@@ -1,3 +1,4 @@
+import { linkedInProfileName, retainLinkedInArticles } from "./linkedin-articles.js";
 import {
   qualifyClaimEvidence,
   retainClaimContext,
@@ -1300,15 +1301,20 @@ export class PersonResearch {
           retainedSourceIds.add(source.id);
           checkpoint();
           const content = this.identify(
-            {
-              ...extracted,
-              claims: recoverStructuredClaims(
-                extracted.claims,
-                source,
-                profile.profileUrls,
-                read.finalUrl,
-              ),
-            },
+            retainLinkedInArticles(
+              {
+                ...extracted,
+                claims: recoverStructuredClaims(
+                  extracted.claims,
+                  source,
+                  profile.profileUrls,
+                  read.finalUrl,
+                ),
+              },
+              source,
+              profile.profileUrls,
+              read.finalUrl,
+            ),
             source,
             matchStrength,
           );
@@ -1403,15 +1409,17 @@ export class PersonResearch {
                 source.attribution === "self-report" ? "self-report" : extracted.sourceClass,
               reason: claim.changeReason ?? "Matched source supplies the fact.",
             });
+        const resolvedName =
+          extracted.fullName ?? linkedInProfileName(source, profile.profileUrls, read.finalUrl);
         if (
           !privateDocument &&
-          extracted.fullName &&
-          read.text.includes(extracted.fullName) &&
+          resolvedName &&
+          read.text.includes(resolvedName) &&
           !profile.fullName
         ) {
           factualUpdates.push({
             field: "fullName",
-            value: extracted.fullName,
+            value: resolvedName,
             sourceIds: [source.id],
             effectiveFrom: null,
             authority: source.attribution === "self-report" ? "self-report" : extracted.sourceClass,
@@ -1423,7 +1431,7 @@ export class PersonResearch {
              proper one, and every later discovery and planning call must
              search that, not the handle). `profile` is the operation's own
              clone, so the assignment cannot leak into the store. */
-          profile.fullName = extracted.fullName;
+          profile.fullName = resolvedName;
         }
 
         if (!privateDocument && read.route === "feed-reader")
@@ -2218,6 +2226,19 @@ export class PersonResearch {
           c.status === "unknown" ||
           (c.citations.length > 0 && c.citations.every((p) => text.includes(p.quote))),
       );
+    claims = claims.filter((c) => {
+      if (
+        !c.citations.some((citation) =>
+          /\bothers? named\b|\bpeople also viewed\b/i.test(citation.quote),
+        )
+      )
+        return true;
+      attribution.withhold(
+        c.id,
+        "This citation describes other people or profile recommendations, not the subject.",
+      );
+      return false;
+    });
     /* A document that declares a different individual as its own subject
        carries claims about that individual, grounded and verbatim. Admit one
        only where its cited sentence names this person; withhold the rest with
@@ -2360,41 +2381,51 @@ export class PersonResearch {
       ...value,
       claimIds: refs(value.claimIds),
     });
-    return {
-      sourceIds: [source.id],
-      claims: content.claims.map((c) =>
-        qualifyClaimEvidence(
-          retainClaimContext(
-            {
-              ...c,
-              id: key(c.id),
-              ...datedByCapture(c, source),
-              matchConfidence: identity === "matched" ? "high" : "medium",
-              /* Built field by field rather than spread: the citation's capture date
+    const claims = content.claims.map((c) =>
+      qualifyClaimEvidence(
+        retainClaimContext(
+          {
+            ...c,
+            id: key(c.id),
+            ...datedByCapture(c, source),
+            matchConfidence: identity === "matched" ? "high" : "medium",
+            /* Built field by field rather than spread: the citation's capture date
            is read off the retained source, so a model that invented one in its
            answer cannot date evidence it did not retrieve. */
-              citations: c.citations.map((p) => ({
-                sourceId: source.id,
-                quote: p.quote,
-                ...(source.capturedAt ? { capturedAt: source.capturedAt } : {}),
-              })),
-              supports: refs(c.supports),
-              supersedes: refs(c.supersedes),
-            },
-            source,
-          ),
+            citations: c.citations.map((p) => ({
+              sourceId: source.id,
+              quote: p.quote,
+              ...(source.capturedAt ? { capturedAt: source.capturedAt } : {}),
+            })),
+            supports: refs(c.supports),
+            supersedes: refs(c.supersedes),
+          },
           source,
         ),
+        source,
       ),
+    );
+    const unresolved = new Set(
+      claims
+        .filter((claim) => claim.statement.startsWith("Unresolved source fragment:"))
+        .map((claim) => claim.id),
+    );
+    const established = (value: { claimIds: string[] }) =>
+      value.claimIds.length > 0 && value.claimIds.every((id) => !unresolved.has(key(id)));
+    return {
+      sourceIds: [source.id],
+      claims,
       works: content.works.map((w) => ({
         ...detail(w),
         id: workKeys.get(w.id)!,
-        contribution: w.contribution ? detail(w.contribution) : null,
-        teamContribution: w.teamContribution ? detail(w.teamContribution) : null,
-        authority: w.authority.map(detail),
-        scale: w.scale.map(detail),
-        constraints: w.constraints.map(detail),
-        outcomes: w.outcomes.map(detail),
+        ...(!established(w) ? { kind: "other" as const, startedAt: null, endedAt: null } : {}),
+        contribution: w.contribution && established(w.contribution) ? detail(w.contribution) : null,
+        teamContribution:
+          w.teamContribution && established(w.teamContribution) ? detail(w.teamContribution) : null,
+        authority: w.authority.filter(established).map(detail),
+        scale: w.scale.filter(established).map(detail),
+        constraints: w.constraints.filter(established).map(detail),
+        outcomes: w.outcomes.filter(established).map(detail),
       })),
       expertise: content.expertise.map((e) => ({
         ...detail(e),
@@ -2402,7 +2433,7 @@ export class PersonResearch {
           (source.attribution ?? source.sourceClass) === "self-report" ? "claimed" : e.support,
         workIds: workRefs(e.workIds),
       })),
-      connections: content.connections.map((c) => ({
+      connections: content.connections.filter(established).map((c) => ({
         ...detail(c),
         id: key(c.id),
         profileId: null,
@@ -2471,7 +2502,7 @@ export class PersonResearch {
       );
     }
     for (const claim of claims)
-      if (claim.fact && claim.status !== "superseded") {
+      if (claim.fact && claim.fact.field !== "background" && claim.status !== "superseded") {
         const conflict = claims.some(
           (other) =>
             other.id !== claim.id &&

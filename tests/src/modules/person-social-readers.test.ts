@@ -354,3 +354,47 @@ describe("linkedin html reader identity", () => {
     },
   );
 });
+
+it("keeps public article supplementation inside a named profile and the retained-text bound", async () => {
+  const profile = "https://www.linkedin.com/in/morgan-example";
+  const html = (body: string) =>
+    `<html><body><h1>Morgan Example</h1><article><p>${body}</p></article><section data-section="articles"><h2>Articles by Morgan</h2><div class="main-article-card"><a href="https://www.linkedin.com/pulse/extra">Read</a><h3>Extra article</h3><span class="base-main-card__metadata-item">Oct 13, 2022</span></div></section></body></html>`;
+  const read = async (url: string, raw: string, browser = true) => {
+    let renders = 0;
+    const result = await readPersonSource(url, "", {
+      ...ports(new ResearchAttemptRecorder("bounded-articles"), async () => ({
+        ...jsonResponse(url, {}),
+        contentType: "text/html",
+        body: raw,
+      })),
+      ...(browser
+        ? {
+            render: async () => {
+              renders++;
+              return {
+                url,
+                status: 200,
+                contentType: "text/html",
+                body: html("Morgan writes about systems."),
+              };
+            },
+          }
+        : {}),
+    });
+    return { result, renders };
+  };
+  const raw = `<html><body><h1>Morgan Example</h1><article><p>${"Retained original passage. ".repeat(21000)}TAIL</p></article><section data-section="articles"><h2>Articles by Morgan</h2></section></body></html>`;
+  const baseline = await read(profile, raw, false);
+  const enriched = await read(profile, raw);
+  expect(enriched.renders).toBe(1);
+  expect(enriched.result.text).toBe(baseline.result.text);
+  expect(enriched.result.outboundUrls).not.toContain("https://www.linkedin.com/pulse/extra");
+  const nonProfile = await read(
+    "https://www.linkedin.com/company/example",
+    "<article><p>Article capture limitation: Public profile name: Morgan Example</p></article>",
+  );
+  expect(nonProfile.renders).toBe(0);
+  const browserOnly = await read(profile, "<html><body><div id='root'></div></body></html>");
+  expect(browserOnly.result.route).toBe("browser-renderer");
+  expect(browserOnly.result.provenanceNote).toContain("not a complete bibliography");
+});

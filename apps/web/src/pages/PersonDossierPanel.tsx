@@ -1,9 +1,15 @@
-import { summarizePersonClaims } from "@chief-of-staff-demo/shared";
+import {
+  PersonResearchReadinessSchema,
+  personOverviewClaims,
+  summarizePersonClaims,
+} from "@chief-of-staff-demo/shared";
 import { EvidenceDate } from "./EvidenceDate";
 import { PersonSourceInspector } from "./PersonSourceInspector";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   PersonClaim,
+  PersonProfile,
+  PersonResearchEnqueueDecision,
   PersonDossier,
   PersonResearchProfileSummary,
   PersonResearchReadiness,
@@ -14,9 +20,12 @@ import type {
   PersonRelationshipRecord,
   PersonDossierAnalysis,
 } from "@chief-of-staff-demo/shared";
-import { request, errorMessage } from "../client";
+import { ApiError, request, errorMessage } from "../client";
 
 interface DossierView {
+  profile?: PersonProfile;
+  readiness?: PersonResearchReadiness;
+  researchDecision?: PersonResearchEnqueueDecision;
   dossier: PersonDossier | null;
   /**
    * The bounded per-profile summary (issue #418, T5), not the whole
@@ -31,7 +40,7 @@ export interface DossierClient {
   analysis(id: string): Promise<PersonDossierAnalysis | null>;
   research(id: string): Promise<unknown>;
   detach(id: string, sourceId: string): Promise<unknown>;
-  settings(): Promise<PersonResearchAggregateStatus>;
+  settings(): Promise<PersonResearchAggregateStatus & { readiness?: PersonResearchReadiness }>;
   configure(settings: Partial<PersonResearchSettings>): Promise<unknown>;
   /**
    * The bounded per-profile summary a normal poll reads (issue #418, T9,
@@ -155,14 +164,17 @@ function jobStateSurface(research: PersonResearchProfileSummary): {
   title: string;
   detail: string;
 } {
-  const decisive = research.state === "researching" ? undefined : research.decisive;
+  const decisive =
+    research.state === "researching" || research.decisive?.classification === "unknown"
+      ? undefined
+      : research.decisive;
   switch (research.state) {
     case "queued":
       return { title: "Queued for research", detail: research.detail };
     case "researching":
       return {
         title: "Researching",
-        detail: `${research.calls} model ${research.calls === 1 ? "call" : "calls"} · ${research.sources} sources processed so far.`,
+        detail: `${research.calls} model ${research.calls === 1 ? "call" : "calls"} · source totals are available when this operation settles.`,
       };
     case "paused":
       return {
@@ -217,9 +229,11 @@ function researchSurface(research: PersonResearchProfileSummary | null): {
 export function PersonDossierPanel({
   profileId,
   client = api,
+  onProfile,
 }: {
   profileId: string;
   client?: DossierClient;
+  onProfile?: (profile: PersonProfile) => void;
 }) {
   const [revision, setRevision] = useState<number | undefined>(() => {
     const value = Number(new URLSearchParams(window.location.search).get("dossierRevision"));
@@ -273,7 +287,9 @@ export function PersonDossierPanel({
   const [history, setHistory] = useState<PersonRelationshipRecord[]>([]);
   const editingSettings = useRef(false);
   const settingsEditRevision = useRef(0);
-  const [settings, setSettings] = useState<PersonResearchAggregateStatus | null>(null);
+  const [settings, setSettings] = useState<
+    (PersonResearchAggregateStatus & { readiness?: PersonResearchReadiness }) | null
+  >(null);
   const [readError, setReadError] = useState("");
   const [historyError, setHistoryError] = useState("");
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -338,6 +354,7 @@ export function PersonDossierPanel({
             }
           : progress,
       );
+      if (current.profile) onProfile?.(current.profile);
       setLatestRevision(current.dossier?.revision ?? 0);
       setCurrentSources({ profileId, ids: current.dossier?.sourceIds ?? [] });
       const data = revision === undefined ? current : await client.read(profileId, revision);
@@ -354,7 +371,7 @@ export function PersonDossierPanel({
     } finally {
       if (generation === readGeneration.current) reading.current = false;
     }
-  }, [profileId, client, revision]);
+  }, [profileId, client, revision, onProfile]);
   /**
    * Normal polling reads only the bounded summary (issue #418, T9, spec §7;
    * #417 F4): side-effect-free, and it never enqueues. It never replaces the
@@ -371,13 +388,24 @@ export function PersonDossierPanel({
     try {
       const summary = await client.summary(profileId);
       if (generation !== readGeneration.current) return;
+      if (!summary) {
+        const status = await client.settings();
+        if (generation !== readGeneration.current) return;
+        setView((current) =>
+          current && status.readiness ? { ...current, readiness: status.readiness } : current,
+        );
+      }
       const progress = progressOf(summary);
       if (!progressEqual(progress, lastProgress.current)) {
         lastProgress.current = progress;
         await refresh();
         return;
       }
-      setView((current) => (current ? { ...current, research: summary } : current));
+      setView((current) =>
+        current
+          ? { ...current, research: summary, ...(summary ? { readiness: summary.readiness } : {}) }
+          : current,
+      );
     } catch {
       /* A side-effect-free status poll failing does not overwrite the
          primary read error; the next full refresh reports a persistent
@@ -467,7 +495,19 @@ export function PersonDossierPanel({
       setActionError("");
       await refresh();
     } catch (error) {
-      if (generation === lifecycle.current) setActionError(errorMessage(error));
+      if (generation !== lifecycle.current) return;
+      const parsed = PersonResearchReadinessSchema.safeParse(
+        error instanceof ApiError &&
+          error.body &&
+          typeof error.body === "object" &&
+          "readiness" in error.body
+          ? error.body.readiness
+          : undefined,
+      );
+      if (parsed.success) {
+        setView((current) => (current ? { ...current, readiness: parsed.data } : current));
+        setActionError("");
+      } else setActionError(errorMessage(error));
     }
   }
   function inspect(id: string, quote: string) {
@@ -479,13 +519,34 @@ export function PersonDossierPanel({
       attributedWhenOpened: currentSources?.ids.includes(id) ?? true,
     });
   }
-  const surface = researchSurface(view?.research ?? null);
+  const readiness =
+    view?.readiness ??
+    (view?.researchDecision?.kind === "rejected-readiness"
+      ? view.researchDecision.readiness
+      : view?.research?.readiness);
+  const surface =
+    readiness && (readiness.state !== "ready" || !view?.research)
+      ? {
+          ...readinessSurface(readiness),
+          ...(readiness.state === "ready"
+            ? { detail: "Choose Prioritise research to start research for this saved Profile." }
+            : {}),
+          nextAction: readiness.nextAction,
+        }
+      : researchSurface(view?.research ?? null);
   const dossier = view?.dossier;
   const claims = dossier?.claims ?? [];
   const activeClaims = claims.filter((c) => c.status !== "superseded");
   const section = dossier?.sections.find((s) => s.key === tab);
+  const overviewClaims = personOverviewClaims(activeClaims);
   const displayed =
-    tab === "overview" ? activeClaims.slice(0, 8) : activeClaims.filter((c) => c.section === tab);
+    tab === "overview"
+      ? overviewClaims.filter(
+          (c) =>
+            !c.statement.includes("Education — Institution unknown") &&
+            !c.statement.startsWith("Unresolved source fragment:"),
+        )
+      : activeClaims.filter((c) => c.section === tab);
   const citations = (record: { claimIds: string[] }) =>
     record.claimIds.flatMap((id) => claims.find((c) => c.id === id)?.citations ?? []);
   const evidence = (record: { claimIds: string[] }) =>
@@ -497,7 +558,10 @@ export function PersonDossierPanel({
         onClick={() => void inspect(citation.sourceId, citation.quote)}
       >
         Evidence {index + 1}: “
-        {citation.quote.length > 80 ? `${citation.quote.slice(0, 80)}…` : citation.quote}”
+        {citation.quote.trim().replace(/\s+/g, " ").length > 180
+          ? `${citation.quote.trim().replace(/\s+/g, " ").slice(0, 180)}…`
+          : citation.quote.trim().replace(/\s+/g, " ")}
+        ”
       </button>
     ));
   /* A claim grounded in archived material is evidence about the capture date
@@ -522,7 +586,10 @@ export function PersonDossierPanel({
           onClick={() => void inspect(citation.sourceId, citation.quote)}
         >
           Source {index + 1}: “
-          {citation.quote.length > 80 ? `${citation.quote.slice(0, 80)}…` : citation.quote}”
+          {citation.quote.trim().replace(/\s+/g, " ").length > 180
+            ? `${citation.quote.trim().replace(/\s+/g, " ").slice(0, 180)}…`
+            : citation.quote.trim().replace(/\s+/g, " ")}
+          ”
         </button>
       ))}
       {item.changeReason && <p>{item.changeReason}</p>}
@@ -568,17 +635,17 @@ export function PersonDossierPanel({
               ? readError
                 ? "Research status unavailable"
                 : "Loading dossier"
-              : settings?.settings.paused
-                ? "Workspace research paused"
-                : surface
-                  ? surface.title
+              : surface
+                ? surface.title
+                : settings?.settings.paused
+                  ? "Workspace research paused"
                   : revision !== undefined
                     ? "Historical dossier"
                     : "No research status available"}
           </strong>{" "}
           {view && (
             <>
-              · {view.research?.sources ?? 0} sources processed · {claims.length} retained claims
+              · {dossier?.sourceIds.length ?? 0} retained sources · {claims.length} retained claims
             </>
           )}
         </p>
@@ -587,11 +654,12 @@ export function PersonDossierPanel({
             ? readError
               ? "The dossier could not be loaded. Retrying automatically."
               : "Loading retained evidence and research status."
-            : settings?.settings.paused
-              ? "An owner paused automatic research for the workspace."
-              : (surface?.detail ?? "Only retained, supported evidence appears in this dossier.")}
+            : (surface?.detail ??
+              (settings?.settings.paused
+                ? "An owner paused automatic research for the workspace."
+                : "Only retained evidence appears in this dossier."))}
         </p>
-        {!settings?.settings.paused && surface?.nextAction && (
+        {surface?.nextAction && (
           <p>
             <a href={surface.nextAction.href}>{surface.nextAction.label}</a>
           </p>
@@ -827,16 +895,18 @@ export function PersonDossierPanel({
             <p>
               {section.claimIds.length && dossier
                 ? summarizePersonClaims(
-                    section.claimIds.flatMap((id) =>
-                      dossier.claims.filter((claim) => claim.id === id),
-                    ),
+                    tab === "overview"
+                      ? overviewClaims
+                      : section.claimIds.flatMap((id) =>
+                          dossier.claims.filter((claim) => claim.id === id),
+                        ),
                   )
                 : section.summary}
             </p>
             <p className="muted">
               {section.state} · Last researched <EvidenceDate value={section.updatedAt} />
             </p>
-            {evidence(section)}
+            {evidence(tab === "overview" ? { claimIds: displayed.map((c) => c.id) } : section)}
             {section.gaps.map((gap) => (
               <p className="muted" key={gap}>
                 {gap}
@@ -844,6 +914,15 @@ export function PersonDossierPanel({
             ))}
           </>
         )}
+        {tab === "overview" &&
+          activeClaims.some((c) => c.statement.startsWith("Unresolved source fragment:")) && (
+            <details>
+              <summary>Unresolved evidence</summary>
+              {activeClaims
+                .filter((c) => c.statement.startsWith("Unresolved source fragment:"))
+                .map(claim)}
+            </details>
+          )}
         {tab === "history" ? (
           historyError ? (
             <div>
