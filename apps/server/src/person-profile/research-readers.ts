@@ -1067,8 +1067,22 @@ async function tryRender(
     const dom = new JSDOM(rendered.body, { url: rendered.url });
     try {
       const article = new Readability(dom.window.document).parse();
-      const text = article?.textContent?.trim() ?? "";
-      if (!text) return null;
+      const body = article?.textContent?.trim() ?? "";
+      if (!body) return null;
+      /* The same title prefix `readHtml` heads its text with, for the same
+         reason: a slug-named profile URL is named only by the page's own
+         <title>. Only the HTML route carried it, so whichever route ran
+         decided whether the person had a name at all — a page reached
+         through this fallback produced an unnamed Profile from a document
+         whose title said exactly who it was (audit F3). */
+      const pageTitle =
+        dom.window.document.title.trim() ||
+        dom.window.document
+          .querySelector('meta[property="og:title"]')
+          ?.getAttribute("content")
+          ?.trim() ||
+        null;
+      const text = pageTitle ? `Page title: ${pageTitle}\n\n${body}` : body;
       context.recorder.record({
         stage: "rendering",
         code: "retrieval-recovered",

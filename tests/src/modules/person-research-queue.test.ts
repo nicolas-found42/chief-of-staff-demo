@@ -1,10 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import type { PersonResearchReadiness } from "@chief-of-staff-demo/shared";
 import { PersonResearchQueue } from "../../../apps/server/src/person-profile/research-queue.js";
-import { PersonResearch } from "../../../apps/server/src/person-profile/research.js";
+import {
+  PersonResearch,
+  type ResearchAllowance,
+} from "../../../apps/server/src/person-profile/research.js";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
@@ -983,3 +986,169 @@ function onDisk(root: string): string[] {
   };
   return state.jobs.map((job) => job.profileId);
 }
+
+/**
+ * Audit F2/F6: a job that once ended `bounded` kept its spent lifetime
+ * counters, so `enqueue` never reset them and every later attempt was cut a
+ * 1-call/1000-ms slice that could accomplish nothing while reporting a
+ * wall-clock backstop it never came close to. The fixture is the exact state
+ * the audit measured: the ceiling reached on both axes, with a checkpoint
+ * retained — which is what suppressed the reset.
+ */
+function exhaustedJobFixture(
+  root: string,
+  profile: { id: string; revision: number },
+  operationId: string,
+): void {
+  writeFileSync(
+    join(root, "person-research.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      settings: {
+        paused: false,
+        concurrency: 1,
+        refreshHours: 168,
+        profileCalls: 12,
+        profileMilliseconds: 120000,
+        readConcurrency: 4,
+        requestTimeoutMilliseconds: 20000,
+        quietRounds: 2,
+      },
+      day: "2026-09-15",
+      usedCalls: 325,
+      jobs: [
+        {
+          profileId: profile.id,
+          state: "incomplete",
+          reasons: ["created"],
+          queuedAt: "2026-09-15T20:00:00.000Z",
+          updatedAt: "2026-09-15T22:02:55.000Z",
+          nextAt: "2026-09-15T22:02:55.000Z",
+          calls: 12,
+          sources: 2,
+          attempts: 5,
+          elapsedMilliseconds: 137831,
+          detail: "The operation's wall-clock backstop was reached with work still pending.",
+          checkpoint: {
+            operationId,
+            profileRevision: profile.revision,
+            pass: 1,
+            visited: [],
+            linked: [],
+            direct: [],
+            queries: [],
+            results: [],
+            pendingSourceIds: [],
+            retainedSourceIds: [],
+          },
+          operation: {
+            operationId,
+            profileId: profile.id,
+            conclusion: "bounded",
+            startedAt: "2026-09-15T21:57:30.557Z",
+            finishedAt: "2026-09-15T21:57:35.095Z",
+            detail: "The operation's wall-clock backstop was reached with work still pending.",
+            rounds: 24,
+            modelCalls: 12,
+            requests: 207,
+            sourcesRetained: 2,
+            claimsPublished: 5,
+            coverage: [],
+            leads: [],
+            attempts: [],
+            gaps: [],
+          },
+        },
+      ],
+    }),
+  );
+}
+
+test("audit F2: an explicit request on a lifetime-exhausted job is cut a whole allowance and keeps its checkpoint", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-budget-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "budget@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  /* Observing the allowance the queue computed, not replacing the
+     computation: the real `run` still executes underneath. */
+  const allowances: ResearchAllowance[] = [];
+  const realRun = research.run.bind(research);
+  research.run = async (profile, allowance) => {
+    allowances.push(allowance);
+    return realRun(profile, allowance);
+  };
+  exhaustedJobFixture(root, person, "op-bounded-1");
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+
+  queue.enqueue(person.id, "explicit");
+  const queued = queue.job(person.id);
+  /* The retained traversal survives the new allowance: this is a new
+     operation over kept work, not a re-read from nothing. */
+  expect(queued?.checkpoint?.operationId).toBe("op-bounded-1");
+  expect(queued?.calls).toBe(0);
+  expect(queued?.elapsedMilliseconds).toBe(0);
+
+  await queue.tick();
+  expect(allowances).toHaveLength(1);
+  expect(allowances[0].maxModelCalls).toBeGreaterThan(1);
+  expect(allowances[0].maxMilliseconds).toBeGreaterThan(1000);
+  /* The whole configured allowance, not a remainder of a spent one. */
+  expect(allowances[0].maxModelCalls).toBe(12);
+  expect(allowances[0].maxMilliseconds).toBe(120000);
+});
+
+test("audit F2/F6: an automatic attempt on a spent allowance reports the exhausted allowance, not a wall-clock backstop", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-budget-reason-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "budget@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const allowances: ResearchAllowance[] = [];
+  const realRun = research.run.bind(research);
+  research.run = async (profile, allowance) => {
+    allowances.push(allowance);
+    return realRun(profile, allowance);
+  };
+  exhaustedJobFixture(root, person, "op-bounded-2");
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+
+  queue.enqueue(person.id, "viewed");
+  await queue.tick();
+  const job = queue.job(person.id);
+  /* No doomed slice was dispatched at all: the clamped attempt that used to
+     burn ten seconds and publish nothing never starts. */
+  expect(allowances).toHaveLength(0);
+  expect(job?.state).toBe("incomplete");
+  expect(job?.detail).toContain("research allowance is spent");
+  expect(job?.detail).toContain("12 of 12 model calls");
+  expect(job?.detail).toContain("138s of its 120s research time");
+  expect(job?.detail).not.toContain("wall-clock");
+  /* Partial results and the retained traversal survive the honest refusal. */
+  expect(job?.checkpoint?.operationId).toBe("op-bounded-2");
+  expect(job?.sources).toBe(2);
+});

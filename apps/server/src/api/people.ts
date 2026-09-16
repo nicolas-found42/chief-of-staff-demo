@@ -97,7 +97,15 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
           : await ctx.resolver.preview(signals);
       /* Accepting the lookup still succeeds while research is blocked
          (issue #418, T3); the decision rides along separately. */
-      const research = mode === "accept" ? ctx.research?.enqueue(profile.id, "created") : undefined;
+      /* A person typing an identifier and pressing "Add and research" is
+         asking for research now, so the request is `explicit` rather than the
+         nonurgent `created` a background discovery makes. As `created` it was
+         deferred whenever the reused Profile's `nextAt` was in the future,
+         and the deferral was never surfaced: the button appeared to do
+         nothing while the page showed an older run's failure (audit F1).
+         Background enqueues elsewhere stay nonurgent. */
+      const research =
+        mode === "accept" ? ctx.research?.enqueue(profile.id, "explicit") : undefined;
       return {
         profile,
         signals,

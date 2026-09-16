@@ -245,6 +245,18 @@ export class PersonResearchQueue {
         old.calls = 0;
         old.elapsedMilliseconds = 0;
         old.sources = 0;
+      } else if (reason === "explicit") {
+        /* A person asking for research is starting a new operation, not
+           retrying the old one, so it is cut a whole allowance (ADR-0087
+           withholds a reset from retries and restarts, never from a
+           deliberate request). Without this a job that once ended `bounded`
+           kept its spent lifetime counters, every later attempt was clamped
+           to the 1-call/1000-ms floors, and the Profile became a dead end no
+           click could move (audit F2). The checkpoint stays: the new
+           allowance resumes the retained traversal rather than rereading it,
+           and the day-wide, request and time ceilings are untouched. */
+        old.calls = 0;
+        old.elapsedMilliseconds = 0;
       }
       delete old.startedAt;
       old.queuedAt = now;
@@ -350,6 +362,42 @@ export class PersonResearchQueue {
     const profile = this.deps.people.get(job.profileId);
     if (!profile || profile.archivedAt !== null || profile.mergedInto) {
       this.remove(job.profileId);
+      return;
+    }
+    /* The per-profile lifetime allowance, read before dispatch rather than
+       discovered as a clamped floor mid-run. A slice cut from a spent
+       allowance is 1 call and 1000 ms: it does no useful work, and then
+       reports whichever floor tripped first — which is how a 4.5-second run
+       came to blame a 120-second wall-clock backstop for stopping it (audit
+       F6). The allowance that is actually spent is the truthful answer, and
+       an explicit request — which cuts a new one in `enqueue` — is what
+       clears it. */
+    const { profileCalls, profileMilliseconds } = this.state.settings;
+    const spentCalls = profileCalls > 0 && job.calls >= profileCalls;
+    const spentTime =
+      profileMilliseconds > 0 && (job.elapsedMilliseconds ?? 0) >= profileMilliseconds;
+    if (spentCalls || spentTime) {
+      const seconds = (value: number) => `${Math.round(value / 1000)}s`;
+      /* `incomplete`, not `paused`: a paused job is still dispatch-eligible
+         and `enqueue` answers `already-active` for one, which would leave an
+         explicit request unable to cut the new allowance that clears this. */
+      job.state = "incomplete";
+      job.detail =
+        `This Profile's research allowance is spent — ` +
+        [
+          spentCalls ? `${job.calls} of ${profileCalls} model calls` : null,
+          spentTime
+            ? `${seconds(job.elapsedMilliseconds ?? 0)} of its ${seconds(profileMilliseconds)} research time`
+            : null,
+        ]
+          .filter((part) => part !== null)
+          .join(" and ") +
+        `. Ask for research explicitly to start a new operation; retrieved evidence and pending work are retained.`;
+      job.nextAt = new Date(
+        Date.parse(this.now()) + this.state.settings.refreshHours * 3600000,
+      ).toISOString();
+      job.updatedAt = this.now();
+      this.save();
       return;
     }
     const generation = this.generation;
