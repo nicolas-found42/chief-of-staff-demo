@@ -480,7 +480,7 @@ test("recorded renderer-busy evidence is named as sheds in the aggregate", async
   const sample = [
     {
       code: "rendering-failed" as const,
-      stage: "reading" as const,
+      stage: "rendering" as const,
       outcome: "failed" as const,
       occurredAt: "2026-09-15T10:00:00Z",
       reason: "Browser source renderer is busy; retry later.",

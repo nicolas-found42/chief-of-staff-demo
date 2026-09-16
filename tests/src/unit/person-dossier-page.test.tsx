@@ -56,7 +56,7 @@ test("a public-only person has a separate empty Relationship history tab while r
 });
 
 function makeClient(): DossierClient {
-  const research: NonNullable<Awaited<ReturnType<DossierClient["summary"]>>> = {
+  const research: PersonResearchProfileSummary = {
     schemaVersion: 1,
     profileId: "maya",
     readiness: { state: "ready", reason: "ready" },
