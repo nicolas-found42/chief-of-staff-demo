@@ -1,7 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store";
+import {
+  PersonDossierStore,
+  synthesizeSections,
+} from "../../../apps/server/src/person-profile/dossier-store";
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -511,6 +514,51 @@ test("a source opens immediately and closing it prevents a late response reopeni
     await act(async () => close!.click());
     await act(async () => pending.resolve(source));
     expect(container.querySelector('[aria-label="Retained source"]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("audit F13: an old stored summary gains punctuation on read without changing the dossier", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "dossier-old-prose-"));
+  const store = new PersonDossierStore(directory);
+  const claims = ["Maya built Atlas", "Maya deployed Nova"].map((statement, index) => ({
+    id: `old-${index}`,
+    section: "work" as const,
+    statement,
+    status: "unknown" as const,
+    nature: "statement" as const,
+    matchConfidence: "high" as const,
+    effectiveFrom: null,
+    effectiveTo: null,
+    citations: [],
+    supports: [],
+    supersedes: [],
+    changeReason: null,
+  }));
+  const dossier = store.publish("maya", 0, {
+    claims,
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: synthesizeSections(claims),
+  });
+  dossier.sections[0].summary = "Maya built Atlas Maya deployed Nova";
+  const api = makeClient();
+  api.read = async () => ({ dossier, research: null });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(createElement(PersonDossierPanel, { profileId: "maya", client: api })),
+    );
+    expect(container.querySelector("#dossier-panel > p")?.textContent).toBe(
+      "Maya built Atlas. Maya deployed Nova.",
+    );
+    expect(dossier.sections[0].summary).toBe("Maya built Atlas Maya deployed Nova");
   } finally {
     await act(async () => root.unmount());
     container.remove();

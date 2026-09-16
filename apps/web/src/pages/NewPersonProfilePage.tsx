@@ -25,8 +25,16 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
 
-  async function acceptLookup() {
+  async function acceptLookup(event?: React.FormEvent) {
+    event?.preventDefault();
     if (lookupBusy) return;
+    if (identifier.trim() === "") {
+      /* The same refusal the Workspace interface gives, answered here so an
+         empty field never costs a round trip — and so the button's announced
+         availability can match what it actually does (audit F14). */
+      setLookupError("Enter an email address or a profile URL to search for.");
+      return;
+    }
     setLookupBusy(true);
     setLookupError(null);
     try {
@@ -89,24 +97,29 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
           automatically. A matching existing Profile is reused; otherwise a new Profile is created.
           Research fills its dossier as sources are found. Uncertain information remains labeled.
         </p>
-        <div className="field-row">
-          <label htmlFor="profile-identifier">Email or profile URL</label>
-          <input
-            id="profile-identifier"
-            value={identifier}
-            autoComplete="off"
-            placeholder="someone@example.com or linkedin.com/in/someone"
-            onChange={(event) => setIdentifier(event.target.value)}
-          />
-          <button
-            type="button"
-            className="action-button"
-            onClick={() => void acceptLookup()}
-            aria-disabled={lookupBusy || identifier.trim() === ""}
-          >
-            {lookupBusy ? "Adding…" : "Add and research"}
-          </button>
-        </div>
+        {/* A form, so Enter in the field submits the same handler the button
+            runs — the most natural keyboard action used to do nothing at all
+            (audit F11). It is a sibling of the manual-entry form below, never
+            nested inside it. */}
+        <form onSubmit={(event) => void acceptLookup(event)}>
+          <div className="field-row">
+            <label htmlFor="profile-identifier">Email or profile URL</label>
+            <input
+              id="profile-identifier"
+              value={identifier}
+              autoComplete="off"
+              placeholder="someone@example.com or linkedin.com/in/someone"
+              onChange={(event) => setIdentifier(event.target.value)}
+            />
+            {/* Announced availability matches what activation does: the
+                control stays operable on an empty field and explains the
+                problem, rather than reporting itself disabled and then
+                acting anyway (audit F14). */}
+            <button type="submit" className="action-button" aria-disabled={lookupBusy}>
+              {lookupBusy ? "Adding…" : "Add and research"}
+            </button>
+          </div>
+        </form>
         {lookupError && (
           <p className="banner-error" role="alert">
             {lookupError}

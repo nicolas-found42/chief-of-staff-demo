@@ -22,7 +22,19 @@ export class ApiError extends Error {
 }
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init);
+  let response: Response;
+  try {
+    response = await fetch(path, init);
+  } catch {
+    /* A transport failure rejects with the browser's own "Failed to fetch",
+       which a surface then renders verbatim: a raw exception string that
+       neither explains what happened nor says what to do (audit F12). The
+       response may have been lost after a write, so saving is unconfirmed. */
+    throw new ApiError(
+      0,
+      "The app could not confirm the request. Check that the app is running and your connection is up. Check for saved changes before you try again.",
+    );
+  }
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     let parsed: unknown;

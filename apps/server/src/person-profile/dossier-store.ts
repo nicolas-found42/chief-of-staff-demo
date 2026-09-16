@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
+  summarizePersonClaims,
   PersonDossierContentSchema,
   PersonDossierSchema,
   PersonDossierSectionSchema,
@@ -40,16 +41,7 @@ export function synthesizeSections(claims: PersonClaim[]): PersonDossierSection[
       .slice(0, key === "overview" ? 8 : 20);
     return {
       key,
-      summary: [
-        ...new Set(
-          relevant.map(
-            (claim) =>
-              `${claim.status === "contested" ? "Contested account: " : claim.status === "claimed" ? "Claimed: " : claim.nature === "interpretation" ? "Interpretation: " : ""}${claim.statement}`,
-          ),
-        ),
-      ]
-        .join(" ")
-        .slice(0, 8000),
+      summary: summarizePersonClaims(relevant),
       claimIds: relevant.map((claim) => claim.id),
       updatedAt: relevant.length ? new Date().toISOString() : null,
       state: relevant.length ? ("incomplete" as const) : ("unresearched" as const),

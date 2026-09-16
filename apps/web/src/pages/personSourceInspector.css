@@ -128,15 +128,28 @@
   text-underline-offset: 3px;
 }
 
-.dossier-citation {
+button.linklike.dossier-citation {
   display: block;
   text-align: left;
   overflow-wrap: anywhere;
   margin-block: 0.5rem;
 }
 
+.dossier-section-navigation {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dossier-section-navigation > button {
+  flex: 0 0 2.75rem;
+  min-height: 2.75rem;
+}
+
 .dossier-sections {
   display: flex;
+  min-width: 0;
+  flex: 1;
   overflow-x: auto;
   gap: 0.25rem;
   margin-block: 1rem;

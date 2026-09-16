@@ -32,6 +32,12 @@ tests/fixtures/debrief-golden/transcripts/
 artifacts/person-benchmark/**/*.json
 **/*.evidence/**
 
+# Retained audit evidence and the diagnostics replayed from it. Same reasoning:
+# the report cites these bytes, so a reflow would invalidate the record it is
+# evidence for. Both trees are gitignored; this keeps the local gate usable.
+artifacts/person-profile-audit/
+artifacts/person-profile-remediation/
+
 # Original export retained byte-for-byte for the handoff audit.
 tests/fixtures/operational-handoff/Found42-Stand-Up-Meeting-fff12776-8d43.json
 

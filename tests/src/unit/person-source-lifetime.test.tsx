@@ -254,3 +254,26 @@ test("a late correction refresh cannot announce success on another Profile", asy
   await act(async () => pending.resolve(await originalRead("maya")));
   expect(container.textContent).not.toContain("Attribution removed from this Profile");
 });
+
+test("audit F8: the source viewer names partial collection without opening its details", async () => {
+  const api = client();
+  api.source = async () =>
+    fromPartial<PersonSourceDocument>({
+      id: "source",
+      title: "Example profile",
+      url: "https://www.linkedin.com/in/example",
+      text: "Retained evidence",
+      completeness: "partial",
+      access: "retrieved",
+      provenanceNote: "login-required: The anonymous view contains empty experience rows.",
+    });
+  await act(async () =>
+    root.render(createElement(PersonDossierPanel, { profileId: "maya", client: api })),
+  );
+  await click("Sources");
+  await click("Inspect retained source");
+  const note = container.querySelector('[role="note"]');
+  expect(note?.textContent).toContain("Partial source");
+  expect(note?.textContent).toContain("login-required");
+  expect(note?.closest("details")).toBeNull();
+});

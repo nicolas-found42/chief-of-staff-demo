@@ -56,7 +56,15 @@ function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
-function normalizedSignals(signals: PersonIdentitySignals): PersonIdentitySignals {
+/**
+ * Identity signals reduced to the form the identity digest is computed over.
+ * Exported because {@link identifier} is not the only caller that has to agree
+ * with it: a store lookup comparing raw strings decided that
+ * `…/in/x/` and `…/in/x` were different people while `identifier()` hashed
+ * them to one id, so the second record was minted under a collision suffix
+ * (audit F4).
+ */
+export function normalizedSignals(signals: PersonIdentitySignals): PersonIdentitySignals {
   const handles: Record<string, string[]> = {};
   for (const [platform, values] of Object.entries(signals.handles)) {
     const normalizedValues = unique(values.map(normalizeHandle));

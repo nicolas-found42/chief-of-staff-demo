@@ -1067,8 +1067,24 @@ async function tryRender(
     const dom = new JSDOM(rendered.body, { url: rendered.url });
     try {
       const article = new Readability(dom.window.document).parse();
-      const text = article?.textContent?.trim() ?? "";
-      if (!text) return null;
+      const body = article?.textContent?.trim() ?? "";
+      if (!body) return null;
+      /* The same title prefix `readHtml` heads its text with, for the same
+         reason: a slug-named profile URL is named only by the page's own
+         <title>. Only the HTML route carried it, so whichever route ran
+         decided whether the person had a name at all — a page reached
+         through this fallback produced an unnamed Profile from a document
+         whose title said exactly who it was (audit F3). */
+      const pageTitle =
+        dom.window.document.title.trim() ||
+        dom.window.document
+          .querySelector(
+            'meta[property="og:title"], meta[name="og:title"], meta[itemprop="og:title"]',
+          )
+          ?.getAttribute("content")
+          ?.trim() ||
+        null;
+      const text = pageTitle ? `Page title: ${pageTitle}\n\n${body}` : body;
       context.recorder.record({
         stage: "rendering",
         code: "retrieval-recovered",
@@ -2306,8 +2322,43 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
        never on the hostname: a 200 carrying a login or challenge shell takes
        the wall branch below. */
     const wallMarker = response && !challenge ? detectSocialWallMarker(response.body) : null;
-    if (response && response.status < 400 && !challenge && !wallMarker)
-      return readHtml(url, response, "public-social", context);
+    if (response && response.status < 400 && !challenge && !wallMarker) {
+      const read = await readHtml(url, response, "public-social", context);
+      if (/(^|\.)linkedin\.com$/.test(host) && read.access === "retrieved") {
+        const experience = read.text.split(/\bEducation\b/i)[0] ?? "";
+        const rows = experience
+          .split(/\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const placeholders = rows.filter((line) => line === "-").length;
+        // Repeated empty rows are observed missing content. A sign-in CTA
+        // alone is not: LinkedIn also places one beside complete public pages.
+        if (placeholders >= 3) {
+          read.completeness = "partial";
+          read.provenanceNote = [
+            read.provenanceNote,
+            "login-required: The anonymous LinkedIn view contains empty experience rows; role details and dates are unavailable.",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          context.recorder.record({
+            stage: "access",
+            code: "login-required",
+            outcome: "failed",
+            recovery: "stopped",
+            cause: "observed",
+            target: url,
+            targetKind: "url",
+            collector: "social-reader",
+            reason: "The anonymous LinkedIn view contains repeated empty experience rows.",
+            impact: "Retained content is partial; missing roles and dates remain unknown.",
+            remediation:
+              "Inspect the retained evidence and its limitations; no authenticated retrieval is attempted.",
+          });
+        }
+      }
+      return read;
+    }
     const wall = challenge ?? (wallMarker ? "login-required" : null);
     context.recorder.record({
       stage: "access",

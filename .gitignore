@@ -43,6 +43,13 @@ tests/fixtures/debrief-golden/
 !/artifacts/person-benchmark/ambiguity-classification-2026-09-06/
 !/artifacts/person-benchmark/differentials/
 
+# Person Profile audit evidence and the remediation diagnostics replayed from it.
+# Both hold retained source documents, dossiers and screenshots about a real
+# named individual, and this repo is public. The 2026-09-15 audit report is the
+# record they belong to; keep them local and cite them by path.
+/artifacts/person-profile-audit/
+/artifacts/person-profile-remediation/
+
 # Session handover notes. Local planning artifacts, same reasoning as `.scratch/`.
 previous-session.md
 

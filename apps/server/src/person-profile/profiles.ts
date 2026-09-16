@@ -1,6 +1,6 @@
 import type { PersonDossierStore } from "./dossier-store.js";
 import { parsePersonIdentifier } from "./identifier.js";
-import { identifier } from "./resolver.js";
+import { identifier, normalizedSignals } from "./resolver.js";
 import { socialUrl } from "./sources.js";
 import type { PersonProfileStore } from "./store.js";
 import {
@@ -10,6 +10,7 @@ import {
   PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION,
   PERSON_PROFILE_REPAIR_FACT_KEYS,
   invalidationAffectsRevision,
+  type PersonIdentitySignals,
   type PersonProfile,
   type PersonProfileCalendarAttendeeInput,
   type PersonProfileCalendarAttendeeResult,
@@ -147,6 +148,46 @@ function searchHaystack(profile: PersonProfile): string {
   ]
     .join("\n")
     .toLowerCase();
+}
+
+/**
+ * The social handles a Profile's stored URLs carry, derived exactly as
+ * `parsePersonIdentifier` derives them from an incoming identifier so the two
+ * sides of a lookup compare the same thing.
+ */
+function heldHandles(profile: PersonProfile): Record<string, string[]> {
+  const handles = structuredClone(profile.handles);
+  for (const url of profile.profileUrls) {
+    const social = socialUrl(url);
+    if (social?.kind === "profile" && social.handle)
+      (handles[social.platform] ??= []).push(social.handle);
+  }
+  return handles;
+}
+
+/**
+ * Whether a stored Profile already holds an identity, compared the way the
+ * identity digest is computed rather than byte for byte (audit F4). The raw
+ * comparison this replaces disagreed with `identifier()`: it kept a trailing
+ * slash and a mixed-case host that normalization strips, and it read no
+ * handles at all, so two spellings of one profile URL hashed to the same id
+ * and still failed to find each other.
+ */
+function holdsIdentity(profile: PersonProfile, wanted: PersonIdentitySignals): boolean {
+  const held = normalizedSignals({
+    emails: profile.emails,
+    fullNames: [],
+    handles: heldHandles(profile),
+    profileUrls: profile.profileUrls,
+    employerHints: [],
+  });
+  return (
+    held.emails.some((email) => wanted.emails.includes(email)) ||
+    held.profileUrls.some((url) => wanted.profileUrls.includes(url)) ||
+    Object.entries(held.handles).some(([platform, values]) =>
+      values.some((handle) => wanted.handles[platform]?.includes(handle) ?? false),
+    )
+  );
 }
 
 export class WorkspacePersonProfiles {
@@ -364,18 +405,15 @@ export class WorkspacePersonProfiles {
 
   ensureIdentifier(value: string): PersonProfile {
     const signals = parsePersonIdentifier(value);
-    const holders = this.store
-      .list()
-      .filter(
-        (profile) =>
-          profile.emails.some((email) => signals.emails.includes(email)) ||
-          profile.profileUrls.some((url) => signals.profileUrls.includes(url)),
-      );
+    const wanted = normalizedSignals(signals);
+    const holders = this.store.list().filter((profile) => holdsIdentity(profile, wanted));
     const canonical = holders.filter((profile) => !profile.mergedInto);
     if (canonical.length > 1)
       throw new PersonProfileValidationError(
         "conflicting-identity",
-        "Several Profiles hold that identity.",
+        `Several Profiles hold that identity: ${canonical
+          .map((profile) => profile.id)
+          .join(", ")}. Open one of them and merge the others into it, then try again.`,
       );
     if (canonical[0]) {
       if (canonical[0].archivedAt)
