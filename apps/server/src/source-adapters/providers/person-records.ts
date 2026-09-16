@@ -51,6 +51,24 @@ async function json(
   io: SearchProviderIo,
 ): Promise<unknown> {
   const response = await fetch(url, { timeoutMs: io.timeoutMs });
+  // Nonprofit Explorer returns 404 with its normal search envelope when
+  // there are no organizations. A missing endpoint or malformed body is
+  // still a refusal; no other provider inherits this exception.
+  if (name === "nonprofit-explorer" && response.status === 404) {
+    let empty: Record<string, unknown> | null;
+    try {
+      empty = asRecord(JSON.parse(response.body));
+    } catch {
+      empty = null;
+    }
+    if (
+      empty?.api_version === 2 &&
+      empty.total_results === 0 &&
+      Array.isArray(empty.organizations) &&
+      empty.organizations.length === 0
+    )
+      return empty;
+  }
   if (response.status !== 200) {
     const rateLimited = response.status === 429 || response.status === 503;
     throw new ProviderRefusedError(

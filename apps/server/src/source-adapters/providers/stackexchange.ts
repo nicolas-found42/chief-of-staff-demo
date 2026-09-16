@@ -35,10 +35,9 @@ function isExcerptHit(
 
 /**
  * Stack Exchange excerpts (ADR-0049, layer 3) — real keyless full-text search
- * of the technical Q&A corpus, throttled to 300/day/IP anonymously. The
- * throttle answers two ways: an HTTP 429, or a 200 body carrying a `backoff`
- * seconds value; both refuse as rate-limited so the composite's cooldown
- * paces later queries instead of this provider retrying.
+ * of the technical Q&A corpus. HTTP 400 can carry an IP throttle; a
+ * successful reply can instead request method backoff while retaining its
+ * valid results. Neither path retries inside the query.
  */
 export function createStackExchangeProvider(
   options: { fetch?: PublicHttpFetch } = {},
@@ -51,6 +50,37 @@ export function createStackExchangeProvider(
         `https://api.stackexchange.com/2.3/search/excerpts?order=desc&sort=relevance&q=${encodeURIComponent(query)}&site=stackoverflow`,
         { timeoutMs: io.timeoutMs },
       );
+
+      // This API uses HTTP 400 for method errors, including IP throttles.
+      // Reading only the HTTP status bypasses the composite's cooldown.
+      if (response.status === 400) {
+        let error: unknown;
+        try {
+          error = JSON.parse(response.body);
+        } catch {
+          error = null;
+        }
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "error_name" in error &&
+          error.error_name === "throttle_violation"
+        ) {
+          const seconds =
+            "error_message" in error && typeof error.error_message === "string"
+              ? Number(/more requests available in (\d+) seconds/i.exec(error.error_message)?.[1])
+              : NaN;
+          const delay = readsAsBackoffSeconds(error) ? error.backoff * 1000 : seconds * 1000;
+          throw new ProviderRefusedError(
+            "rate-limited",
+            "stackexchange is rate-limited: the API reported throttle_violation.",
+            Math.max(
+              retryAfterMilliseconds(response.retryAfter, new Date()) ?? 0,
+              Number.isSafeInteger(delay) && delay > 0 ? delay : 0,
+            ) || undefined,
+          );
+        }
+      }
 
       if (response.status !== 200) {
         if (response.status === 429 || response.status === 503) {
@@ -73,15 +103,13 @@ export function createStackExchangeProvider(
         throw new ProviderRefusedError("error", "stackexchange returned an unparseable body");
       }
 
-      // A 200 can still be the daily throttle: the body carries `backoff`
-      // seconds alongside (or instead of) the hits.
-      if (readsAsBackoffSeconds(parsed)) {
-        throw new ProviderRefusedError(
-          "rate-limited",
-          `stackexchange is rate-limited: the body carried a ${String(parsed.backoff)}s backoff.`,
-          parsed.backoff * 1000,
-        );
-      }
+      // Backoff constrains the next call; it does not invalidate these items.
+      if (
+        readsAsBackoffSeconds(parsed) &&
+        Number.isSafeInteger(parsed.backoff * 1000) &&
+        parsed.backoff > 0
+      )
+        io.onBackoff?.(parsed.backoff * 1000);
 
       if (!hasExcerptItems(parsed)) {
         throw new ProviderRefusedError("error", "stackexchange returned a malformed excerpts body");

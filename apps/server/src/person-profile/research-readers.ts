@@ -2347,7 +2347,15 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
        only a wall is recorded as a wall. Both checks run on this response,
        never on the hostname: a 200 carrying a login or challenge shell takes
        the wall branch below. */
-    const wallMarker = response && !challenge ? detectSocialWallMarker(response.body) : null;
+    const authRedirect =
+      response?.status === 999 &&
+      /(^|\.)linkedin\.com$/.test(host) &&
+      /window\.location\.href\s*=[^;\n]*["']\/authwall\?/i.test(response.body);
+    const wallMarker = authRedirect
+      ? "LinkedIn authentication-wall redirect"
+      : response && !challenge
+        ? detectSocialWallMarker(response.body)
+        : null;
     if (response && response.status < 400 && !challenge && !wallMarker) {
       const read = await readHtml(url, response, "public-social", context);
       if (/(^|\.)linkedin\.com$/.test(host) && read.access === "retrieved") {
@@ -2460,7 +2468,7 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
         : {}),
       impact: `Public posts on ${host} did not contribute evidence.`,
       remediation:
-        "No keyless anonymous route exists for this network; keep it as a recorded source gap.",
+        "This anonymous request was refused. Retry when public access is available, or use another permitted source; keep the current source gap recorded.",
       recoveryStopped:
         "Signing in, importing a session or using a paid proxy is out of scope for data acquisition.",
     });

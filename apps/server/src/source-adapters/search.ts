@@ -225,6 +225,8 @@ export function createPublicSearch(
     answered: number;
     engaged: number;
     refused: number;
+    resting: number;
+    pending: number;
     refusals: string[];
   }> {
     /* The first pass is exempt so seed coverage is complete. Later passes
@@ -254,6 +256,7 @@ export function createPublicSearch(
     let answered = 0;
     let engaged = 0;
     let refused = 0;
+    let resting = 0;
 
     const io: SearchProviderIo = { fetch: fetchText, timeoutMs: IO_TIMEOUT_MS };
     /* Diagnostics emitted after the early merge describe late arrivals, not
@@ -307,6 +310,7 @@ export function createPublicSearch(
       try {
         const until = cooldownUntil.get(provider.name);
         if (until !== undefined && until > startedAt) {
+          resting += 1;
           emit({
             provider: provider.name,
             query,
@@ -328,7 +332,18 @@ export function createPublicSearch(
             let work = inFlight.get(key);
             if (!work) {
               const local = provider.name === "ror" ? rorIndex?.lookup(nativeQuery) : null;
-              work = local ? Promise.resolve(local) : provider.search(nativeQuery, io);
+              work = local
+                ? Promise.resolve(local)
+                : provider.search(nativeQuery, {
+                    ...io,
+                    onBackoff: (milliseconds) => {
+                      if (Number.isSafeInteger(milliseconds) && milliseconds > 0)
+                        cooldownUntil.set(
+                          provider.name,
+                          Math.max(cooldownUntil.get(provider.name) ?? 0, now() + milliseconds),
+                        );
+                    },
+                  });
               inFlight.set(key, work);
             }
             try {
@@ -441,6 +456,8 @@ export function createPublicSearch(
       answered,
       engaged,
       refused,
+      resting,
+      pending: providers.length - settled,
       refusals,
     };
   }
@@ -490,6 +507,11 @@ export function createPublicSearch(
     };
 
     const pass = await runPass(query, "ok", intent, onLateMerge);
+    if (pass.engaged === 0 && pass.resting > 0 && pass.pending === 0) {
+      throw new PublicSearchUnavailableError(
+        `Public search is unavailable: ${String(pass.resting)} providers are resting after access refusals; no source answered this query.`,
+      );
+    }
     if (pass.engaged > 0 && pass.refused === pass.engaged) {
       /* A search where every provider refused is evidence of nothing at all,
          so it must not read as "the person has no public footprint". */

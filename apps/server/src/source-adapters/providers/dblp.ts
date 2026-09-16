@@ -35,6 +35,15 @@ export function createDblpProvider(options: { fetch?: PublicHttpFetch } = {}): S
       const fetch = options.fetch ?? io.fetch;
       const url = `${ENDPOINT}?q=${encodeURIComponent(query)}&format=json&h=${MAX_RESULTS}`;
       const response = await fetch(url, { timeoutMs: io.timeoutMs });
+      if (
+        /^\s*</.test(response.body) &&
+        /<script\b[^>]*\bid=["']anubis_(?:version|challenge)["']/i.test(response.body)
+      ) {
+        throw new ProviderRefusedError(
+          "captcha",
+          "DBLP returned an Anubis bot challenge instead of API data.",
+        );
+      }
       if (response.status !== 200) {
         const rateLimited = response.status === 429 || response.status === 503;
         throw new ProviderRefusedError(
