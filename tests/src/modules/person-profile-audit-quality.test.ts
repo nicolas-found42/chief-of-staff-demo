@@ -1,3 +1,4 @@
+import type { BrowserRenderer } from "../../../apps/server/src/source-adapters/browser.js";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,6 +42,7 @@ async function replay(
   answer: unknown = extraction,
   finalUrl = sourceUrl,
   html?: string,
+  render?: BrowserRenderer,
 ) {
   const root = mkdtempSync(join(tmpdir(), "person-audit-quality-"));
   roots.push(root);
@@ -65,6 +67,7 @@ async function replay(
       body: html ?? asHtml(text),
     }),
     complete: async () => answer,
+    ...(render ? { render } : {}),
   });
   const result = await research.run(
     person,
@@ -670,4 +673,37 @@ test("a literal employer title remains unresolved even when the model repeats it
     ],
   });
   expect(dossier?.claims[0]?.statement).toContain("Unresolved source fragment");
+});
+
+test("PP-03: public browser metadata supplements cards absent from the anonymous HTTP response", async () => {
+  const html = (count: number) =>
+    `<html><body><h1>Morgan Example</h1><article><p>Morgan builds systems and writes about their work.</p></article><section data-section="articles"><h2>Articles by Morgan</h2>${Array.from({ length: count }, (_, i) => `<div class="main-article-card"><a href="https://www.linkedin.com/pulse/article-${i}">Read</a><h3>Article ${i}</h3><span class="base-main-card__metadata-item">Oct 13, 2022</span></div>`).join("")}</section></body></html>`;
+  let calls = 0;
+  const { dossier, source } = await replay("", url, extraction, url, html(3), async (target) => {
+    // The operation may follow article links; those are unavailable in this fixture.
+    if (target.replace(/\/$/, "") !== url.replace(/\/$/, ""))
+      return { url: target, status: 404, contentType: "text/html", body: "" };
+    calls++;
+    return { url, status: 200, contentType: "text/html", body: html(4) };
+  });
+  expect(calls).toBe(1);
+  expect(dossier?.works).toHaveLength(4);
+  expect(source.provenanceNote).toContain("1 additional");
+  expect(source.provenanceNote).toContain("4 article records");
+  expect(source.text).toContain("Morgan builds systems");
+  const blocked = await replay("", url, extraction, url, html(3), async () => ({
+    url,
+    status: 999,
+    contentType: "text/html",
+    body: html(4),
+  }));
+  expect(blocked.dossier?.works).toHaveLength(3);
+  expect(blocked.source.provenanceNote).toContain("could not be verified");
+  const redirected = await replay("", url, extraction, url, html(3), async () => ({
+    url: "https://linkedin.com/in/someone-else",
+    status: 200,
+    contentType: "text/html",
+    body: html(4),
+  }));
+  expect(redirected.dossier?.works).toHaveLength(3);
 });

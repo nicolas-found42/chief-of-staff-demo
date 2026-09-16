@@ -261,11 +261,27 @@ function described(profile: PersonProfile): string {
  */
 export function PersonProfileDetailPage({ client = peopleApi }: { client?: PeopleClient }) {
   const { profileId = "" } = useParams();
-  // Route changes own independent state, including pending repairs and history.
-  return <PersonProfileDetail key={profileId} client={client} />;
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  // Keep the reader's disclosure preference while isolating route-owned data.
+  return (
+    <PersonProfileDetail
+      key={profileId}
+      client={client}
+      maintenanceOpen={maintenanceOpen}
+      setMaintenanceOpen={setMaintenanceOpen}
+    />
+  );
 }
 
-function PersonProfileDetail({ client }: { client: PeopleClient }) {
+function PersonProfileDetail({
+  client,
+  maintenanceOpen,
+  setMaintenanceOpen,
+}: {
+  client: PeopleClient;
+  maintenanceOpen: boolean;
+  setMaintenanceOpen: (open: boolean) => void;
+}) {
   const { profileId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const revisionParam = searchParams.get("revision");
@@ -292,7 +308,7 @@ function PersonProfileDetail({ client }: { client: PeopleClient }) {
   /* Profile lifecycle (ticket #122): archive is reversible state; privacy
      deletion is the audited exception, behind its own confirmation. */
   const [lifecycle, setLifecycle] = useState<PersonProfileLifecycleState | null>(null);
-  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [receipt, setReceipt] = useState<PersonProfileDeletionReceipt | null>(null);
@@ -566,7 +582,7 @@ function PersonProfileDetail({ client }: { client: PeopleClient }) {
   useEffect(() => {
     if (viewed !== null && current !== null && viewed.revision !== current.revision)
       setMaintenanceOpen(true);
-  }, [viewed, current]);
+  }, [viewed, current, setMaintenanceOpen]);
 
   /* The receipt for a deletion this surface just performed, and the tombstone
      for one performed earlier, are the same fact seen at two moments. */

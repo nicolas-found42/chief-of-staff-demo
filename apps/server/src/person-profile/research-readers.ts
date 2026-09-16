@@ -1,4 +1,4 @@
-import { linkedInProfileText } from "./linkedin-articles.js";
+import { linkedInProfileIdentity, linkedInProfileText } from "./linkedin-articles.js";
 import { createHash } from "node:crypto";
 import { load } from "cheerio";
 import { JSDOM } from "jsdom";
@@ -1072,8 +1072,15 @@ async function tryRender(
   if (!context.render) return null;
   try {
     const rendered = await context.render(url);
+    if (
+      rendered.status >= 400 ||
+      detectChallenge(rendered.body, rendered.contentType) ||
+      (family === "public-social" && detectSocialWallMarker(rendered.body))
+    )
+      throw new Error("The anonymous browser did not return an accessible public document.");
     const dom = new JSDOM(rendered.body, { url: rendered.url });
     try {
+      const articleMetadata = linkedInProfileText(dom.window.document, rendered.url);
       const article = new Readability(dom.window.document).parse();
       const body = article?.textContent?.trim() ?? "";
       if (!body) return null;
@@ -1092,7 +1099,9 @@ async function tryRender(
           ?.getAttribute("content")
           ?.trim() ||
         null;
-      const text = pageTitle ? `Page title: ${pageTitle}\n\n${body}` : body;
+      const text = [pageTitle ? `Page title: ${pageTitle}` : "", articleMetadata, body]
+        .filter(Boolean)
+        .join("\n\n");
       context.recorder.record({
         stage: "rendering",
         code: "retrieval-recovered",
@@ -2333,6 +2342,44 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
     if (response && response.status < 400 && !challenge && !wallMarker) {
       const read = await readHtml(url, response, "public-social", context);
       if (/(^|\.)linkedin\.com$/.test(host) && read.access === "retrieved") {
+        // Anonymous HTTP and browser responses can expose different article cards.
+        // Inspect one bounded public render; merge only identity-matched metadata,
+        // retaining the original readable text and never seeking signed-in content.
+        if (
+          context.render &&
+          read.route !== "browser-renderer" &&
+          /Article listed by |Article capture limitation:/.test(read.text)
+        ) {
+          const rendered = await tryRender(url, "public-social", context);
+          if (
+            rendered &&
+            linkedInProfileIdentity(rendered.finalUrl) === linkedInProfileIdentity(read.finalUrl) &&
+            /^Public profile name: (.+)$/m.exec(rendered.text)?.[1] ===
+              /^Public profile name: (.+)$/m.exec(read.text)?.[1]
+          ) {
+            const cards =
+              rendered.text.match(
+                /^Article listed by .+\nTitle: .+\nDate: .+\nURL: https?:\/\/[^\s]+$/gm,
+              ) ?? [];
+            const missing = cards.filter((card) => !read.text.includes(card.split("\n").at(-1)!));
+            if (missing.length) {
+              const combined = `${missing.join("\n\n")}\n\n${read.text}`;
+              read.text = combined.slice(0, MAX_TEXT);
+              if (combined.length > MAX_TEXT) read.completeness = "partial";
+              read.route = "html-reader+browser-renderer";
+              read.outboundUrls = [
+                ...new Set([
+                  ...read.outboundUrls,
+                  ...missing.map((card) => card.split("\n").at(-1)!.slice(5)),
+                ]),
+              ];
+              read.provenanceNote = `The bounded anonymous browser supplied ${missing.length} additional attributed article records beyond the HTTP response. Combined capture retained ${(read.text.match(/^Article listed by /gm) ?? []).length} article records; this is not a complete bibliography. Article contents were not retrieved.`;
+            }
+          } else if (!rendered) {
+            read.provenanceNote =
+              `${read.provenanceNote ?? ""} Additional public article capture could not be verified by the bounded anonymous browser; the retained list may be incomplete.`.trim();
+          }
+        }
         const experience = read.text.split(/\bEducation\b/i)[0] ?? "";
         const rows = experience
           .split(/\n/)
