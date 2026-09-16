@@ -1,4 +1,4 @@
-import { createHttpFetch } from "../http.js";
+import { createHttpFetch, retryAfterMilliseconds } from "../http.js";
 import type { PublicHttpFetch } from "../http.js";
 import type { PublicSearchResult } from "../search.js";
 import { ProviderRefusedError } from "./types.js";
@@ -35,6 +35,13 @@ export function createWikipediaProvider(options: { fetch?: PublicHttpFetch } = {
       const response = await fetch(url, { timeoutMs: io.timeoutMs });
 
       if (response.status !== 200) {
+        if (response.status === 429) {
+          throw new ProviderRefusedError(
+            "rate-limited",
+            `wikipedia opensearch answered HTTP ${response.status}`,
+            retryAfterMilliseconds(response.retryAfter, new Date()),
+          );
+        }
         throw new ProviderRefusedError(
           "error",
           `wikipedia opensearch answered HTTP ${response.status}`,
