@@ -643,7 +643,10 @@ _Avoid_: Licence (alone), open, public domain (a permission over one material is
 **Person Claim**:
 One attributed assertion about a person, their work, or a connection, supported by specific passages
 of Person Source Documents. Its factual support is distinct from confidence that it names the right
-person, and it can remain historical, contested, or superseded.
+person, and it can remain historical, contested, or superseded. A quoted fragment may
+remain a claim without establishing a current fact; self-report states what the person claims.
+Explicit structured entries may be retained as claims even when extraction omits them;
+missing fields remain unknown (ADR-0099).
 _Avoid_: Fact (unless established), confidence score
 
 **Work Record**:

@@ -81,8 +81,9 @@ test("audit F12: a blocked request explains itself and the form recovers when th
   const alert = page.getByRole("alert");
   /* Not the raw exception the browser threw. */
   await expect(alert).not.toHaveText("Failed to fetch");
-  await expect(alert).toContainText("did not reach the app");
-  await expect(alert).toContainText("nothing was saved");
+  await expect(alert).toContainText("could not confirm the request");
+  await expect(alert).toContainText("Check for saved changes");
+  await expect(alert).not.toContainText("nothing was saved");
   await expect(alert).toContainText(/try again/i);
 
   /* No phantom success and no stuck spinner: the page did not move, and the
@@ -96,4 +97,29 @@ test("audit F12: a blocked request explains itself and the form recovers when th
   await page.unroute("**/api/people/lookup/accept");
   await button.click();
   await expect(page).toHaveURL(/\/people\/person_[a-z0-9-]+$/);
+});
+
+test("audit F12: a lost response does not claim that the server saved nothing", async ({
+  page,
+}) => {
+  await page.goto("/people/new");
+  await page.route("**/api/people/lookup/accept", async (route) => {
+    await route.fetch();
+    await route.abort("failed");
+  });
+  await page.getByLabel("Email or profile URL").fill("lost-response@example.com");
+  await page.getByRole("button", { name: "Add and research" }).click();
+  await expect(page.getByRole("alert")).toContainText("could not confirm");
+  await expect(page.getByRole("alert")).not.toContainText("nothing was saved");
+  await page.unroute("**/api/people/lookup/accept");
+  await page.getByRole("button", { name: "Add and research" }).click();
+  await expect(page).toHaveURL(/\/people\/person_/);
+  const profiles: Array<{ emails: string[] }> = await (
+    await page.request.get("/api/people")
+  ).json();
+  expect(
+    profiles.filter((profile: { emails: string[] }) =>
+      profile.emails.includes("lost-response@example.com"),
+    ),
+  ).toHaveLength(1);
 });

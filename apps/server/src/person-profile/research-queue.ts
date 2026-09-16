@@ -224,7 +224,17 @@ export class PersonResearchQueue {
       if (!old.reasons.includes(reason)) old.reasons.push(reason);
       if (reason === "evidence" || old.checkpoint?.profileRevision !== profile.revision)
         delete old.checkpoint;
-      if (old.state === "researching" || old.state === "queued" || old.state === "paused") {
+      // A queued continuation can carry spent counters after restart. An
+      // explicit request renews it before the already-active fast path;
+      // repeated clicks on the newly queued request still coalesce.
+      const renewQueued =
+        reason === "explicit" &&
+        (old.state === "queued" || old.state === "paused") &&
+        (old.calls > 0 || (old.elapsedMilliseconds ?? 0) > 0);
+      if (
+        old.state === "researching" ||
+        ((old.state === "queued" || old.state === "paused") && !renewQueued)
+      ) {
         this.save();
         return { kind: "already-active", profileId, jobState: old.state };
       }
@@ -239,7 +249,11 @@ export class PersonResearchQueue {
         return { kind: "deferred", profileId, nextAt: old.nextAt };
       }
       old.state = "queued";
-      if (old.operation?.conclusion !== "bounded" && old.operation?.conclusion !== "interrupted")
+      if (
+        !renewQueued &&
+        old.operation?.conclusion !== "bounded" &&
+        old.operation?.conclusion !== "interrupted"
+      )
         delete old.checkpoint;
       if (!old.checkpoint) {
         old.calls = 0;

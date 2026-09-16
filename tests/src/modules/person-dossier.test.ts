@@ -618,3 +618,25 @@ test("unrelated current evidence does not refresh an unchanged historical sectio
     vi.useRealTimers();
   }
 });
+
+test("audit F13: section prose separates fragments without doubling existing sentence punctuation", () => {
+  const claims = ["Maya built Atlas", "Maya deployed Nova.", "What changed?"].map(
+    (statement, index) => ({
+      id: `punctuation-${index}`,
+      section: "work" as const,
+      statement,
+      status: "supported" as const,
+      nature: "statement" as const,
+      matchConfidence: "high" as const,
+      effectiveFrom: null,
+      effectiveTo: null,
+      citations: [],
+      supports: [],
+      supersedes: [],
+      changeReason: null,
+    }),
+  );
+  expect(synthesizeSections(claims).find((section) => section.key === "overview")?.summary).toBe(
+    "Maya built Atlas. Maya deployed Nova. What changed?",
+  );
+});

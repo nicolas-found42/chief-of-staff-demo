@@ -528,3 +528,20 @@ export interface PersonConnectionStep {
   claimIds: string[];
   citations: { sourceId: string; quote: string }[];
 }
+
+/** The same readable claim account for publication and historical dossier display. */
+export function summarizePersonClaims(claims: PersonClaim[]): string {
+  return [
+    ...new Set(
+      claims.map(
+        (claim) =>
+          `${claim.status === "contested" ? "Contested account: " : claim.status === "claimed" ? "Claimed: " : claim.nature === "interpretation" ? "Interpretation: " : ""}${claim.statement}`,
+      ),
+    ),
+  ]
+    .map((statement) =>
+      /[.!?…]["”’)]?$/.test(statement.trim()) ? statement.trim() : `${statement.trim()}.`,
+    )
+    .join(" ")
+    .slice(0, 8000);
+}

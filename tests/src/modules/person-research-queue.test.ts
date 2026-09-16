@@ -1152,3 +1152,51 @@ test("audit F2/F6: an automatic attempt on a spent allowance reports the exhaust
   expect(job?.checkpoint?.operationId).toBe("op-bounded-2");
   expect(job?.sources).toBe(2);
 });
+
+test("audit F2: explicit research renews a restart-recovered queued operation before dispatch", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-recovered-budget-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "recovered@example.com" });
+  exhaustedJobFixture(root, person, "op-recovered");
+  const file = join(root, "person-research.json");
+  const state = JSON.parse(readFileSync(file, "utf8"));
+  state.jobs[0].state = "researching";
+  state.jobs[0].startedAt = "2026-09-15T22:02:54.000Z";
+  writeFileSync(file, JSON.stringify(state));
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const allowances: ResearchAllowance[] = [];
+  const run = research.run.bind(research);
+  research.run = (profile, allowance) => {
+    allowances.push(allowance);
+    return run(profile, allowance);
+  };
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    now: () => new Date("2026-09-15T22:02:55.000Z"),
+    readiness: () => ({ state: "ready", reason: "ready" }),
+  });
+  expect(queue.job(person.id)?.state).toBe("queued");
+  expect(queue.enqueue(person.id, "explicit").kind).toBe("accepted");
+  expect(queue.job(person.id)?.calls).toBe(0);
+  expect(queue.job(person.id)?.elapsedMilliseconds).toBe(0);
+  expect(queue.job(person.id)?.checkpoint?.operationId).toBe("op-recovered");
+  expect(queue.job(person.id)?.sources).toBe(2);
+  expect(queue.status().usedCalls).toBe(325);
+  expect(queue.enqueue(person.id, "explicit").kind).toBe("already-active");
+  await queue.tick();
+  expect(allowances).toHaveLength(1);
+  expect(allowances[0].maxModelCalls).toBe(12);
+  expect(allowances[0].maxMilliseconds).toBe(120000);
+  expect(queue.job(person.id)?.state).toBe("empty");
+  expect(queue.job(person.id)?.detail).not.toContain("allowance is spent");
+});

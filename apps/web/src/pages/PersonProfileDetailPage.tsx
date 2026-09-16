@@ -239,7 +239,15 @@ function DependentConfigurationDisclosure({
 }
 
 function described(profile: PersonProfile): string {
-  return [profile.fullName, profile.role, profile.currentEmployer]
+  const role = profile.researchFacts?.role;
+  const employer = profile.researchFacts?.currentEmployer;
+  const sharedPeriod =
+    role?.effectiveFrom &&
+    role.effectiveFrom === employer?.effectiveFrom &&
+    role.sourceIds.some((source) => employer.sourceIds.includes(source));
+  const combinedRole =
+    profile.currentEmployer && (role || employer) && !sharedPeriod ? null : profile.role;
+  return [profile.fullName, combinedRole, profile.currentEmployer]
     .filter((value) => value !== null)
     .join(" — ");
 }

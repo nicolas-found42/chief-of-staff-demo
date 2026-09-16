@@ -1,3 +1,4 @@
+import { summarizePersonClaims } from "@chief-of-staff-demo/shared";
 import { EvidenceDate } from "./EvidenceDate";
 import { PersonSourceInspector } from "./PersonSourceInspector";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -227,6 +228,37 @@ export function PersonDossierPanel({
   const [latestRevision, setLatestRevision] = useState(0);
   const [view, setView] = useState<DossierView | null>(null);
   const [tab, setTab] = useState<keyof typeof tabs>("overview");
+  const tabStrip = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState({ before: false, after: false });
+  const measureTabs = useCallback(() => {
+    const strip = tabStrip.current;
+    if (!strip) return;
+    const before = strip.scrollLeft > 1;
+    const after = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1;
+    setOverflow((previous) =>
+      previous.before === before && previous.after === after ? previous : { before, after },
+    );
+  }, []);
+  useEffect(() => {
+    measureTabs();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measureTabs);
+    if (tabStrip.current) observer?.observe(tabStrip.current);
+    window.addEventListener("resize", measureTabs);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measureTabs);
+    };
+  }, [measureTabs]);
+  useEffect(() => {
+    const selected = tabStrip.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (selected && typeof selected.scrollIntoView === "function")
+      selected.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [tab]);
+  const scrollTabs = (direction: number) => {
+    const strip = tabStrip.current;
+    strip?.scrollBy({ left: direction * strip.clientWidth * 0.75, behavior: "smooth" });
+  };
+
   const [source, setSource] = useState<{
     id: string;
     quote: string;
@@ -715,50 +747,92 @@ export function PersonDossierPanel({
           ))}
         </details>
       )}
-      <div role="tablist" aria-label="Dossier sections" className="dossier-sections">
-        {Object.entries(tabs).map(([key, label]) => (
+      <div className="dossier-section-navigation">
+        {(overflow.before || overflow.after) && (
           <button
             type="button"
-            role="tab"
-            id={`dossier-tab-${key}`}
-            aria-controls="dossier-panel"
-            aria-selected={key === tab}
-            tabIndex={key === tab ? 0 : -1}
-            onKeyDown={(event) => {
-              const keys = Object.keys(tabs) as Array<keyof typeof tabs>;
-              const index = keys.indexOf(key as keyof typeof tabs);
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? keys.length - 1
-                    : event.key === "ArrowRight"
-                      ? (index + 1) % keys.length
-                      : event.key === "ArrowLeft"
-                        ? (index - 1 + keys.length) % keys.length
-                        : null;
-              if (next === null) return;
-              event.preventDefault();
-              setTab(keys[next]!);
-              event.currentTarget.parentElement
-                ?.querySelector<HTMLButtonElement>(`#dossier-tab-${keys[next]}`)
-                ?.focus();
-            }}
-            key={key}
-            onClick={() => {
-              setTab(key as keyof typeof tabs);
-              setSource(null);
-            }}
+            aria-label="Previous dossier sections"
+            title="Previous sections"
+            disabled={!overflow.before}
+            onClick={() => scrollTabs(-1)}
           >
-            {label}
+            ←
           </button>
-        ))}
+        )}
+        <div
+          ref={tabStrip}
+          onScroll={measureTabs}
+          role="tablist"
+          aria-label="Dossier sections"
+          className="dossier-sections"
+        >
+          {Object.entries(tabs).map(([key, label]) => (
+            <button
+              type="button"
+              role="tab"
+              id={`dossier-tab-${key}`}
+              aria-controls="dossier-panel"
+              aria-selected={key === tab}
+              tabIndex={key === tab ? 0 : -1}
+              onFocus={(event) => {
+                if (typeof event.currentTarget.scrollIntoView === "function")
+                  event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+              }}
+              onKeyDown={(event) => {
+                const keys = Object.keys(tabs) as Array<keyof typeof tabs>;
+                const index = keys.indexOf(key as keyof typeof tabs);
+                const next =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? keys.length - 1
+                      : event.key === "ArrowRight"
+                        ? (index + 1) % keys.length
+                        : event.key === "ArrowLeft"
+                          ? (index - 1 + keys.length) % keys.length
+                          : null;
+                if (next === null) return;
+                event.preventDefault();
+                setTab(keys[next]!);
+                event.currentTarget.parentElement
+                  ?.querySelector<HTMLButtonElement>(`#dossier-tab-${keys[next]}`)
+                  ?.focus();
+              }}
+              key={key}
+              onClick={() => {
+                setTab(key as keyof typeof tabs);
+                setSource(null);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {(overflow.before || overflow.after) && (
+          <button
+            type="button"
+            aria-label="More dossier sections"
+            title="More sections"
+            disabled={!overflow.after}
+            onClick={() => scrollTabs(1)}
+          >
+            →
+          </button>
+        )}
       </div>
       <div id="dossier-panel" role="tabpanel" tabIndex={0} aria-labelledby={`dossier-tab-${tab}`}>
         <h2>{tabs[tab]}</h2>
         {section && (
           <>
-            <p>{section.summary}</p>
+            <p>
+              {section.claimIds.length && dossier
+                ? summarizePersonClaims(
+                    section.claimIds.flatMap((id) =>
+                      dossier.claims.filter((claim) => claim.id === id),
+                    ),
+                  )
+                : section.summary}
+            </p>
             <p className="muted">
               {section.state} · Last researched <EvidenceDate value={section.updatedAt} />
             </p>

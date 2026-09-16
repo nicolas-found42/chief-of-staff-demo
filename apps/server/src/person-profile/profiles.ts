@@ -155,9 +155,9 @@ function searchHaystack(profile: PersonProfile): string {
  * `parsePersonIdentifier` derives them from an incoming identifier so the two
  * sides of a lookup compare the same thing.
  */
-function heldHandles(profileUrls: string[]): Record<string, string[]> {
-  const handles: Record<string, string[]> = {};
-  for (const url of profileUrls) {
+function heldHandles(profile: PersonProfile): Record<string, string[]> {
+  const handles = structuredClone(profile.handles);
+  for (const url of profile.profileUrls) {
     const social = socialUrl(url);
     if (social?.handle) (handles[social.platform] ??= []).push(social.handle);
   }
@@ -176,7 +176,7 @@ function holdsIdentity(profile: PersonProfile, wanted: PersonIdentitySignals): b
   const held = normalizedSignals({
     emails: profile.emails,
     fullNames: [],
-    handles: heldHandles(profile.profileUrls),
+    handles: heldHandles(profile),
     profileUrls: profile.profileUrls,
     employerHints: [],
   });

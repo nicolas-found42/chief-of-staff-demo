@@ -194,3 +194,21 @@ test("pre-existing duplicates that normalize to one identity are reported, never
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("identifier lookup reuses a stored handle even when its profile URL is absent", () => {
+  const root = mkdtempSync(join(tmpdir(), "person-entry-handle-"));
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const person = people.create({ fullName: "Example Person" });
+    new PersonProfileStore(root).save({ ...person, handles: { linkedin: ["Example-Person"] } });
+    expect(people.ensureIdentifier("https://www.linkedin.com/in/example-person/").id).toBe(
+      person.id,
+    );
+    expect(people.search({ includeArchived: true })).toHaveLength(1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

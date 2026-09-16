@@ -133,6 +133,13 @@ export function PersonSourceInspector({
               )}
             </p>
           </div>
+          {document.completeness === "partial" && (
+            <p role="note" className="source-inspector-passage">
+              Partial source:{" "}
+              {document.provenanceNote ??
+                "Some source content was not retrieved. Missing information remains unknown."}
+            </p>
+          )}
           {quote && (
             <section className="source-inspector-passage" aria-label="Supporting passage">
               <h4>Supporting passage</h4>

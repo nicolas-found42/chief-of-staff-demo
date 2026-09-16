@@ -300,50 +300,57 @@ describe("linkedin html reader identity", () => {
    * it was. Both routes read the same final URL here; the redirect is not
    * where the title goes missing.
    */
-  it("carries the document title on the browser-render route too", async () => {
-    const recorder = new ResearchAttemptRecorder("operation-linkedin-title-rendered");
-    const rendered = await readPersonSource(
-      "https://www.linkedin.com/in/janeqdoe/",
-      "",
-      fromPartial<ReaderPorts>({
-        /* A body the readability gate refuses, which is what sends the read
+  it.each(["title", "property", "name", "itemprop"])(
+    "carries the %s title on the browser-render route too",
+    async (attribute) => {
+      const renderedHtml =
+        attribute === "title"
+          ? html
+          : html.replace(/<title>(.*?)<\/title>/, `<meta ${attribute}="og:title" content="$1">`);
+      const recorder = new ResearchAttemptRecorder("operation-linkedin-title-rendered");
+      const rendered = await readPersonSource(
+        "https://www.linkedin.com/in/janeqdoe/",
+        "",
+        fromPartial<ReaderPorts>({
+          /* A body the readability gate refuses, which is what sends the read
            to the browser fallback. */
-        fetch: async () => ({
-          url: "https://www.linkedin.com/in/janeqdoe",
+          fetch: async () => ({
+            url: "https://www.linkedin.com/in/janeqdoe",
+            status: 200,
+            contentType: "text/html; charset=utf-8",
+            etag: null,
+            lastModified: null,
+            retryAfter: null,
+            body: '<!doctype html><html><head><title>Jane Q Doe - Airbnb | LinkedIn</title></head><body><div id="app"></div></body></html>',
+          }),
+          render: async () => ({
+            url: "https://www.linkedin.com/in/janeqdoe",
+            status: 200,
+            body: renderedHtml,
+          }),
+          recorder,
+          timeoutMs: 1000,
+        }),
+      );
+      expect(rendered.route).toBe("browser-renderer");
+      expect(rendered.text).toContain("Page title: Jane Q Doe - Airbnb | LinkedIn");
+      expect(rendered.text).toContain("Jane Q Doe leads operations at Airbnb in New York.");
+
+      /* Both URL forms retain the same prefix, whichever route serves them. */
+      const direct = await readPersonSource(
+        "https://www.linkedin.com/in/janeqdoe",
+        "",
+        ports(new ResearchAttemptRecorder("operation-linkedin-title-direct"), async (url) => ({
+          url,
           status: 200,
           contentType: "text/html; charset=utf-8",
           etag: null,
           lastModified: null,
           retryAfter: null,
-          body: '<!doctype html><html><head><title>Jane Q Doe - Airbnb | LinkedIn</title></head><body><div id="app"></div></body></html>',
-        }),
-        render: async () => ({
-          url: "https://www.linkedin.com/in/janeqdoe",
-          status: 200,
-          body: html,
-        }),
-        recorder,
-        timeoutMs: 1000,
-      }),
-    );
-    expect(rendered.route).toBe("browser-renderer");
-    expect(rendered.text).toContain("Page title: Jane Q Doe - Airbnb | LinkedIn");
-    expect(rendered.text).toContain("Jane Q Doe leads operations at Airbnb in New York.");
-
-    /* Both URL forms retain the same prefix, whichever route serves them. */
-    const direct = await readPersonSource(
-      "https://www.linkedin.com/in/janeqdoe",
-      "",
-      ports(new ResearchAttemptRecorder("operation-linkedin-title-direct"), async (url) => ({
-        url,
-        status: 200,
-        contentType: "text/html; charset=utf-8",
-        etag: null,
-        lastModified: null,
-        retryAfter: null,
-        body: html,
-      })),
-    );
-    expect(direct.text.split("\n\n")[0]).toBe(rendered.text.split("\n\n")[0]);
-  });
+          body: renderedHtml,
+        })),
+      );
+      expect(direct.text.split("\n\n")[0]).toBe(rendered.text.split("\n\n")[0]);
+    },
+  );
 });
