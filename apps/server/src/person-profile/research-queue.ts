@@ -428,6 +428,23 @@ export class PersonResearchQueue {
     this.stop();
     await this.pending;
   }
+  async runNow(profileId: string): Promise<PersonResearchOperationOutcome | null> {
+    const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
+    if (
+      job &&
+      job.checkpoint &&
+      (job.state === "interrupted" || job.operation?.conclusion === "interrupted")
+    ) {
+      job.state = "queued";
+      job.nextAt = this.now();
+      delete job.startedAt;
+      this.save();
+    } else {
+      this.enqueue(profileId, "explicit");
+    }
+    await this.tick(profileId);
+    return this.operation(profileId);
+  }
 
   async tick(profileId?: string): Promise<void> {
     if (!this.isReady()) return;

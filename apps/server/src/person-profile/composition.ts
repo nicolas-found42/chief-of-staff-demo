@@ -362,11 +362,7 @@ export function composePersonProfiles(
       queue.enqueue(profile.id, "explicit");
       return profile;
     },
-    runNow: async (profileId) => {
-      queue.enqueue(profileId, "explicit");
-      await queue.tick(profileId);
-      return queue.operation(profileId);
-    },
+    runNow: (profileId) => queue.runNow(profileId),
     dossier: (profileId, visibility = "private") => dossiers.project(profileId, visibility),
     sources: (profileId) =>
       (dossiers.get(profileId)?.sourceIds ?? []).flatMap((id) => {
