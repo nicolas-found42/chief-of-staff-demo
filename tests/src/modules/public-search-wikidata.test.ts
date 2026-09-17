@@ -74,6 +74,16 @@ describe("createWikidataProvider", () => {
     expect((error as ProviderRefusedError).reason).toBe("error");
   });
 
+  it("classifies the historical HTTP 429 as rate-limited without a captured Retry-After", async () => {
+    const { fetch } = respondWith(429, "");
+    const provider = createWikidataProvider({ fetch });
+
+    const refusal = await provider.search("Richard Achee", IO).catch((caught: unknown) => caught);
+
+    expect(refusal).toBeInstanceOf(ProviderRefusedError);
+    expect(refusal).toMatchObject({ reason: "rate-limited", retryAfterMs: undefined });
+  });
+
   it("classifies an unparseable 200 body as an error refusal", async () => {
     const { fetch } = respondWith(200, "not json");
     const provider = createWikidataProvider({ fetch });

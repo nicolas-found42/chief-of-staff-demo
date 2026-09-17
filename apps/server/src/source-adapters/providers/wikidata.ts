@@ -1,4 +1,4 @@
-import { createHttpFetch } from "../http.js";
+import { createHttpFetch, retryAfterMilliseconds } from "../http.js";
 import type { PublicHttpFetch } from "../http.js";
 import type { PublicSearchResult } from "../search.js";
 import { ProviderRefusedError } from "./types.js";
@@ -39,9 +39,11 @@ export function createWikidataProvider(options: { fetch?: PublicHttpFetch } = {}
       const response = await fetch(url, { timeoutMs: io.timeoutMs });
 
       if (response.status !== 200) {
+        const rateLimited = response.status === 429;
         throw new ProviderRefusedError(
-          "error",
+          rateLimited ? "rate-limited" : "error",
           `wikidata wbsearchentities answered HTTP ${response.status}`,
+          rateLimited ? retryAfterMilliseconds(response.retryAfter, new Date()) : undefined,
         );
       }
 

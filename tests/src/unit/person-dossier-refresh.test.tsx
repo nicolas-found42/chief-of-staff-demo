@@ -3,7 +3,11 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, expect, test, vi } from "vitest";
-import type { PersonDossier, PersonResearchProfileSummary } from "@chief-of-staff-demo/shared";
+import type {
+  PersonDossier,
+  PersonResearchDiagnosticsPage,
+  PersonResearchProfileSummary,
+} from "@chief-of-staff-demo/shared";
 import {
   PersonDossierPanel,
   type DossierClient,
@@ -521,3 +525,73 @@ test("readiness-only summary changes replace a stale top-level refusal without r
   expect(container.textContent).not.toContain("An owner has not yet confirmed");
   expect(read).toHaveBeenCalledTimes(1);
 });
+
+test.each([
+  { operationId: "old", revision: 2 },
+  { operationId: "new", revision: 1 },
+])(
+  "diagnostic pagination resets for operation $operationId revision $revision",
+  async ({ operationId: currentOperationId, revision: currentRevision }) => {
+    const api = client();
+    const diagnostic = (reason: string) => ({
+      code: "rendering-failed" as const,
+      stage: "rendering" as const,
+      outcome: "failed" as const,
+      occurredAt: "2026-09-15T10:00:00Z",
+      reason,
+    });
+    const summary = (operationId: string, revision: number) =>
+      research({
+        state: "interrupted",
+        currentOperationId: operationId,
+        currentOperationRevision: revision,
+        operationRevision: revision,
+        diagnostics: {
+          totalAttempts: 60,
+          byCode: { "rendering-failed": 60 },
+          sample: [diagnostic(`Failure in ${operationId} revision ${revision}`)],
+          truncated: true,
+        },
+      });
+    api.read = vi
+      .fn<DossierClient["read"]>()
+      .mockResolvedValueOnce({ ...view(), research: summary("old", 1) })
+      .mockResolvedValue({
+        ...view(),
+        research: summary(currentOperationId, currentRevision),
+      });
+    const pending = Promise.withResolvers<PersonResearchDiagnosticsPage | null>();
+    api.diagnostics = vi
+      .fn<DossierClient["diagnostics"]>()
+      .mockResolvedValueOnce({
+        operationId: "old",
+        profileId: "maya",
+        totalAttempts: 60,
+        nextCursor: "50",
+        entries: [fromPartial({ ...diagnostic("Old retained failure"), operationId: "old" })],
+      })
+      .mockReturnValueOnce(pending.promise);
+    const container = await mount(api);
+    await click(container, "Load full diagnostic history");
+    expect(container.textContent).toContain("Old retained failure");
+    await click(container, "Load more diagnostics");
+    await click(container, "Prioritise research");
+    expect(container.textContent).toContain(
+      `Failure in ${currentOperationId} revision ${currentRevision}`,
+    );
+    expect(container.textContent).not.toContain("Old retained failure");
+    await act(async () =>
+      pending.resolve({
+        operationId: "old",
+        profileId: "maya",
+        totalAttempts: 60,
+        nextCursor: null,
+        entries: [fromPartial({ ...diagnostic("Late old failure"), operationId: "old" })],
+      }),
+    );
+    expect(container.textContent).not.toContain("Late old failure");
+    expect(container.textContent).toContain(
+      `Failure in ${currentOperationId} revision ${currentRevision}`,
+    );
+  },
+);

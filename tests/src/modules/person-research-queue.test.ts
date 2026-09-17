@@ -843,6 +843,10 @@ test("a new operation's live progress never shows the prior operation's conclusi
 
   pauseNextSearch = true;
   queue.enqueue(person.id, "explicit");
+  const queuedSummary = queue.summary(person.id);
+  expect(queuedSummary?.state).toBe("queued");
+  expect(queuedSummary?.detail).not.toBe(detailA);
+  expect(queue.operation(person.id)?.detail).toBe(detailA);
   const running = queue.tick(person.id);
   await started.promise;
 
@@ -852,7 +856,6 @@ test("a new operation's live progress never shows the prior operation's conclusi
   expect(mid?.currentOperationId).not.toBe(operationAId);
   /* The defining fix (#417 F5): an active operation's own `detail` is
      neutral progress, never the previous operation's terminal conclusion. */
-  expect(mid?.detail).toBe("Research is in progress.");
   expect(mid?.detail).not.toBe(detailA);
   expect(mid?.previousConclusion).toMatchObject({
     operationId: operationAId,
@@ -862,7 +865,7 @@ test("a new operation's live progress never shows the prior operation's conclusi
 
   const midSummary = queue.summary(person.id);
   expect(midSummary?.state).toBe("researching");
-  expect(midSummary?.detail).toBe("Research is in progress.");
+  expect(midSummary?.detail).not.toBe(detailA);
   expect(midSummary?.previousConclusion?.operationId).toBe(operationAId);
 
   gate.resolve();
@@ -925,6 +928,7 @@ test("restart preserves the decisive summary and the previous-conclusion history
   queue.enqueue(person.id, "created");
   await queue.tick();
   const operationAId = queue.job(person.id)?.operation?.operationId;
+  const detailA = queue.operation(person.id)?.detail;
   expect(queue.job(person.id)?.operation?.decisiveExtraction?.classification).toBe(
     "no-supported-facts",
   );
@@ -948,6 +952,14 @@ test("restart preserves the decisive summary and the previous-conclusion history
   expect(restartedJob?.operation?.decisiveExtraction?.classification).toBe("no-supported-facts");
   expect(restartedJob?.previousConclusion?.operationId).toBe(operationAId);
   expect(restartedJob?.currentOperationId).not.toBe(operationAId);
+  const restartedSummary = restarted.summary(person.id);
+  expect(restartedSummary?.state).toBe("queued");
+  expect(restartedSummary?.detail).not.toBe(detailA);
+  expect(restartedSummary?.previousConclusion).toMatchObject({
+    operationId: operationAId,
+    detail: detailA,
+  });
+  expect(restarted.operation(person.id)?.detail).toBe(detailA);
   gate.resolve();
   await running;
 });

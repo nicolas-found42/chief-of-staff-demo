@@ -325,6 +325,7 @@ export class PersonResearchQueue {
         return { kind: "deferred", profileId, nextAt: old.nextAt };
       }
       old.state = "queued";
+      old.detail = "Waiting for a research slot.";
       if (
         !renewQueued &&
         old.operation?.conclusion !== "bounded" &&
@@ -526,7 +527,7 @@ export class PersonResearchQueue {
         revision: job.operationRevision ?? 0,
         conclusion: job.operation.conclusion,
         finishedAt: job.operation.finishedAt,
-        detail: job.detail,
+        detail: job.operation.detail,
         ...(job.operation.decisiveExtraction ? { decisive: job.operation.decisiveExtraction } : {}),
       };
     }

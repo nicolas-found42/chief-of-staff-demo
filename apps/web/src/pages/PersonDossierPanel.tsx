@@ -369,6 +369,13 @@ export function PersonDossierPanel({
       setCurrentSources({ profileId, ids: current.dossier?.sourceIds ?? [] });
       const data = revision === undefined ? current : await client.read(profileId, revision);
       if (generation !== readGeneration.current) return;
+      if (
+        data.research?.currentOperationId !== viewRef.current?.research?.currentOperationId ||
+        data.research?.operationRevision !== viewRef.current?.research?.operationRevision
+      ) {
+        setDiagnosticsPage(null);
+        setDiagnosticsError("");
+      }
       setView(data);
       lastProgress.current = progressOf(data.research);
       const nextAnalysis =
@@ -808,19 +815,32 @@ export function PersonDossierPanel({
               view.research.diagnostics.sample.length) && (
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                const generation = readGeneration.current;
                 void client
                   .diagnostics(profileId, diagnosticsPage?.nextCursor ?? undefined)
                   .then((page) => {
+                    if (generation !== readGeneration.current) return;
                     setDiagnosticsError("");
                     setDiagnosticsPage((previous) =>
                       page
-                        ? { ...page, entries: [...(previous?.entries ?? []), ...page.entries] }
+                        ? {
+                            ...page,
+                            entries: [
+                              ...(previous?.operationId === page.operationId
+                                ? previous.entries
+                                : []),
+                              ...page.entries,
+                            ],
+                          }
                         : previous,
                     );
                   })
-                  .catch((error: unknown) => setDiagnosticsError(errorMessage(error)))
-              }
+                  .catch((error: unknown) => {
+                    if (generation === readGeneration.current)
+                      setDiagnosticsError(errorMessage(error));
+                  });
+              }}
             >
               {diagnosticsPage ? "Load more diagnostics" : "Load full diagnostic history"}
             </button>
