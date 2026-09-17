@@ -584,6 +584,8 @@ export type PersonResearchDiagnosticDigest = z.infer<typeof PersonResearchDiagno
 export const PersonResearchDiagnosticsDigestSchema = z.object({
   totalAttempts: z.number().int().nonnegative(),
   byCode: z.record(z.string(), z.number().int().nonnegative()),
+  /** Full-ledger matches of the legacy renderer-busy failure record, not a diagnosed cause. */
+  rendererBusyReportedCount: z.number().int().nonnegative().optional(),
   sample: z.array(PersonResearchDiagnosticDigestSchema).max(8),
   truncated: z.boolean(),
   /** Where the paged, source-free detail for this operation can be read. */

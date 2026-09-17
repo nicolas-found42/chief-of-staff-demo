@@ -5,7 +5,10 @@ import type {
   PersonResearchOperationOutcome,
   PersonResearchReadiness,
 } from "@chief-of-staff-demo/shared";
-import { summarizeResearchAttempts } from "@chief-of-staff-demo/shared";
+import {
+  PersonResearchProfileSummarySchema,
+  summarizeResearchAttempts,
+} from "@chief-of-staff-demo/shared";
 import { modelBoundaryFailure } from "../../../apps/server/src/llm/failure.js";
 import {
   buildProfileSummary,
@@ -62,6 +65,59 @@ function operation(
     ...overrides,
   };
 }
+
+test("renderer busy reports count the full ledger, not the bounded sample or incidental prose", () => {
+  const legacyReason =
+    "The anonymous browser route failed: Browser source renderer is busy; retry later..";
+  const rendererFailure = (overrides: Partial<PersonResearchAttempt> = {}) =>
+    attempt({
+      stage: "rendering",
+      code: "rendering-failed",
+      outcome: "failed",
+      cause: "observed",
+      collector: "browser-renderer",
+      reason: legacyReason,
+      ...overrides,
+    });
+  const attempts = [
+    ...Array.from({ length: 7 }, () => rendererFailure()),
+    // The same sentence from another boundary or an unobserved diagnosis is
+    // not a recorded failure of the anonymous renderer.
+    rendererFailure({ stage: "transport" }),
+    rendererFailure({ code: "http-error" }),
+    rendererFailure({ outcome: "recovered" }),
+    rendererFailure({ cause: "hypothesis" }),
+    rendererFailure({ collector: "public-search" }),
+    rendererFailure(),
+    // Four newer failures leave just one real busy report in the sample.
+    rendererFailure({ reason: "The anonymous browser route failed: navigation timed out." }),
+    rendererFailure({ reason: "The browser was not busy; parsing failed." }),
+    rendererFailure({ reason: `Unconfirmed explanation: ${legacyReason}` }),
+    rendererFailure({ reason: `${legacyReason} This was quoted page content, not a failure.` }),
+  ];
+  const job: PersonResearchJob = {
+    profileId: "person-1",
+    state: "interrupted",
+    reasons: ["explicit"],
+    queuedAt: "2026-09-15T00:00:00.000Z",
+    updatedAt: "2026-09-15T00:05:00.000Z",
+    nextAt: "2026-09-15T01:00:00.000Z",
+    calls: 1,
+    sources: 0,
+    attempts: 1,
+    detail: "Research interrupted.",
+    operation: operation({ conclusion: "interrupted", attempts }),
+  };
+
+  const summary = PersonResearchProfileSummarySchema.parse(
+    buildProfileSummary({ job, readiness: READY }),
+  );
+  expect(summary.diagnostics.sample.filter((entry) => entry.reason === legacyReason)).toHaveLength(
+    1,
+  );
+  expect(summary.diagnostics.truncated).toBe(true);
+  expect(summary.diagnostics).toHaveProperty("rendererBusyReportedCount", 8);
+});
 
 test("more than 40 unrelated diagnostics cannot evict the decisive extraction cause", () => {
   const failure = modelBoundaryFailure({
@@ -421,6 +477,7 @@ test("fitToByteBudget truncates a summary that is still over budget after digest
     diagnostics: {
       totalAttempts: 900,
       byCode,
+      rendererBusyReportedCount: 8,
       sample: Array.from({ length: 8 }, () => ({
         code: "model-boundary-failed" as const,
         stage: "extraction" as const,
@@ -435,6 +492,7 @@ test("fitToByteBudget truncates a summary that is still over budget after digest
   });
   expect(Buffer.byteLength(JSON.stringify(oversized), "utf8")).toBeLessThanOrEqual(16 * 1024);
   expect(oversized.truncated).toBe(true);
+  expect(oversized.diagnostics.rendererBusyReportedCount).toBe(8);
   // A caller can still see there WAS a previous conclusion and what it
   // concluded, even after the shrink pipeline has cut its own decisive detail.
   expect(oversized.previousConclusion?.operationId).toBe("op-old");
