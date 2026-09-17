@@ -41,6 +41,9 @@ export class PersonResearchQueue {
   private readonly removed = new Set<string>();
   /** Profiles the file already held when this instance loaded it. */
   private readonly loaded = new Set<string>();
+  /** Profiles whose next dispatch was cut by a deliberate request; an
+   * in-memory-only signal, so a restart downgrades to continuation. */
+  private readonly explicitDispatches = new Set<string>();
   private generation = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private pending: Promise<void> | undefined;
@@ -348,6 +351,7 @@ export class PersonResearchQueue {
            and the day-wide, request and time ceilings are untouched. */
         old.calls = 0;
         old.elapsedMilliseconds = 0;
+        this.explicitDispatches.add(profileId);
       }
       delete old.startedAt;
       old.queuedAt = now;
@@ -544,6 +548,10 @@ export class PersonResearchQueue {
       const result = await this.deps.research.run(profile, {
         operationId,
         scope: historical ? "full" : "current",
+        /* Consumed here, not in enqueue: only the dispatch that actually
+           runs the deliberate operation re-investigates the seeds, and a
+           later interrupted re-dispatch is continuation, not re-investigation. */
+        ...(this.explicitDispatches.delete(job.profileId) ? { explicit: true } : {}),
         maxModelCalls: Math.max(1, settings.profileCalls - job.calls),
         maxRequests: Math.max(1, settings.profileCalls * 8),
         maxMilliseconds: Math.max(
