@@ -508,6 +508,35 @@ test("recorded renderer-busy evidence is named as sheds in the aggregate", async
   );
 });
 
+test("full recorded renderer saturation count is reported even when the bounded sample has fewer entries", async () => {
+  const api = client();
+  const diagnostics = {
+    totalAttempts: 50,
+    byCode: { "rendering-failed": 12 },
+    rendererBusyReportedCount: 9,
+    sample: [
+      {
+        code: "rendering-failed" as const,
+        stage: "rendering" as const,
+        outcome: "failed" as const,
+        occurredAt: "2026-09-15T10:00:00Z",
+        reason: "Browser source renderer is busy; retry later.",
+      },
+    ],
+    truncated: true,
+  } as PersonResearchProfileSummary["diagnostics"];
+  api.read = vi.fn(async () => ({ ...view(), research: research({ diagnostics }) }));
+  api.summary = vi.fn<DossierClient["summary"]>(async () => ({
+    summary: research({ diagnostics }),
+    readiness: { state: "ready", reason: "ready" },
+  }));
+  const container = await mount(api);
+  expect(container.textContent).toContain("12 source reads failed at rendering.");
+  expect(container.textContent).toContain(
+    "9 were shed because the browser source renderer was busy",
+  );
+});
+
 test("readiness-only summary changes replace a stale top-level refusal without reloading the dossier", async () => {
   vi.useFakeTimers();
   const api = client();

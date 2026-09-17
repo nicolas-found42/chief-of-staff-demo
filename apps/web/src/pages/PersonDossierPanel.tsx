@@ -556,11 +556,14 @@ export function PersonDossierPanel({
      `byCode` covers every attempt while `sample` may omit the kind entirely,
      so the aggregate renderer-failed count is read from there, never from
      the sample. Whether those sheds were renderer-busy saturation is only
-     asserted from busy evidence actually recorded on attempts. */
+     asserted from busy evidence actually recorded on attempts, using the
+     full-ledger `rendererBusyReportedCount` when available. */
   const rendererFailed = view?.research?.diagnostics.byCode["rendering-failed"] ?? 0;
-  const rendererBusySample = (view?.research?.diagnostics.sample ?? []).filter(
-    (attempt) => attempt.code === "rendering-failed" && /busy/i.test(attempt.reason),
-  ).length;
+  const rendererBusyCount =
+    view?.research?.diagnostics.rendererBusyReportedCount ??
+    (view?.research?.diagnostics.sample ?? []).filter(
+      (attempt) => attempt.code === "rendering-failed" && /busy/i.test(attempt.reason),
+    ).length;
   const activeClaims = claims.filter((c) => c.status !== "superseded");
   const section = dossier?.sections.find((s) => s.key === tab);
   const overviewClaims = personOverviewClaims(activeClaims);
@@ -852,8 +855,8 @@ export function PersonDossierPanel({
           {rendererFailed === 1
             ? "1 source read failed at rendering."
             : `${rendererFailed} source reads failed at rendering.`}{" "}
-          {rendererBusySample > 0
-            ? `${rendererBusySample === 1 ? "1 was" : `${rendererBusySample} were`} shed because the browser source renderer was busy.`
+          {rendererBusyCount > 0
+            ? `${rendererBusyCount === 1 ? "1 was" : `${rendererBusyCount} were`} shed because the browser source renderer was busy.`
             : "The bounded sample records no renderer-busy reason; the full diagnostic history below names each failure's recorded reason."}
         </p>
       )}
