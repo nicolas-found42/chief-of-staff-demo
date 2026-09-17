@@ -428,6 +428,13 @@ export const PersonResearchJobSchema = z.object({
    */
   currentOperationId: z.string().max(64).optional(),
   currentOperationRevision: z.number().int().nonnegative().optional(),
+  /**
+   * The wall-clock moment the in-flight operation began. Maintained apart from
+   * `startedAt`: a constructor loading an in-flight operation deletes `startedAt`
+   * when accounting for interrupted elapsed time, so history views reading a
+   * freshly instantiated queue require this field to remain stable across
+   * process reloads rather than falling back to `queuedAt`.
+   */
   currentOperationStartedAt: z.string().max(40).optional(),
   /** The revision `operation` (below) was settled at, once it has one. */
   operationRevision: z.number().int().nonnegative().optional(),
