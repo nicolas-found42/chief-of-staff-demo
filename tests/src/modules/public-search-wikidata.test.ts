@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createWikidataProvider } from "../../../apps/server/src/source-adapters/providers/wikidata";
 import { ProviderRefusedError } from "../../../apps/server/src/source-adapters/providers/types";
+import {
+  createPublicSearch,
+  PublicSearchUnavailableError,
+} from "../../../apps/server/src/source-adapters/search";
 
 const IO = {
   timeoutMs: 10_000,
@@ -82,6 +86,45 @@ describe("createWikidataProvider", () => {
 
     expect(refusal).toBeInstanceOf(ProviderRefusedError);
     expect(refusal).toMatchObject({ reason: "rate-limited", retryAfterMs: undefined });
+  });
+
+  it("honors Wikidata Retry-After beyond the minimum cooldown and resumes at the deadline", async () => {
+    const calls: string[] = [];
+    let now = 0;
+    const search = createPublicSearch(
+      async (url) => {
+        calls.push(url);
+        const limited = calls.length === 1;
+        return {
+          url,
+          status: limited ? 429 : 200,
+          contentType: "application/json",
+          etag: null,
+          lastModified: null,
+          retryAfter: limited ? "7200" : null,
+          body: limited ? "" : JSON.stringify(FIXTURE),
+        };
+      },
+      undefined,
+      { now: () => now, providerFilter: (name) => name === "wikidata" },
+    );
+
+    await expect(search("Ada Lovelace")).rejects.toBeInstanceOf(PublicSearchUnavailableError);
+    now = 3_600_001;
+    await expect(search("Ada Lovelace")).rejects.toBeInstanceOf(PublicSearchUnavailableError);
+    now = 7_199_999;
+    await expect(search("Ada Lovelace")).rejects.toBeInstanceOf(PublicSearchUnavailableError);
+    expect(calls).toHaveLength(1);
+
+    now = 7_200_000;
+    await expect(search("Ada Lovelace")).resolves.toEqual([
+      expect.objectContaining({
+        title: "Ada Lovelace",
+        url: "https://www.wikidata.org/wiki/Q7259",
+        upstreamIndex: "wikidata",
+      }),
+    ]);
+    expect(calls).toHaveLength(2);
   });
 
   it("classifies an unparseable 200 body as an error refusal", async () => {
