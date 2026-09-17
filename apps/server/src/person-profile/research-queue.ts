@@ -14,6 +14,7 @@ import {
   type PersonResearchProfileSummary,
   type PersonResearchDiagnosticsPage,
   type PersonResearchRunSummary,
+  type PersonResearchHistoryEntry,
 } from "@chief-of-staff-demo/shared";
 import type { WorkspacePersonProfiles } from "./profiles.js";
 import type { PersonResearch } from "./research.js";
@@ -23,6 +24,8 @@ import { buildProfileSummary, pagedDiagnostics } from "./research-summary.js";
 export type PersonResearchSettingsPatch = {
   [K in keyof PersonResearchSettings]?: PersonResearchSettings[K] | undefined;
 };
+
+const PERSON_RESEARCH_HISTORY_PER_PROFILE = 50;
 
 /**
  * One Workspace runtime owns dispatch of continuous research operations.
@@ -74,7 +77,11 @@ export class PersonResearchQueue {
           day: this.now().slice(0, 10),
           usedCalls: 0,
           jobs: [],
+          history: [],
         };
+    if (!this.state.history) {
+      this.state.history = this.seedHistoryFromJobs(this.state.jobs);
+    }
     for (const job of this.state.jobs) this.loaded.add(job.profileId);
     /* A process cannot carry its in-flight operation through a restart, and a
        shutdown is an interruption rather than a completion: the job says so,
@@ -216,7 +223,8 @@ export class PersonResearchQueue {
       const operation = job.operation;
       const liveId = job.currentOperationId;
       const live = liveId && (job.state === "researching" || liveId !== operation?.operationId);
-      const currentId = live ? liveId : operation?.operationId;
+      const entries = (this.state.history ?? []).filter((e) => e.profileId === job.profileId);
+      const currentId = live ? liveId : (operation?.operationId ?? entries[0]?.operationId);
       const seen = new Set<string>();
       const retain = (row: Omit<PersonResearchRunSummary, "kind" | "id" | "profileId">) => {
         if (seen.has(row.operationId)) return;
@@ -236,9 +244,19 @@ export class PersonResearchQueue {
             ? { revision: job.currentOperationRevision }
             : {}),
           phase: "current",
-          createdAt: job.startedAt ?? job.queuedAt,
+          createdAt: job.currentOperationStartedAt ?? job.startedAt ?? job.queuedAt,
           status: job.state,
           summary: job.detail,
+        });
+      for (const entry of entries)
+        retain({
+          operationId: entry.operationId,
+          ...(entry.revision !== undefined ? { revision: entry.revision } : {}),
+          phase: entry.operationId === currentId ? "current" : "previous",
+          createdAt: entry.startedAt,
+          finishedAt: entry.finishedAt,
+          status: entry.conclusion,
+          summary: entry.detail,
         });
       if (operation)
         retain({
@@ -374,6 +392,9 @@ export class PersonResearchQueue {
   }
   remove(profileId: string): void {
     this.state.jobs = this.state.jobs.filter((j) => j.profileId !== profileId);
+    if (this.state.history) {
+      this.state.history = this.state.history.filter((e) => e.profileId !== profileId);
+    }
     /* A removal is a decision, and the merge on save must not mistake it for
        a Profile this instance never knew about. Privacy deletion in
        particular has to survive a concurrent runtime's snapshot. */
@@ -539,6 +560,7 @@ export class PersonResearchQueue {
     job.attempts += 1;
     job.currentOperationId = operationId;
     job.currentOperationRevision = job.attempts;
+    job.currentOperationStartedAt = this.now();
     job.detail = "Research is in progress.";
     job.updatedAt = this.now();
     this.running.add(job.profileId);
@@ -677,6 +699,83 @@ export class PersonResearchQueue {
     }
     job.operation = operation;
     job.sources = operation.sourcesRetained;
+    this.recordHistory(job, operation);
+  }
+  private recordHistory(job: PersonResearchJob, operation: PersonResearchOperationOutcome): void {
+    const entries = (this.state.history ??= []);
+    const entry: PersonResearchHistoryEntry = {
+      profileId: job.profileId,
+      operationId: operation.operationId,
+      ...(job.currentOperationRevision !== undefined
+        ? { revision: job.currentOperationRevision }
+        : job.operationRevision !== undefined
+          ? { revision: job.operationRevision }
+          : {}),
+      startedAt: operation.startedAt,
+      finishedAt: operation.finishedAt,
+      conclusion: operation.conclusion,
+      detail: operation.detail.slice(0, 300),
+      ...(operation.decisiveExtraction ? { decisive: operation.decisiveExtraction } : {}),
+    };
+    const key = `${entry.profileId}:${entry.operationId}`;
+    const index = entries.findIndex((e) => `${e.profileId}:${e.operationId}` === key);
+    if (index >= 0) {
+      entries[index] = entry;
+    } else {
+      entries.unshift(entry);
+    }
+    let count = 0;
+    for (let i = 0; i < entries.length;) {
+      if (entries[i]!.profileId === job.profileId) {
+        count += 1;
+        if (count > PERSON_RESEARCH_HISTORY_PER_PROFILE) {
+          entries.splice(i, 1);
+          continue;
+        }
+      }
+      i += 1;
+    }
+  }
+  private seedHistoryFromJobs(jobs: PersonResearchJob[]): PersonResearchHistoryEntry[] {
+    const map = new Map<string, PersonResearchHistoryEntry>();
+    for (const job of jobs) {
+      if (job.previousConclusion) {
+        const prev = job.previousConclusion;
+        map.set(`${job.profileId}:${prev.operationId}`, {
+          profileId: job.profileId,
+          operationId: prev.operationId,
+          revision: prev.revision,
+          startedAt: prev.finishedAt,
+          finishedAt: prev.finishedAt,
+          conclusion: prev.conclusion,
+          detail: prev.detail,
+          ...(prev.decisive ? { decisive: prev.decisive } : {}),
+        });
+      }
+      if (job.operation) {
+        const op = job.operation;
+        map.set(`${job.profileId}:${op.operationId}`, {
+          profileId: job.profileId,
+          operationId: op.operationId,
+          ...(job.operationRevision !== undefined
+            ? { revision: job.operationRevision }
+            : job.currentOperationRevision !== undefined
+              ? { revision: job.currentOperationRevision }
+              : {}),
+          startedAt: op.startedAt,
+          finishedAt: op.finishedAt,
+          conclusion: op.conclusion,
+          detail: op.detail.slice(0, 300),
+          ...(op.decisiveExtraction ? { decisive: op.decisiveExtraction } : {}),
+        });
+      }
+    }
+    const entries = [...map.values()];
+    entries.sort(
+      (a, b) =>
+        b.startedAt.localeCompare(a.startedAt) || b.operationId.localeCompare(a.operationId),
+    );
+    return entries;
   }
   private rollDay(): void {
     const day = this.now().slice(0, 10);
@@ -729,6 +828,24 @@ export class PersonResearchQueue {
     }
     for (const job of this.state.jobs)
       if (!merged.has(job.profileId) && !this.loaded.has(job.profileId)) jobs.push(job);
+    const historyMap = new Map<string, PersonResearchHistoryEntry>();
+    for (const entry of disk.history ?? []) {
+      if (this.removed.has(entry.profileId)) continue;
+      historyMap.set(`${entry.profileId}:${entry.operationId}`, entry);
+    }
+    for (const entry of this.state.history ?? []) {
+      if (this.removed.has(entry.profileId)) continue;
+      historyMap.set(`${entry.profileId}:${entry.operationId}`, entry);
+    }
+    const mergedProfileIds = new Set(jobs.map((job) => job.profileId));
+    const history = [...historyMap.values()].filter((entry) =>
+      mergedProfileIds.has(entry.profileId),
+    );
+    history.sort(
+      (a, b) =>
+        b.startedAt.localeCompare(a.startedAt) || b.operationId.localeCompare(a.operationId),
+    );
+    this.state.history = history;
     return {
       ...this.state,
       usedCalls:
@@ -736,6 +853,7 @@ export class PersonResearchQueue {
           ? Math.max(this.state.usedCalls, disk.usedCalls)
           : this.state.usedCalls,
       jobs,
+      history,
     };
   }
   /**

@@ -4,6 +4,8 @@ import {
   PersonResearchOperationOutcomeSchema,
   PersonResearchJobStateSchema,
   PersonResearchPreviousConclusionSchema,
+  PersonResearchHistoryEntrySchema,
+  type PersonResearchHistoryEntry,
 } from "./person-research.js";
 
 const text = z.string().min(1).max(4000);
@@ -426,6 +428,7 @@ export const PersonResearchJobSchema = z.object({
    */
   currentOperationId: z.string().max(64).optional(),
   currentOperationRevision: z.number().int().nonnegative().optional(),
+  currentOperationStartedAt: z.string().max(40).optional(),
   /** The revision `operation` (below) was settled at, once it has one. */
   operationRevision: z.number().int().nonnegative().optional(),
   /**
@@ -441,8 +444,15 @@ export const PersonResearchStatusSchema = z.object({
   day: z.string(),
   usedCalls: z.number().int().nonnegative(),
   jobs: z.array(PersonResearchJobSchema),
+  /**
+   * Durable queue-wide record of concluded operations (#417 F8). Optional:
+   * old workspaces seed it from their jobs on first load with this version.
+   */
+  history: z.array(PersonResearchHistoryEntrySchema).max(2000).optional(),
 });
 export type PersonResearchStatus = z.infer<typeof PersonResearchStatusSchema>;
+export type { PersonResearchHistoryEntry };
+export { PersonResearchHistoryEntrySchema };
 
 /**
  * An independently bounded queue-wide projection (issue #418, T5, spec §7),
