@@ -822,19 +822,15 @@ export function PersonDossierPanel({
                   .then((page) => {
                     if (generation !== readGeneration.current) return;
                     setDiagnosticsError("");
-                    setDiagnosticsPage((previous) =>
-                      page
-                        ? {
-                            ...page,
-                            entries: [
-                              ...(previous?.operationId === page.operationId
-                                ? previous.entries
-                                : []),
-                              ...page.entries,
-                            ],
-                          }
-                        : previous,
-                    );
+                    setDiagnosticsPage((previous) => {
+                      if (!page) return previous;
+                      // A cursor from the previous operation cannot establish the new one's first page.
+                      if (previous && previous.operationId !== page.operationId) return null;
+                      return {
+                        ...page,
+                        entries: [...(previous?.entries ?? []), ...page.entries],
+                      };
+                    });
                   })
                   .catch((error: unknown) => {
                     if (generation === readGeneration.current)

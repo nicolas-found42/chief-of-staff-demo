@@ -595,3 +595,77 @@ test.each([
     );
   },
 );
+
+test("diagnostic pagination restarts when an old cursor receives a new operation suffix", async () => {
+  vi.useFakeTimers();
+  const api = client();
+  const diagnostic = (operationId: string, reason: string) =>
+    fromPartial<PersonResearchDiagnosticsPage["entries"][number]>({
+      operationId,
+      code: "rendering-failed",
+      stage: "rendering",
+      outcome: "failed",
+      occurredAt: "2026-09-15T10:00:00Z",
+      reason,
+    });
+  const read = vi.fn(async () => ({
+    ...view(),
+    research: research({
+      currentOperationId: "A",
+      operationRevision: 1,
+      diagnostics: {
+        totalAttempts: 60,
+        byCode: { "rendering-failed": 60 },
+        sample: [diagnostic("A", "Sample from operation A")],
+        truncated: true,
+      },
+    }),
+  }));
+  api.read = read;
+  const summary = vi.fn<DossierClient["summary"]>();
+  api.summary = summary;
+  const pending = Promise.withResolvers<PersonResearchDiagnosticsPage | null>();
+  const diagnostics = vi
+    .fn<DossierClient["diagnostics"]>()
+    .mockResolvedValueOnce({
+      operationId: "A",
+      profileId: "maya",
+      totalAttempts: 60,
+      nextCursor: "50",
+      entries: [diagnostic("A", "First page from operation A")],
+    })
+    .mockReturnValueOnce(pending.promise)
+    .mockResolvedValueOnce({
+      operationId: "B",
+      profileId: "maya",
+      totalAttempts: 60,
+      nextCursor: "50",
+      entries: [diagnostic("B", "First page from operation B")],
+    });
+  api.diagnostics = diagnostics;
+  const container = await mount(api);
+  await click(container, "Load full diagnostic history");
+  expect(container.textContent).toContain("First page from operation A");
+  await click(container, "Load more diagnostics");
+  expect(diagnostics).toHaveBeenLastCalledWith("maya", "50");
+
+  // The server changes operations while the cursor request is outstanding.
+  // No poll or action updates the view or invalidates the read generation.
+  await act(async () =>
+    pending.resolve({
+      operationId: "B",
+      profileId: "maya",
+      totalAttempts: 60,
+      nextCursor: null,
+      entries: [diagnostic("B", "Suffix from operation B at offset 50")],
+    }),
+  );
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(summary).not.toHaveBeenCalled();
+  expect(container.textContent).not.toContain("Suffix from operation B at offset 50");
+  expect(container.textContent).not.toContain("First page from operation A");
+
+  await click(container, "Load full diagnostic history");
+  expect(diagnostics).toHaveBeenLastCalledWith("maya", undefined);
+  expect(container.textContent).toContain("First page from operation B");
+});
