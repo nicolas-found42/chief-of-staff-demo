@@ -61,7 +61,7 @@ export class PersonDossierStore {
     input: Omit<PersonSourceDocument, "schemaVersion" | "id" | "hash">,
   ): PersonSourceDocument {
     /* A recovered page can carry more outbound links than the stored format
-       allows (the LinkedIn authwall recovery rendered 251 on one page).
+       allows (a recovered joseceresc page captured 201 outbound links).
        Bounding the list is a stored-format constraint, not an extraction
        failure: dedupe, keep the first links, note the bound in provenance,
        and let the operation retain the source instead of throwing away the
