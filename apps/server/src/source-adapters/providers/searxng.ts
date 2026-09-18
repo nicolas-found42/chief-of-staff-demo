@@ -10,7 +10,23 @@ const SNIPPET_LIMIT = 400;
 
 type SearxngResult = { url?: unknown; title?: unknown; content?: unknown };
 
-type SearxngResponse = { results?: unknown };
+type SearxngResponse = { results?: unknown; unresponsive_engines?: unknown };
+
+const MAX_REPORTED_ENGINES = 6;
+
+/** `unresponsive_engines` carries `[engine, reason]` pairs; older bodies carry
+    bare engine names. An entry of any other shape is reported verbatim rather
+    than dropped, because the reason is the whole point of reading it. */
+function engineFailures(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (Array.isArray(entry)) return entry.filter((part) => typeof part === "string").join(": ");
+      return JSON.stringify(entry);
+    })
+    .filter((text) => text.length > 0);
+}
 
 function absoluteHttpUrl(value: string | null): string | null {
   if (value === null) return null;
@@ -76,8 +92,22 @@ export function createSearxngProvider(options: {
           ),
         });
       }
-      // Empty results alongside non-empty `unresponsive_engines` means engines
-      // failed server-side — still a fact, not a failure: return [].
+      /* No results while engines failed server-side is a refusal, not an
+         answer: the query never reached a working engine, and recording it as
+         "the web knows nothing" is the misdiagnosis ADR-0049 asks this seam to
+         avoid. It is classed transient because suspension is per-engine and
+         short-lived - a cooldown here would bench the whole instance over the
+         engines that are walled by design. */
+      if (results.length === 0) {
+        const failures = engineFailures(parsed.unresponsive_engines);
+        if (failures.length > 0)
+          throw new ProviderRefusedError(
+            "error",
+            `searxng returned no results; engines failed: ${failures
+              .slice(0, MAX_REPORTED_ENGINES)
+              .join(", ")}`,
+          );
+      }
       return results;
     },
   };

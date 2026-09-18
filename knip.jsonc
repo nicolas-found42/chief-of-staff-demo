@@ -16,6 +16,7 @@
         "scripts/debug/extraction-audit.mts",
         "scripts/debug/extraction-live-audit.mts",
         "scripts/debug/provider-recovery-probe.mts",
+        "scripts/debug/searxng-engine-probe.mts",
         "scripts/run-search-canaries.mjs",
         "scripts/run-canaries.mjs",
         "scripts/task-cutover.mts",

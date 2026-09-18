@@ -71,11 +71,22 @@ describe("createSearxngProvider", () => {
     expect(calls[0].options).toEqual({ timeoutMs: IO.timeoutMs });
   });
 
-  it("returns [] even when engines were unresponsive server-side", async () => {
+  it("refuses when there are no results and engines failed server-side", async () => {
     const { fetch } = respondWith(
       200,
       JSON.stringify({ results: [], unresponsive_engines: ["google", "bing"] }),
     );
+    const provider = createSearxngProvider({ baseUrl: "http://searxng:8080", fetch });
+
+    await expect(provider.search("anything", IO)).rejects.toMatchObject({
+      name: "ProviderRefusedError",
+      reason: "error",
+      message: expect.stringContaining("google, bing"),
+    });
+  });
+
+  it("returns [] when there simply are no results and no engines failed", async () => {
+    const { fetch } = respondWith(200, JSON.stringify({ results: [], unresponsive_engines: [] }));
     const provider = createSearxngProvider({ baseUrl: "http://searxng:8080", fetch });
 
     await expect(provider.search("anything", IO)).resolves.toEqual([]);

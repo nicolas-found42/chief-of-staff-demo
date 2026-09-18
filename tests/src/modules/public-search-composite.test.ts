@@ -307,6 +307,29 @@ describe("the PublicSearch composite", () => {
     expect(calls.some((url) => isSuggestUrl(url))).toBe(false);
   });
 
+  it("never expands when a provider refused, even if another answered cleanly empty", async () => {
+    // Pins the expansion gate's existing behavior for the searxng "error"
+    // refusal (server-side engine failures, ADR-0049): any refusal - not
+    // just rate-limited/captcha ones - blocks the second-chance expansion,
+    // because `runPass`'s refused counter does not distinguish reasons.
+    const { fetch, calls } = makeFetch([
+      {
+        match: (url) => hostOf(url) === "searxng.test",
+        body: JSON.stringify({
+          results: [],
+          unresponsive_engines: [["brave", "too many requests"]],
+        }),
+      },
+    ]);
+    const search = createPublicSearch(fetch, undefined, {
+      searxngUrl: "http://searxng.test",
+      providerFilter: (name) => name === "searxng" || name === "wikipedia",
+    });
+
+    await expect(search("ada lovelace")).resolves.toEqual([]);
+    expect(calls.some((url) => isSuggestUrl(url))).toBe(false);
+  });
+
   it("swallows suggest-endpoint failures instead of failing the query", async () => {
     const { fetch, calls } = makeFetch([
       { match: isSuggestUrl, body: "", reject: "suggest endpoint down" },
