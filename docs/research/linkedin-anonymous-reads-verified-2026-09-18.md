@@ -253,7 +253,10 @@ and no retry against a challenge. What it establishes, by family:
   `/jobs-guest/`, `/search*`; **no block disallows `/in/`**; CDP/dataset crawlers are not named,
   so archive bots fall under the `*` catch-all (CCBot is named with `Disallow: /`).
   **Correction to `person-research-without-linkedin-authentication.md`**: its statement that
-  "LinkedIn's robots.txt disallows archive bots" is not accurate — no archive bot is named at all.
+  "LinkedIn's robots.txt disallows archive bots" is imprecise — CCBot (Common Crawl's crawler) is
+  named with `Disallow: /`, but the *replay* services (Wayback, archive.today, Arquivo.pt) are
+  never named, so they fall under the `*` catch-all. Nothing in the file turns on the distinction,
+  but "no archive bot is named" would contradict this very parenthetical.
 
 ---
 
@@ -317,15 +320,21 @@ looked and found nothing" and "the app never asked":
 
 - The research engine passes `fullName: profile.fullName` into discovery
   (`apps/server/src/person-profile/research.ts:560`), and
-  `providerQuery` (`apps/server/src/source-adapters/search.ts:568`) returns `null` for `orcid`,
-  `ror` and `artic` when that name is empty. For a URL-only profile it is empty — so **the whole
-  registry lane is skipped**, which is why the operation's diagnostics contain no `orcid.org`
-  target at all while its `Sheila Warrick publications` query ran against the SERP providers.
-- The only thing that fills that name is the #445 Identity Bootstrap, and it adopts from SERP
+  `providerQuery` (`apps/server/src/source-adapters/search.ts:568`) gates **three** providers on
+  that name: `orcid` (returns `null` without a name), `ror` (needs an organization) and `artic`
+  (needs a name). For a URL-only profile those three are skipped — which is why the operation's
+  diagnostics contain no `orcid.org` target at all. Every other provider (`crossref`, `datacite`,
+  `openalex`, `wikidata`, `dblp`, …) receives the planner's query text unchanged; Crossref was
+  asked `query.bibliographic=Sheila Warrick publications`-shaped text
+  (`apps/server/src/source-adapters/providers/person-records.ts:133`) and DOI-bearing registry
+  results did reach selection in this very run. So the lane is not dark — it answers *planner
+  prose*, which cannot confirm a slug either.
+- The only thing that fills the name is the #445 Identity Bootstrap, and it adopts from SERP
   results whose URL/title carries the slug — which requires the profile page to be *indexed*
   somewhere. For `sheilawarrick` it is not indexed (B §4, C §1), so adoption never fired.
-- Net for this profile: **no name → no registry query → no identity anchor → no name.** The
-  registry routes exist in production; nothing asked them.
+- Net for this profile: **no name → three registry providers skipped, the rest queried with prose
+  → no identity anchor → no name.** The registry routes exist in production; nothing asked them
+  the question their APIs can answer.
 
 ---
 
@@ -455,18 +464,38 @@ owner's call, not the app's.
 Nothing here changes code. Four items for the maintainer:
 
 1. **Question 2 on the issue is now evidence-backed.** *Should a Profile's own canonical URL
-   always earn a browser-render attempt?* — For `richardachee` and `joseceresc` the render is what
-   produced the retained article records; for `sheilawarrick` it is what proved the wall
-   (§6.2). The shipped reader short-circuits at the direct-response wall and therefore never asks.
+   always earn a browser-render attempt?* — The verbatim provenance notes from the 2026-09-18
+   journey run split the record: for `richardachee` the direct HTTP response supplied 3 of the 9
+   retained article records and the bounded render supplied 6; for `joseceresc` it was 3 of 4 and
+   1 (`artifacts/person-profile-remediation/20260918T035740Z-issue-423-journeys/workspace/person-source-documents/`).
+   Neither of those direct reads was walled, so what the render demonstrably adds is *breadth on a
+   page that already rendered*. For `sheilawarrick` the only render of a walled canonical URL
+   landed on `/authwall` and retained nothing. **Wall → render recovery is therefore untested**:
+   no observed case has a walled direct read followed by a productive render, and the shipped
+   reader short-circuits at the direct-response wall and never asks.
 2. **If 1 is answered yes, the guard must change in the same commit.** Otherwise the render's
    authwall landing page is accepted and retained (§6.3) — the exact failure #423's constraint 3
    forbids. The cheap shape: extend `detectChallenge`-style detection to the rendered body (authwall
    selectors and the join-form phrases), and treat a render whose final URL is `/authwall` as a
    wall regardless of body.
-3. **No posture change is needed to keep the working cases working.** The browser route is already
-   a real anonymous browser; the direct transport already retrieves guest pages sometimes with an
-   honest UA. The candidate repo's browser-UA declaration is not required by the app, so the
-   "control evasion" judgment call in A §4.1 does not have to be made.
+3. **Adopting the route is a posture decision, not a free win — this doc cannot render it.**
+   ADR-0042's affirmative grant is narrower than "keyless": *"LinkedIn evidence may enter through
+   public indexing or an explicitly authorized provider"*, and a direct anonymous fetch of
+   `/in/<slug>` is neither. The repo already recorded this exact route, live-probed on 2026-09-01,
+   as posture **(b) "Do not adopt"** — `docs/research/public-search-providers.md`, "LinkedIn — the
+   route map" (`:317-352`, the row reading "Logged-out `linkedin.com/in/<slug>` fetch … **works
+   today** … Do not adopt (available if the user chooses to relax)"). The transport side is
+   likewise governed: `browserUserAgent` (`apps/server/src/source-adapters/http.ts:33-37`) is the
+   documented browser-like UA exception and is imported by exactly one provider
+   (`providers/duckduckgo.ts:48`; the comment names Mojeek, whose provider rides the descriptive
+   default UA instead). **So the correct next step is an ADR that either re-affirms the exclusion
+   or adopts the direct read and extends the UA exception to LinkedIn with a named provider
+   boundary** — the "control evasion" judgment call in A §4.1 still does not have to be made,
+   because nothing here proposes disguising a client beyond the repo's existing documented
+   exception class. One record is now stale regardless of the decision: `eligibility.ts:479-488`
+   excludes the `linkedin` route on the ground that *"No keyless anonymous read exists"*, which is
+   no longer accurate — the read exists from a browser-shaped client when the IP is not blanketed
+   (§9). The exclusion may still be right; its stated reason is not.
 4. **The registry lane is dark for exactly the profiles that need it (§5.4).** `providerQuery`
    skips `orcid`/`ror`/`artic` when the operation profile has no name, and the only thing that
    gives it one is the #445 bootstrap, which needs the page to be indexed. C found the anchors
@@ -517,16 +546,25 @@ profile, no cookies, `navigator.webdriver=false`, attached over CDP without `--e
 took the stub too for `joseceresc` — main document 999, then the stub's own JS hop to
 `/authwall?…sessionRedirect=/in/joseceresc`, `pageKey auth_wall_desktop_profile`, h1 "Join LinkedIn".
 
-The stub served while blanketed hashes to `895d2a337cecd4bf36e6ff9a7e669a63` — **the same body** as
-the subject's per-slug refusal and as Jose's early-morning refusal. Status, size, headers and
-Cloudflare markers are identical: **nothing on the wire separates "this profile is not served
-anonymously" from "this IP is throttled right now."**
+The stub served while blanketed is **byte-identical to the per-slug refusal**, and the identity
+holds across clients, regimes and days: all eleven archived 1 530-byte samples from this machine
+(`raw/li-in-chrome.body`, `li-in-curl.body`, `li-in-jose.body`, `li-pubdir-*.body`, the burst
+probes) hash to `md5 895d2a337cecd4bf36e6ff9a7e669a63` = `sha256
+644031a68bde879af85bcc9cb3e6fa1e9a6b0f61d49307581974b5dbc09d3de8`. That same SHA-256 is what the
+app stored for its 07:41Z attempt (`person-research.json`, attempt `b2f4ca74…`) and what
+`person-research-without-linkedin-authentication.md` §1.2 recorded a day earlier — so the two
+regimes serve literally the same bytes from this machine. (An apparent mismatch was an
+MD5-versus-SHA-256 comparison, now settled.) Status, size, headers and Cloudflare markers are
+identical too: **nothing on the wire separates "this profile is not served anonymously" from "this
+IP is throttled right now."**
 
-Recovery, sampled one request per 4 minutes with a fresh slug and then, when that failed to lift it,
-one request per 10 minutes after total silence: red at 08:15, 08:19, 08:22, 08:26, 08:30, 08:34,
-08:38, 08:50, 09:00 and 09:10Z — a window of **at least 57 minutes**, long-lived rather than a
-momentary rate limiter. A detached watcher keeps validating and will run the missing controls
-(the nonexistent-slug battery below) on the first green window.
+Recovery was then measured with a **silence-then-single-probe** policy, not continuous sampling,
+because a sliding-window limiter would be kept hot by the sampler itself: one request per 10
+minutes after total silence stayed red at 08:50, 09:00 and 09:10Z, and a detached watcher that
+probed once per 15 minutes stayed red at 09:14 → 10:59Z. **The blanket window is at least three
+hours** (08:15 → 11:14Z), long-lived rather than a momentary rate limiter. The watcher now doubles
+its silent window after every red reading (20 min, 40, 80, …) and only a validated green reading
+starts the battery; its findings land in `raw/recovery-watch.log`.
 
 ### 9.3 Why this makes the gate time-varying, not a profile property
 
@@ -564,9 +602,10 @@ rate-shaped bot-management response, not a UA rule.
 | URL shapes | trailing slash, `?trk=public_profile`, `?locale=en_US`, `?original_referer=google`, `/en`, `?lipi=…`, `/pub/dir/Sheila/Warrick` | 999 on all seven |
 | Anonymous browser | real Chrome 153, fresh profile, no cookies, `navigator.webdriver=false`, headed, over CDP | stub → `/authwall` join form; no identity in the 75 KB page |
 | Other LinkedIn surfaces | jobs guest API, company guest pages, `/pub/dir`, robots | jobs/company work and carry no person data; person namespace refused |
-| Search indexes | Bing (`site:`, quoted URL, name), DuckDuckGo, Google, Startpage, Mojeek, Marginalia, SearXNG, Mwmbl, Wiby | no result anywhere carries the slug; nothing indexed under `sheilawarrick` at all |
-| Archives | Wayback (replay, availability, CDX), archive.today, Arquivo.pt (CDX, timemap, textsearch), Common Crawl | no capture in any of them |
+| Not yet probed (queued in the cool window) | `m.linkedin.com/in/<slug>`, `/public-profile/in/<slug>`, `/people-guest/people-search?keywords=…`, `/directory/people-sheila/`, plus the nonexistent-slug control in both the fetch mode and the production renderer | `/people/search/`, `/people-guest/` and `/public-profile/` appear in LinkedIn's own robots disallow lists and were never probed by any lane; the control settles whether a red row proves existence-plus-gating or nothing at all (§9.6) |
+| Archives | Wayback (replay, availability, CDX), archive.today, Arquivo.pt (CDX, timemap, textsearch), Common Crawl, GhostArchive | no capture in any of them; GhostArchive answers "Page 0 out of 0", and Common Crawl's 2026-34 index returns 404 for the slug **and for `billgates`** — LinkedIn names `CCBot` in robots, so no crawl holds any `/in/` page, which is why crawls were already dropped as a visibility proxy (§7). |
 | Keyless renderers/proxies | Microlink, Jina Reader, codetabs, allorigins, corsproxy, urlscan, Google cache | refused, empty, or retired |
+| Search indexes | Bing (`site:`, quoted URL, name), DuckDuckGo, Google, Startpage, Mojeek, Marginalia, SearXNG, Mwmbl, Wiby | **the index lane is void, not negative.** Bing's SERPs decode to filler for every one of these queries (barcode generators for the `/posts` query, SOC-2 pages for the name, calculator sites for the slug) — a degraded or substituted SERP backend on this machine, so "nothing indexed" is not established and is not used anywhere in this document as evidence of non-publicness. The app's own 22 discovery queries ran into the same wall (`document-empty | html-reader | https://www.google.com/search?q=Sheila+Warrick`). |
 | Path diversity | IPv6 egress | none on this host (LinkedIn resolved to an IPv4-mapped address); no second identity |
 | Named mirrors / registries | Wellfound, RocketReach, Success.ai, ZoomInfo title, The Org, Apollo, SignalHire, ContactOut, Crunchbase, Backstage, ORCID, Crossref, Wikidata P6634, DataCite, EDGAR, NPPES, VIAF, Open Library | person data exists under name similarity only (see §5); nothing attaches any of it to the slug |
 
@@ -576,15 +615,163 @@ profile's visibility.
 
 ### 9.6 Scheduled confirmation
 
-One control is still missing a clean reading, because regime B was in force by the time the loop
-reached it: **the nonexistent slug**. The distinction it settles is between "999 means this page is
-not publicly served" and "this page is refused while comparable pages are served". A detached
-watcher (`tooling/recovery-battery.sh`) polls a known-public slug every 15 minutes and, on the first
-reading where that slug returns the guest page, immediately fetches — one request each — the
-nonexistent slug `/in/zzzzz-does-not-exist-9f3k`, the second failing slug, the subject, the subject
-without `www`, `/pub/dir?firstName=Sheila&lastName=Warrick`, `/directory/people-sheila/`, and one
-genuine headless-Chrome dump of the subject. Its findings land in
-`.scratch/linkedin-anon-routes/raw/recovery-watch.log` and supersede this section.
+Two controls were still missing clean readings when regime B arrived, and one of them decides the
+verdict:
+
+- **The nonexistent slug.** A bot-scored client can receive the same 999 stub for "this profile is
+  not publicly served" and for "this vanity URL does not resolve". The battery therefore fetches
+  `/in/zzzzz-does-not-exist-9f3k` **in the same batch as the subject**, in the fetch mode and in the
+  production renderer. If the nonexistent slug returns the stub too, the subject's red row proves
+  neither state; if it 404s or renders a not-found guest page while the subject keeps 999/authwall,
+  existence-plus-gating is established and the remedy changes accordingly.
+- **Subject URL namespaces never probed by any lane**: `m.linkedin.com/in/<slug>`,
+  `/public-profile/in/<slug>`, `/people-guest/people-search?keywords=…`, `/directory/people-sheila/`
+  and the subject without `www`.
+
+A detached watcher (`tooling/recovery-battery.sh`) enforces **silence-then-single-probe**: one
+validate request against a known-public slug, preceded by a silent window that doubles after every
+red reading (20 min, 40, 80, …), because a fixed 15-minute cadence kept the blanket hot for three
+hours. Only a validated green reading starts the battery — one request per shape, plus one real
+headless-Chrome page load for the subject and one for the control, no retries — and the run exits.
+Findings land in `.scratch/linkedin-anon-routes/raw/recovery-watch.log` and supersede this section.
+
+**Request ledger and posture.** Every LinkedIn-facing request this diagnosis made is counted:
+33 during the 32-minute sweep (B lane), ~50 in the three-minute burst that tripped the blanket,
+and one per 15 minutes afterwards. That is far above the earlier sweeps' LinkedIn budget
+(robots.txt plus one or two Help pages), and the burst is what produced regime B — which is why
+the recovery measurement above had to be redesigned around silence. The probe matrix is
+*characterization*: §10.1 states the posture boundary and the two diagnosis-only shapes.
+
+---
+
+## 10. Review pass, same day: prior art, corrections, and three verified code facts
+
+A read-only overlap pass (subagent `OverlapClassify`, transcript at
+`history://OverlapClassify`) compared this document against the cluster
+(`linkedin-reading-options.md`, `linkedin-cookies-and-access-sweep-2026-09-18.md`,
+`person-research-without-linkedin-authentication.md`, `anti-bot-keyless-search.md`,
+`github-awesome-harvest-2026-08-30.md`, `person-research-github-patterns.md`, and the decisive
+`public-search-providers.md`). Everything it asserted that this section relies on was re-checked
+in the files first-hand.
+
+### 10.1 Prior art: what this document did not discover
+
+- **The working route was already in the repo, already probed, already classified.**
+  `public-search-providers.md:317-352` ("LinkedIn — the route map", live-probed 2026-09-01) records
+  the logged-out `/in/<slug>` fetch returning "HTTP 200, ~819 KB guest preview with headline/role
+  tokens — **works today**" and marks it posture **(b) / "Do not adopt"**. That is the same route
+  §1 of this document re-verified. The contribution here is the *verification* — several slugs with
+  same-client controls, the per-slug gate, the volume gate, the route matrix, and the app-posture
+  analysis — not the discovery.
+- **The shape of regime B is already documented for another provider.** `providers/mojeek.ts:8-19`
+  states Mojeek's "anti-bot gate is intermittent and volume-based, not UA-fingerprinted — live
+  2026-09-02: the same UA was challenged under probe bursts and passed when quiet, whatever the
+  header set". §9.2's finding is the same class of gate, measured on LinkedIn.
+- **Negative conclusions the cluster already reached and this document does not need to re-argue**:
+  every maintained OSS scraper needs `li_at` (`github-awesome-harvest-2026-08-30.md` §4.1-4.3,
+  incl. `LinkedInDumper`, `playwright_stealth`, Apify actors); no Invidious-like keyless frontend
+  exists; archive.today and the Google/Bing caches are dead for this purpose; Mojeek has a
+  `site:linkedin.com/in` coverage gap; Wikidata P6634 and ORCID `researcher-url`s are the two
+  keyless *slug seeders*; robots.txt forbids the whole surface and the header forbids automated
+  access. A candidate repo that only re-packages UA spoofing or stealth adds nothing.
+- **Stale record, arising from this document**: `eligibility.ts:479-488` excludes the `linkedin`
+  route because *"No keyless anonymous read exists."* That reason is now false (the read exists
+  from a browser-shaped client outside regime B). The *exclusion* may still be the right verdict —
+  on posture grounds (§8 item 3) — but it should be re-decided by an ADR rather than resting on a
+  negative that no longer holds. A second live-status field is stale the same way: `eligibility.ts`
+  carries the `dblp` route as `LIVE` (`:289-297`), while §4 of this document observed DBLP's
+  Anubis anti-bot page instead of JSON; `providers/dblp.ts:42-45` already reflects that in its
+  comments, so the eligibility record is what needs the update.
+- **One mechanism caveat, not a correction.** §4 reads today's Mojeek failure as a network-layer
+  block (403 for a plain UA) and says so "nuances" the standing coverage-gap framing
+  (`public-search-providers.md:341`, `providers/mojeek.ts:8-19`: an intermittent, volume-based gate
+  that is *not* UA-fingerprinted, plus a `site:linkedin.com/in` index gap). Both can be true at
+  different times — the standing records were measured 2026-09-01/02, today's was a burst-adjacent
+  single probe — and the volume-based mechanism is the one that matches §9.2. Read §4 as a
+  same-day observation, not as a refutation.
+- **Probe posture, stated once.** Two shapes in this document are *diagnosis only* and are not
+  proposed for production: the per-shape UA variants (§4, used to test whether the refusal was
+  client-shaped) and the CDP attach with automation signals suppressed (§9.2 Run 3, used to show a
+  real browser took the same blanket). Production stays with the shipped exceptions: no stealth
+  tooling, no cookie import, no proxy, no CAPTCHA interaction, no per-shape UA hunting.
+- **Small doc/code divergence, out of scope here**: `http.ts:33-37`'s comment names Mojeek among the
+  providers using `browserUserAgent`, but only `duckduckgo.ts:48` imports the constant, and
+  `mojeek.ts` documents the opposite practice deliberately. Worth one line in a cleanup PR; not
+  touched by this one.
+- **Three framing differences left open on purpose** (they need a decision, not a fact):
+  (i) this document treats broker-sourced person data as out of posture, while
+  `linkedin-reading-options.md` §4.2 holds dataset vendors posture-clean and terms-colliding;
+  (ii) `linkedin-cookies-and-access-sweep-2026-09-18.md:53-56` records that robots.txt disallows
+  `/authwall` even for Googlebot/Bingbot, while §2 above records the served page's `<meta
+  name="robots">` — a robots.txt rule and a meta directive are different instruments, and which one
+  governs an index reference was not established here; (iii) `person-research-without-linkedin-authentication.md`
+  §4.2 proposed schema.org JSON-LD Person extraction, which has no target on the guest profile page
+  (§2: its single `ld+json` block is an `Article`) though it still applies to third-party pages
+  that carry Person JSON-LD.
+
+### 10.2 In-scope routes neither this document nor the cluster tried
+
+Listed for the *identity bootstrap* lane (they surface a name or a slug, never the profile page),
+all keyless and anonymous, none attempted here: Common Crawl's **CDX index catalogue** (ADR-0072
+keeps the index reachable while excluding capture retrieval), Internet Archive **item metadata**
+(`advancedsearch.php`), GDELT, Internet Archive TV News, GLEIF, Europe PMC, StackExchange, Arctic
+Shift / Reddit RSS, PeerTube and Sepia search, Wikipedia opensearch, Yandex and Stract, and
+LinkedIn's **country-subdomain namespaces** (`uk.linkedin.com/in/…` and peers — a URL namespace no
+lane probed; the battery now carries `m.linkedin.com` and `/public-profile/` alongside it).
+`[UNVERIFIED]` as to yield: the read-only pass listed them as untried, and no request was made.
+
+### 10.3 Verified: the app's 0 sources is structural, not a wall artifact
+
+`decideIdentity` (`apps/server/src/person-profile/research.ts:1977`) decides attribution in this
+order: a private transcript; then a URL that equals a `profileUrls` entry or a matched source
+(`:1997-2001`, anchor `signal`); then an email; and then the name.
+`const name = profile.fullName ? foldName(profile.fullName) : null; if (!name || !foldName(read.text).includes(name)) return { decision: "unmatched" … }`
+(`:2043-2048`). **While `fullName` is null, every public document exits `unmatched` before the
+employer check ever runs** unless its URL is the profile's own. And the name-only `probable`
+branch requires `corroborating.length === 0 && profile.emails.length === 0 && profile.profileUrls.length === 0`
+(`:2101-2110`) — which a URL-only profile never satisfies, so even a same-name document is
+`unmatched` ("The name appears but none of the Profile's other signals do").
+
+So for `person_9b03430009cb` (URL only, `sources: 0`, `requests: 96`, `conclusion: bounded`) the
+fresh run's zero sources is a property of the profile's signal set, not only of the wall and the
+namesake noise. The operations in this tree retained *dozens* of correctly-`identity-unmatched`
+documents about other Sheila Warricks; none could ever match. **The unblock is one of two things**:
+an owner correction that adds a name and an employer (a new profile revision), or the #445
+bootstrap surfacing a SERP result that carries her profile URL — which is also the only event that
+would let the URL signal do the matching. No retry of the existing repair changes either.
+
+### 10.4 Verified: a re-run will not re-ask the seed queries
+
+`research-queue.ts` dispatch: an explicit request on an existing job keeps the checkpoint when the
+previous conclusion is `bounded` or `interrupted` (`:352-372`; the comment: "the new allowance
+resumes the retained traversal rather than rereading it") and the checkpoint is deleted only for
+`reason === "evidence"`, a changed `profileRevision` (`:322-323`), or a conclusion outside
+`bounded`/`interrupted`. The subject's job is `conclusion: bounded` with
+`checkpoint.profileRevision: 1` and 179 visited targets — including all four seed queries. A
+post-recovery run therefore **resumes**; it does not mint the fresh traversal that #445's bootstrap
+needs. The run that exercises the bootstrap is the one that follows a revision/evidence change.
+
+### 10.5 Verified: the wall branch is correct, and the retention hole is narrower and sharper
+
+- **Reachability correction.** `readPersonSource` classifies `linkedin.com` as `public-social`
+  (`research-readers.ts:195-241`) → `readSocial`; the reader body is entered only under
+  `response.status < 400 && !challenge && !wallMarker` (`:2359`). A 999 therefore takes the wall
+  branch and **never reaches `readHtml` or `tryRender`** — the earlier reading that a walled direct
+  response could still be rendered is wrong, and §6.1's observation stands as written.
+- **The reachable bad shape is a marker-less 2xx**, and it is not hypothetical: the production
+  renderer's own result for the subject was `status 200`, `finalUrl /authwall`, `challenge: null`,
+  `socialWallMarker: null`, **`accepted: true`**, `readableBytes: 1642`, no profile name (§6.2).
+  The same acceptance predicates `tryRender` applies (`research-readers.ts:1076-1084`) would accept
+  that body on the direct path too.
+- **The retention link.** `decideIdentity` is called with `pending.url` — the *requested* URL
+  (`research.ts:947`) — and matches it against `profileUrls` (`:1997-2001`). `retain()` keys the
+  `self-report` classification on `read.finalUrl` instead (`:2129-2140`). So a join-form body
+  accepted as `retrieved` would be recorded as `matched`/`signal` on the strength of the request,
+  retained with `access: retrieved`, and extracted — while *not* being labelled a self-report,
+  because the final URL is `/authwall`. That is the precise shape of the constraint-3 violation
+  (sign-in shell treated as profile content), and it is why the guard fix in §8 item 2 is not
+  cosmetic: extending the marker lists to the join-form phrases and treating a `/authwall` final
+  URL as a wall closes both the render path and this direct path.
 
 ---
 
