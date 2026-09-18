@@ -1,8 +1,9 @@
-# Minimal SearXNG settings for the compose stack (ADR-0049). This file exists
-# so the ./searxng:/etc/searxng:Z mount carries a config: with none, the image
-# generates its own — without JSON in `search.formats`, the app's
+# SearXNG settings for the compose stack (ADR-0049). This file exists so the
+# ./searxng:/etc/searxng:Z mount carries a config; with none, the image
+# generates its own - without JSON in `search.formats`, the app's
 # `format=json` API calls answer 403 (Search API doc). `use_default_settings`
 # keeps every stock engine; nothing is removed here.
+#
 # The worker refuses to boot on the image's default `ultrasecretkey`, so a
 # random key is committed here: this instance is loopback-only inside the
 # compose network (ADR-0001), so the key is a boot check, not a boundary.
@@ -13,3 +14,61 @@ search:
   formats:
     - html
     - json
+
+outgoing:
+  # Live-verified from inside this container (2026-09-18): with stock
+  # `enable_http2: true`, `bing` fails `httpx.ConnectTimeout` to www.bing.com
+  # on every request while plain HTTP/1.1 GETs to the same host answer 200 in
+  # 0.14s. Forcing HTTP/1.1 makes bing deterministic (10 results, ~150ms).
+  enable_http2: false
+  # Stock 3.0s cut the slower keyless engines mid-request.
+  request_timeout: 5.0
+  max_request_timeout: 10.0
+
+# Engine selection is live-verified per ADR-0049's rule for this seam - a
+# provider that fails live stays marked, not silently dropped. Verified with
+# `pnpm exec tsx scripts/debug/searxng-engine-probe.mts`.
+engines:
+  # Walled from this host on every request, and stock-enabled: asking them
+  # only produces `unresponsive_engines` noise and re-provokes the wall.
+  # brave 429s at the IP level; duckduckgo/startpage/google cse answer an
+  # anti-bot challenge. `yep` earned a slot in the E2 probe (10-20 results,
+  # several rounds) but self-suspended access-denied for 24h after this
+  # session's normal query volume, reproduced on a freshly restarted
+  # instance - a real signal about this workload, not a test artifact.
+  - name: brave
+    disabled: true
+  - name: duckduckgo
+    disabled: true
+  - name: startpage
+    disabled: true
+  - name: google cse
+    disabled: true
+  - name: yep
+    disabled: true
+
+  # Stock-enabled and never useful from this host: `wikidata`'s own SPARQL
+  # engine rate-limits and self-suspends on repeated queries (live-verified
+  # 2026-09-18), unlike the app's separate `createWikidataProvider` direct
+  # API integration, which this leaves untouched.
+  - name: wikidata
+    disabled: true
+
+  # Keyless engines that answer this instance. `inactive: false` is required
+  # alongside `disabled: false` for engines the image ships as inactive.
+  - name: bing
+    disabled: false
+  - name: duckduckgo web
+    disabled: false
+  - name: yandex
+    inactive: false
+    disabled: false
+  - name: swisscows
+    inactive: false
+    disabled: false
+  - name: seznam
+    inactive: false
+    disabled: false
+  - name: naver
+    inactive: false
+    disabled: false
