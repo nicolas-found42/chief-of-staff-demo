@@ -128,22 +128,14 @@ function jaroWinklerDistance(s1: string, s2: string): number {
   return jaro + prefix * 0.1 * (1 - jaro);
 }
 
-function matchesTokensOrSimilarity(left: string, right: string, threshold = 0.85): boolean {
-  if (left === right) return true;
-  const leftTokens = left.split(/\s+/).filter(Boolean);
-  const rightTokens = right.split(/\s+/).filter(Boolean);
-  if (leftTokens.length >= 2 && rightTokens.length >= 2) {
-    const leftInRight = leftTokens.every((t) => rightTokens.includes(t));
-    const rightInLeft = rightTokens.every((t) => leftTokens.includes(t));
-    if (leftInRight || rightInLeft) return true;
-  }
-  return jaroWinklerDistance(left, right) >= threshold;
-}
-
 /**
  * Verifies whether a candidate full name extracted from a search engine result title
  * corresponds to the target profile URL slug (e.g. "Jose Ceres" or "Jose Ceres Escamilla"
  * matching "joseceresc").
+ *
+ * Used during Identity Bootstrap when a profile URL's direct read is refused by an
+ * authentication wall (Issue #423). Without this verification, search results could
+ * adopt arbitrary names that do not match the operator-specified profile address.
  */
 export function matchCandidateNameToSlug(candidateName: string, slug: string): boolean {
   const rawName = candidateName.trim().toLowerCase();
@@ -167,8 +159,8 @@ export function matchCandidateNameToSlug(candidateName: string, slug: string): b
 
   if (tokens.length >= 3) {
     // Contractions such as first + second + initial of third (e.g. jose + ceres + c)
-    const contraction1 = tokens[0]! + tokens[1]! + tokens[2]![0];
-    if (compactSlug.startsWith(contraction1)) return true;
+    const firstSecondThirdInitial = tokens[0]! + tokens[1]! + tokens[2]![0];
+    if (compactSlug.startsWith(firstSecondThirdInitial)) return true;
   }
 
   const distance = jaroWinklerDistance(compactSlug, compactName);
@@ -200,28 +192,8 @@ export function matchPersonEvidence(
   }
   matchedSignals.push(...handleMatches.map((value) => `handle:${value}`));
   const nameMatches = overlap(input.fullNames, candidate.fullNames);
-  if (nameMatches.length === 0) {
-    for (const inName of input.fullNames) {
-      for (const candName of candidate.fullNames) {
-        if (matchesTokensOrSimilarity(inName, candName, 0.88)) {
-          nameMatches.push(inName);
-          break;
-        }
-      }
-    }
-  }
   matchedSignals.push(...nameMatches.map((value) => `fullName:${value}`));
   const employerMatches = overlap(input.employerHints, candidate.employerHints);
-  if (employerMatches.length === 0) {
-    for (const inEmp of input.employerHints) {
-      for (const candEmp of candidate.employerHints) {
-        if (matchesTokensOrSimilarity(inEmp, candEmp, 0.85)) {
-          employerMatches.push(inEmp);
-          break;
-        }
-      }
-    }
-  }
   matchedSignals.push(...employerMatches.map((value) => `employer:${value}`));
   const contradictoryEmail =
     input.emails.length > 0 && candidate.emails.length > 0 && emailMatches.length === 0;

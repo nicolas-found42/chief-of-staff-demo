@@ -322,6 +322,7 @@ export class PersonResearch {
     const startedAt = now();
     const started = Date.now();
     const coverage = buildCoveragePlan();
+    const initialFullName = profile.fullName;
     /* A deliberate request re-investigates the Profile's own seeds, so the
        checkpoint's visited list must not deduplicate them; every other lead
        keeps its earlier disposition. */
@@ -1467,7 +1468,8 @@ export class PersonResearch {
           !privateDocument &&
           resolvedName &&
           read.text.includes(resolvedName) &&
-          (!profile.fullName || !factualUpdates.some((u) => u.field === "fullName"))
+          !initialFullName &&
+          !factualUpdates.some((u) => u.field === "fullName")
         ) {
           factualUpdates.push({
             field: "fullName",

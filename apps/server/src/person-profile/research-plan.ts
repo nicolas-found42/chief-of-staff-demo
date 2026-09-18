@@ -344,6 +344,14 @@ export function seedQueries(profile: PersonProfile): string[] {
   return [...new Set(seeds.filter(Boolean))].slice(0, 8);
 }
 
+/**
+ * Unverified candidate identity signals extracted from search result headlines
+ * when a profile URL's direct read is refused by an upstream authwall (Issue #423).
+ *
+ * Used exclusively in-memory to steer open-web discovery queries. Per ADR-0042
+ * and ADR-0097, these candidate signals are never retained as source documents,
+ * citations, or claims in the dossier store.
+ */
 export interface CandidateIdentitySignal {
   fullName: string;
   employerHints: string[];

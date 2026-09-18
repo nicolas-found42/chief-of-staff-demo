@@ -33,7 +33,7 @@ describe("matchCandidateNameToSlug", () => {
   });
 });
 
-describe("matchPersonEvidence with enhanced name similarity", () => {
+describe("matchPersonEvidence standard evidence matching", () => {
   const baseSignals = (overrides: Partial<PersonIdentitySignals>): PersonIdentitySignals => ({
     emails: [],
     fullNames: [],
@@ -43,23 +43,23 @@ describe("matchPersonEvidence with enhanced name similarity", () => {
     ...overrides,
   });
 
-  it("matches compound names where candidate tokens contain requested name", () => {
+  it("matches full names exactly and assigns medium confidence", () => {
     const requested = baseSignals({ fullNames: ["Jose Ceres"] });
-    const observed = baseSignals({ fullNames: ["Jose Ceres Escamilla"] });
+    const observed = baseSignals({ fullNames: ["Jose Ceres"] });
     const match = matchPersonEvidence(requested, observed);
     expect(match).not.toBeNull();
     expect(match?.confidence).toBe("medium");
     expect(match?.matchedSignals).toContain("fullName:jose ceres");
   });
 
-  it("upgrades to high confidence when employer hint matches alongside compound name", () => {
+  it("upgrades to high confidence when employer hint matches alongside full name", () => {
     const requested = baseSignals({
       fullNames: ["Jose Ceres"],
       employerHints: ["CloudScale"],
     });
     const observed = baseSignals({
-      fullNames: ["Jose Ceres Escamilla"],
-      employerHints: ["CloudScale Technologies"],
+      fullNames: ["Jose Ceres"],
+      employerHints: ["CloudScale"],
     });
     const match = matchPersonEvidence(requested, observed);
     expect(match).not.toBeNull();
