@@ -249,3 +249,12 @@ locally), one provider-harness probe.
 measured confirmation that neither keyless identity bridge reaches the three blocked people, a
 concrete OSS precedent for each of the two keyless enrichment gaps, and the username-lead tool
 class for the Identity Bootstrap stage.
+
+### C. Pointer and correction (added 2026-09-18, after the verification sweep)
+
+Section 1's "load-bearing negative" — *no primary-verified code path reads `/in/<slug>` profile
+content anonymously* — is corrected by
+[`linkedin-anonymous-reads-verified-2026-09-18.md`](linkedin-anonymous-reads-verified-2026-09-18.md):
+a browser-shaped anonymous client **does** read the guest profile page today (verified live, no
+cookie, no Voyager call), gated per client shape and per profile visibility. The cookie finding
+itself is unaffected: every login-derived route remains out of posture.
