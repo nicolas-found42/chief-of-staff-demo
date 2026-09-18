@@ -21,7 +21,7 @@ test("transcript deletion journey — delete with disclosure → tombstone → r
   page,
 }) => {
   await page.goto("/people");
-  await page.getByRole("link", { name: "Review queue" }).click();
+  await page.getByRole("link", { name: "Transcript review" }).click();
   await expect(page.getByRole("heading", { name: "Retained transcripts", level: 2 })).toBeVisible();
   /* Other journeys share this server and may retain their own transcripts;
      this journey's contract is scoped to its own seeded record. */

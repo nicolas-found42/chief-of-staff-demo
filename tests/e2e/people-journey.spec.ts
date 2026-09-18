@@ -40,7 +40,7 @@ test("person profiles journey — nav → search → create → detail → revis
   await page.getByRole("button", { name: "Create profile" }).click();
   await expect(page.getByRole("alert")).toContainText("at least a full name or an email address");
 
-  await page.getByLabel("Full name").fill("Grace Hopper");
+  await page.getByLabel("Full name", { exact: true }).fill("Grace Hopper");
   await page.getByLabel("Primary email").fill("grace@example.com");
   await page.getByLabel("Role").fill("Rear Admiral");
   await page.getByLabel("Current employer").fill("US Navy");

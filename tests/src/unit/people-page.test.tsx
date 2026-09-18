@@ -196,3 +196,52 @@ describe("People search recovery", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 });
+
+describe("Person Profiles list honesty", () => {
+  it("labels the review link for the Transcript review page it opens", async () => {
+    const container = await mountPage(
+      fakePeopleClient(async () => [profileFixture({ fullName: "Ada Lovelace" })]),
+    );
+
+    const link = [...container.querySelectorAll("a")].find(
+      (anchor) => anchor.getAttribute("href") === "/people/review",
+    );
+    expect(link?.textContent).toBe("Transcript review");
+  });
+
+  it("marks .example Profiles and explains them once", async () => {
+    const container = await mountPage(
+      fakePeopleClient(async () => [
+        profileFixture({ fullName: "Pieter Levels", primaryEmail: "pieter@levelsio.example" }),
+        profileFixture({
+          id: "profile-2",
+          fullName: "Ada Lovelace",
+          primaryEmail: "ada@example.com",
+        }),
+      ]),
+    );
+
+    const rows = [...container.querySelectorAll("tbody tr")];
+    expect(rows.find((row) => row.textContent.includes("Pieter Levels"))?.textContent).toContain(
+      "Example",
+    );
+    expect(rows.find((row) => row.textContent.includes("Ada Lovelace"))?.textContent).not.toContain(
+      "Example",
+    );
+    const footnote =
+      "Example profiles ship with the workspace for Content Research; delete them anytime.";
+    expect(
+      [...container.querySelectorAll("p.muted")].filter((item) => item.textContent === footnote),
+    ).toHaveLength(1);
+  });
+
+  it("says nothing about example profiles when the list has none", async () => {
+    const container = await mountPage(
+      fakePeopleClient(async () => [
+        profileFixture({ fullName: "Ada Lovelace", primaryEmail: "ada@example.com" }),
+      ]),
+    );
+
+    expect(container.textContent).not.toContain("Example profiles ship with the workspace");
+  });
+});

@@ -32,7 +32,7 @@ test("owner onboarding journey — propose → create → confirm → correct �
   await expect(ownerCard.getByText("Confirmed", { exact: true })).toHaveCount(0);
 
   await ownerCard.getByRole("link", { name: "Create one under Person Profiles" }).click();
-  await page.getByLabel("Full name").fill("Workspace Owner");
+  await page.getByLabel("Full name", { exact: true }).fill("Workspace Owner");
   await page.getByLabel("Primary email").fill("owner-onboarding@example.com");
   await page.getByRole("button", { name: "Create profile" }).click();
   await expect(page).toHaveURL(/\/people\/person_[0-9a-f]+$/);

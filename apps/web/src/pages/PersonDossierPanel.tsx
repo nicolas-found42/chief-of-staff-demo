@@ -42,6 +42,8 @@ export interface DossierClient {
   history(id: string): Promise<PersonRelationshipRecord[]>;
   analysis(id: string): Promise<PersonDossierAnalysis | null>;
   research(id: string): Promise<unknown>;
+  /** Stops queued or in-flight research for one Profile; retained evidence stays (UX audit F7). */
+  cancel(id: string): Promise<{ cancelled: boolean }>;
   detach(id: string, sourceId: string): Promise<unknown>;
   settings: () => Promise<PersonResearchAggregateStatus & { readiness?: PersonResearchReadiness }>;
   configure(settings: Partial<PersonResearchSettings>): Promise<unknown>;
@@ -78,6 +80,10 @@ const api: DossierClient = {
   analysis: (id) => request(`/api/people/${encodeURIComponent(id)}/dossier-analysis`),
   history: (id) => request(`/api/people/${encodeURIComponent(id)}/relationship-history`),
   research: (id) => request(`/api/people/${encodeURIComponent(id)}/research`, { method: "POST" }),
+  cancel: (id) =>
+    request<{ cancelled: boolean }>(`/api/people/${encodeURIComponent(id)}/research/cancel`, {
+      method: "POST",
+    }),
   detach: (id, sourceId) =>
     request(
       `/api/people/${encodeURIComponent(id)}/sources/${encodeURIComponent(sourceId)}/detach`,
@@ -165,6 +171,26 @@ const claimNatureLabel = (nature: string): string => CLAIM_NATURE_LABELS[nature]
 const sectionStateLabel = (state: string): string => SECTION_STATE_LABELS[state] ?? state;
 const diagnosticCodeLabel = (code: string): string => DIAGNOSTIC_CODE_LABELS[code] ?? code;
 
+/** Elapsed research time in mm:ss form (UX audit F7a), e.g. "2m 14s". */
+function elapsedLabel(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return minutes ? `${minutes}m ${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
+}
+
+/** The revision selector's options (UX audit F13): a Profile with hundreds of
+    revisions otherwise offers indistinguishable "Revision N" options for its
+    whole history. The newest 50 stay listed, and a revision older than that
+    window is still included when it is the one selected, so the select keeps
+    showing the truth rather than jumping to another revision's claims. */
+const REVISION_WINDOW = 50;
+function revisionOptions(latest: number, selected: number | undefined): number[] {
+  const oldestListed = Math.max(1, latest - REVISION_WINDOW + 1);
+  const values = Array.from({ length: latest - oldestListed + 1 }, (_, index) => latest - index);
+  if (selected !== undefined && selected < oldestListed) values.push(selected);
+  return values;
+}
+
 /* Reading order within a section (UX audit F6): corroborated, uncontested
    facts lead; contested, unknown and unresolved fragments follow. The sort is
    stable, so the pipeline's own order carries within each tier. */
@@ -222,9 +248,14 @@ function readinessSurface(readiness: PersonResearchReadiness): { title: string; 
         detail: "No model provider is configured for automatic research yet.",
       };
     case "owner-not-confirmed":
+      /* The exact cure, not just the gate (UX audit F2): the connected email is
+         what the owner profile must carry, and naming it is the difference
+         between a beginner creating their own Profile and guessing. */
       return {
         title: "Research setup required",
-        detail: "An owner has not yet confirmed workspace setup for automatic research.",
+        detail: readiness.ownerEmail
+          ? `An owner has not yet confirmed workspace setup for automatic research. No Person Profile carries ${readiness.ownerEmail} yet. Create a Profile for yourself with that email under Person Profiles, then confirm it as the owner in Settings → Owner Profile.`
+          : "An owner has not yet confirmed workspace setup for automatic research.",
       };
     case "mock-provider-inactive":
       return {
@@ -286,8 +317,15 @@ function jobStateSurface(research: PersonResearchProfileSummary): {
         title: "Research paused at a safety limit",
         detail: decisive?.reason ?? research.detail,
       };
-    case "unavailable":
-      return { title: "Sources unavailable", detail: decisive?.reason ?? research.detail };
+    case "unavailable": {
+      /* A terminal conclusion with no way forward reads as a dead end (UX
+         audit F7d): the honest next step belongs in the same detail. */
+      const detail = decisive?.reason ?? research.detail;
+      return {
+        title: "Sources unavailable",
+        detail: `${detail}${/[.!?]$/.test(detail) ? "" : "."} Choose Prioritise research to try again.`,
+      };
+    }
     case "empty":
       /* Honest empty-answer copy (#417 F2, spec §7): a model that returned
          no usable answer is never rendered as "nothing was found", and a
@@ -395,6 +433,16 @@ export function PersonDossierPanel({
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyRetry, setHistoryRetry] = useState(0);
   const [actionError, setActionError] = useState("");
+  /**
+   * The app itself is not answering (UX audit F1b): a read that failed at the
+   * network level, as distinct from a request the server answered with an
+   * error. While set, the last known job state is never presented as live.
+   */
+  const [unreachable, setUnreachable] = useState(false);
+  /** Immediate acknowledgment for Prioritise research (UX audit F8). */
+  const [startingResearch, setStartingResearch] = useState(false);
+  /** Elapsed milliseconds of the operation now researching (UX audit F7a). */
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null);
   const [correctionNotice, setCorrectionNotice] = useState("");
   /** Paged full attempt history, fetched only on explicit demand (issue #418, T9, spec §7). */
   const [diagnosticsPage, setDiagnosticsPage] = useState<PersonResearchDiagnosticsPage | null>(
@@ -457,11 +505,6 @@ export function PersonDossierPanel({
       if (current.profile) onProfile?.(current.profile);
       setLatestRevision(current.dossier?.revision ?? 0);
       setCurrentSources({ profileId, ids: current.dossier?.sourceIds ?? [] });
-      /* Citation labels come from the bounded display facts; a failed read
-         degrades to the quote fallback rather than blocking the refresh. */
-      const facts = await client.sources(profileId).catch(() => ({ sources: [] }));
-      if (generation !== readGeneration.current) return;
-      setSourceFacts(facts.sources);
       const data = revision === undefined ? current : await client.read(profileId, revision);
       if (generation !== readGeneration.current) return;
       if (
@@ -473,13 +516,34 @@ export function PersonDossierPanel({
       }
       setView(data);
       lastProgress.current = progressOf(data.research);
+      /* Citation labels come from the bounded display facts; a failed read
+         degrades to the quote fallback rather than blocking the refresh. It
+         follows the view commit so the extra roundtrip never delays the
+         dossier update an interaction is waiting on — a delayed commit here
+         is what broke the source inspector's focus return (the dialog's
+         cleanup found its opener already detached). */
+      const facts = await client.sources(profileId).catch(() => ({ sources: [] }));
+      if (generation !== readGeneration.current) return;
+      setSourceFacts(facts.sources);
       const nextAnalysis =
         data.dossier && revision === undefined ? await client.analysis(profileId) : null;
       if (generation !== readGeneration.current) return;
       setAnalysis(nextAnalysis);
       setReadError("");
+      setUnreachable(false);
     } catch (error) {
-      if (generation === readGeneration.current) setReadError(errorMessage(error));
+      if (generation === readGeneration.current) {
+        /* A network-level failure means the app is not answering at all (UX
+           audit F1b): the stale state on screen must say so instead of
+           looking live. A request the server answered keeps its own
+           readError path. */
+        if ((error instanceof ApiError && error.status === 0) || error instanceof TypeError)
+          setUnreachable(true);
+        else {
+          setUnreachable(false);
+          setReadError(errorMessage(error));
+        }
+      }
     } finally {
       if (generation === readGeneration.current) reading.current = false;
     }
@@ -500,6 +564,8 @@ export function PersonDossierPanel({
     try {
       const envelope = await client.summary(profileId);
       if (generation !== readGeneration.current) return;
+      // The app answered: whatever it said, it is reachable again (#F1b).
+      setUnreachable(false);
       const summary = envelope.summary;
       /* No job yet: the envelope's own pipeline readiness is still fresh
          every cycle (#417 F1), so a blocked pipeline updates its surface
@@ -517,10 +583,15 @@ export function PersonDossierPanel({
           ? { ...current, research: summary, ...(summary ? { readiness: summary.readiness } : {}) }
           : current,
       );
-    } catch {
+    } catch (error) {
       /* A side-effect-free status poll failing does not overwrite the
          primary read error; the next full refresh reports a persistent
-         problem honestly instead. */
+         problem honestly instead. A network-level failure is the exception
+         (UX audit F1b): it means the app itself is down, so the last known
+         state must stop reading as live. */
+      if (generation !== readGeneration.current) return;
+      if ((error instanceof ApiError && error.status === 0) || error instanceof TypeError)
+        setUnreachable(true);
     }
   }, [profileId, client, refresh]);
   const invalidatePending = useCallback(() => {
@@ -530,6 +601,23 @@ export function PersonDossierPanel({
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
+  /* A live elapsed time is the one progress signal that cannot be stale (UX
+     audit F7a): counters freeze while the browser source renderer works, but
+     the clock still moves. One interval, restarted only when the operation
+     itself changes — a new operation's start resets the label. */
+  const researchingStartedAt =
+    view?.research?.state === "researching" ? view.research.currentOperationStartedAt : undefined;
+  useEffect(() => {
+    const started = researchingStartedAt ? Date.parse(researchingStartedAt) : Number.NaN;
+    if (Number.isNaN(started)) {
+      setElapsedMs(null);
+      return;
+    }
+    const tick = () => setElapsedMs(Math.max(0, Date.now() - started));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [researchingStartedAt]);
   useEffect(() => {
     // Never label the last revision's claims as the newly selected revision.
     setView(null);
@@ -647,6 +735,10 @@ export function PersonDossierPanel({
       : researchSurface(view?.research ?? null);
   const dossier = view?.dossier;
   const claims = dossier?.claims ?? [];
+  /* The clock belongs to the researching surface's own line (UX audit F7a),
+     where "no stage names" made waiting indistinguishable from working. */
+  const elapsed =
+    view?.research?.state === "researching" && elapsedMs !== null ? elapsedLabel(elapsedMs) : null;
   /* The whole-operation failure counts survive the display bound (#417 F9):
      `byCode` covers every attempt while `sample` may omit the kind entirely,
      so the aggregate renderer-failed count is read from there, never from
@@ -740,13 +832,16 @@ export function PersonDossierPanel({
             }}
           >
             <option value="current">Current</option>
-            {Array.from({ length: latestRevision }, (_, index) => index + 1)
-              .reverse()
-              .map((value) => (
-                <option key={value} value={value}>
-                  Revision {value}
-                </option>
-              ))}
+            {latestRevision > REVISION_WINDOW && (
+              <option disabled>
+                …{latestRevision - REVISION_WINDOW} older revisions not listed
+              </option>
+            )}
+            {revisionOptions(latestRevision, revision).map((value) => (
+              <option key={value} value={value}>
+                Revision {value}
+              </option>
+            ))}
           </select>
         </label>
       )}
@@ -757,21 +852,34 @@ export function PersonDossierPanel({
         </p>
       )}
       <div className="card">
+        {/* The app itself is down (UX audit F1b): a stale "Researching" line
+            must never keep reading as live, so the banner replaces the live
+            surface and the last known state is labeled stale. */}
+        {unreachable && (
+          <p role="alert" className="banner-error">
+            The app is not responding. Wait a moment and refresh; if it stays down, restart it with{" "}
+            <code>docker compose up -d</code>.
+          </p>
+        )}
         <p role="status">
           <strong>
-            {!view
-              ? readError
-                ? "Research status unavailable"
-                : "Loading dossier"
-              : surface
-                ? surface.title
-                : settings?.settings.paused
-                  ? "Workspace research paused"
-                  : revision !== undefined
-                    ? "Historical dossier"
-                    : "No research status available"}
+            {unreachable
+              ? "App not responding"
+              : !view
+                ? readError
+                  ? "Research status unavailable"
+                  : "Loading dossier"
+                : surface
+                  ? elapsed === null
+                    ? surface.title
+                    : `${surface.title} · ${elapsed}`
+                  : settings?.settings.paused
+                    ? "Workspace research paused"
+                    : revision !== undefined
+                      ? "Historical dossier"
+                      : "No research status available"}
           </strong>{" "}
-          {view && (
+          {view && !unreachable && (
             <>
               · {dossier?.sourceIds.length ?? 0} retained sources · {claims.length} retained claims
             </>
@@ -779,22 +887,56 @@ export function PersonDossierPanel({
         </p>
         <p className="muted">
           {!view
-            ? readError
-              ? "The dossier could not be loaded. Retrying automatically."
-              : "Loading retained evidence and research status."
-            : (surface?.detail ??
-              (settings?.settings.paused
-                ? "An owner paused automatic research for the workspace."
-                : "Only retained evidence appears in this dossier."))}
+            ? unreachable
+              ? "The dossier could not be loaded while the app was not responding. Retrying automatically."
+              : readError
+                ? "The dossier could not be loaded. Retrying automatically."
+                : "Loading retained evidence and research status."
+            : unreachable
+              ? `The last known state was ${surface?.title ?? "no research status"}. It is stale, not live.`
+              : (surface?.detail ??
+                (settings?.settings.paused
+                  ? "An owner paused automatic research for the workspace."
+                  : "Only retained evidence appears in this dossier."))}
         </p>
-        {surface?.nextAction && (
+        {!unreachable && surface?.nextAction && (
           <p>
             <a href={surface.nextAction.href}>{surface.nextAction.label}</a>
           </p>
         )}
-        <button type="button" onClick={() => void act(() => client.research(profileId))}>
-          Prioritise research
+        {/* An identifier alone can leave the Profile unnamed (UX audit F5):
+            nothing research finds can then be attributed to it, and the cure
+            lives in this Profile's own maintenance. */}
+        {view?.profile && view.profile.fullName === null && (
+          <p className="muted">
+            We could not tell who this Profile is about from the identifier alone. Add their full
+            name under "Correct facts" in Profile maintenance on this page, then choose Prioritise
+            research again.
+          </p>
+        )}
+        <button
+          type="button"
+          disabled={startingResearch}
+          onClick={() => {
+            setStartingResearch(true);
+            void act(() => client.research(profileId)).finally(() => setStartingResearch(false));
+          }}
+        >
+          {startingResearch ? "Starting research…" : "Prioritise research"}
         </button>{" "}
+        {(view?.research?.state === "queued" || view?.research?.state === "researching") && (
+          <>
+            <button type="button" onClick={() => void act(() => client.cancel(profileId))}>
+              Stop research
+            </button>{" "}
+          </>
+        )}
+        {!unreachable &&
+          (view?.research?.state === "queued" || view?.research?.state === "researching") && (
+            <p className="muted">
+              You can leave this page — research continues and everything found so far is kept.
+            </p>
+          )}
         <details>
           <summary>Research settings</summary>
           {settings && (
@@ -1257,8 +1399,10 @@ export function PersonDossierPanel({
           tab !== "history" && displayed.map(claim)
         )}
         {tab !== "history" && tab !== "sources" && !displayed.length && !section && (
+          /* Plain language instead of storage vocabulary (UX audit F10). */
           <p className="muted">
-            No supported account is available in this section yet. Missing evidence remains unknown.
+            Nothing is documented here yet. Research has not found evidence for this section;
+            missing evidence stays unknown rather than guessed.
           </p>
         )}
       </div>

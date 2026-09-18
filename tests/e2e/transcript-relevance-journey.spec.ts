@@ -22,7 +22,7 @@ test("semantic transcript relevance journey — nav → search → confirm → r
 }) => {
   // 1. The Review surface hangs off the Person Profiles product area.
   await page.goto("/people");
-  await page.getByRole("link", { name: "Review queue" }).click();
+  await page.getByRole("link", { name: "Transcript review" }).click();
   await expect(page).toHaveURL(/\/people\/review$/);
   await expect(page.getByRole("heading", { level: 1, name: "Transcript review" })).toBeFocused();
   await expect(

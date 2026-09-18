@@ -8,8 +8,13 @@ import {
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { fromPartial } from "@total-typescript/shoehorn";
 import { beforeAll, afterAll, expect, test, vi } from "vitest";
-import type { PersonResearchProfileSummary } from "@chief-of-staff-demo/shared";
+import type {
+  PersonDossier,
+  PersonProfile,
+  PersonResearchProfileSummary,
+} from "@chief-of-staff-demo/shared";
 import {
   PersonDossierPanel,
   type DossierClient,
@@ -79,6 +84,7 @@ function makeClient(): DossierClient {
     history: async () => [],
     analysis: async () => null,
     research: async () => {},
+    cancel: async () => ({ cancelled: true }),
     detach: async () => {},
     settings: async () => ({
       schemaVersion: 1,
@@ -146,6 +152,7 @@ test("a setup-required blocker names the missing owner confirmation and links to
       readiness: {
         state: "setup-required",
         reason: "owner-not-confirmed",
+        ownerEmail: "nicolas@found42.com",
         nextAction: { label: "Open Settings", href: "/settings" },
       },
     }),
@@ -153,8 +160,27 @@ test("a setup-required blocker names the missing owner confirmation and links to
   try {
     expect(container.textContent).toContain("Research setup required");
     expect(container.textContent).toContain("owner has not yet confirmed");
+    /* The waiting email and the card that resolves it are the cure (UX audit
+       F2): a beginner otherwise never learns the gate needs their own Profile. */
+    expect(container.textContent).toContain("No Person Profile carries nicolas@found42.com yet");
+    expect(container.textContent).toContain("Settings → Owner Profile");
     const link = container.querySelector<HTMLAnchorElement>("a[href='/settings']");
     expect(link?.textContent).toBe("Open Settings");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("without a connected email the setup-required copy stays generic", async () => {
+  const { container, root } = await mountWithResearch(
+    researchFixture({
+      readiness: { state: "setup-required", reason: "owner-not-confirmed" },
+    }),
+  );
+  try {
+    expect(container.textContent).toContain("owner has not yet confirmed");
+    expect(container.textContent).not.toContain("No Person Profile carries");
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -638,5 +664,128 @@ test("audit F13: an old stored summary gains punctuation on read without changin
     await act(async () => root.unmount());
     container.remove();
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an unnamed Profile explains how to name it before research can attribute evidence", async () => {
+  const unnamed = makeClient();
+  unnamed.read = async () => ({
+    dossier: null,
+    research: researchFixture(),
+    profile: fromPartial<PersonProfile>({ id: "maya", fullName: null }),
+  });
+  const named = makeClient();
+  named.read = async () => ({
+    dossier: null,
+    research: researchFixture(),
+    profile: fromPartial<PersonProfile>({ id: "maya", fullName: "Maya Chen" }),
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(createElement(PersonDossierPanel, { profileId: "maya", client: unnamed }));
+    });
+    expect(container.textContent).toContain("could not tell who this Profile is about");
+    expect(container.textContent).toContain('"Correct facts"');
+    expect(container.textContent).toContain("Prioritise research again");
+    // Once the Profile has a name the guidance has nothing left to ask for.
+    await act(async () => {
+      root.render(createElement(PersonDossierPanel, { profileId: "maya", client: named }));
+    });
+    expect(container.textContent).not.toContain("could not tell who this Profile is about");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("a terminal unavailable conclusion names the retry step", async () => {
+  const { container, root } = await mountWithResearch(
+    researchFixture({
+      state: "unavailable",
+      detail:
+        "Investigated the planned coverage without finding evidence that could be attributed to this person.",
+    }),
+  );
+  try {
+    expect(container.textContent).toContain("Sources unavailable");
+    expect(container.textContent).toContain("Choose Prioritise research to try again.");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("an empty section says plainly that nothing is documented yet", async () => {
+  const { container, root } = await mountWithResearch(researchFixture());
+  try {
+    expect(container.textContent).toContain("Nothing is documented here yet");
+    expect(container.textContent).not.toContain("No supported account is available");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+function revisionClient(): DossierClient {
+  const client = makeClient();
+  client.read = async (_id, revision) => ({
+    dossier: fromPartial<PersonDossier>({
+      revision: revision ?? 120,
+      claims: [],
+      sections: [],
+      sourceIds: [],
+    }),
+    research: null,
+  });
+  return client;
+}
+
+test("audit F13: the revision selector lists the newest 50 revisions and names the rest", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(PersonDossierPanel, { profileId: "maya", client: revisionClient() }),
+      ),
+    );
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="Dossier revision"]')!;
+    const options = [...select.options];
+    expect(options.filter((option) => option.textContent.startsWith("Revision "))).toHaveLength(50);
+    const note = options.find((option) =>
+      option.textContent.includes("older revisions not listed"),
+    );
+    expect(note?.textContent).toBe("…70 older revisions not listed");
+    expect(note?.disabled).toBe(true);
+    expect(select.textContent).toContain("Revision 120");
+    expect(select.textContent).not.toContain("Revision 70");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("audit F13: a selected revision older than the window stays in the selector", async () => {
+  window.history.replaceState(null, "", "/?dossierRevision=5");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(PersonDossierPanel, { profileId: "maya", client: revisionClient() }),
+      ),
+    );
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="Dossier revision"]')!;
+    expect(select.value).toBe("5");
+    expect([...select.options].some((option) => option.value === "5")).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    window.history.replaceState(null, "", "/");
   }
 });

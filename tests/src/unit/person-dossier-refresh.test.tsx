@@ -12,6 +12,7 @@ import {
   PersonDossierPanel,
   type DossierClient,
 } from "../../../apps/web/src/pages/PersonDossierPanel";
+import { ApiError } from "../../../apps/web/src/client";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -33,6 +34,7 @@ function client(): DossierClient {
     history: vi.fn(async () => []),
     analysis: vi.fn(async () => null),
     research: vi.fn(async () => {}),
+    cancel: vi.fn(async () => ({ cancelled: true })),
     detach: vi.fn(async () => {}),
     configure: vi.fn(async () => {}),
     settings: vi.fn<DossierClient["settings"]>(async () => ({
@@ -698,4 +700,116 @@ test("diagnostic pagination restarts when an old cursor receives a new operation
   await click(container, "Load full diagnostic history");
   expect(diagnostics).toHaveBeenLastCalledWith("maya", undefined);
   expect(container.textContent).toContain("First page from operation B");
+});
+
+test("a network-level poll failure says the app is down instead of showing stale progress", async () => {
+  vi.useFakeTimers();
+  const api = client();
+  const researching = research({ state: "researching", attempts: 1, sources: 1 });
+  api.read = vi.fn(async () => ({ ...view(), research: researching }));
+  let polls = 0;
+  api.summary = vi.fn<DossierClient["summary"]>(async () => {
+    polls += 1;
+    /* The app itself is gone: `request` reports this as status 0, while a
+       server-answered failure keeps its own status and its readError path. */
+    if (polls === 1) throw new ApiError(0, "The app could not confirm the request.");
+    return { summary: researching, readiness: { state: "ready", reason: "ready" } };
+  });
+  const container = await mount(api);
+  expect(container.textContent).toContain("0 model calls");
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The app is not responding");
+  expect(alert?.textContent).toContain("docker compose up -d");
+  // The last known state is labeled stale, never presented as live progress.
+  expect(container.textContent).toContain("The last known state was Researching");
+  expect(container.textContent).toContain("stale, not live");
+  expect(container.textContent).not.toContain("0 model calls");
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
+  expect(container.textContent).not.toContain("The app is not responding");
+  expect(container.textContent).not.toContain("stale, not live");
+  expect(container.textContent).toContain("Researching");
+});
+
+test("a researching surface ticks the operation's elapsed time", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-09-18T12:00:00Z"));
+  const api = client();
+  api.read = vi.fn(async () => ({
+    ...view(),
+    research: research({
+      state: "researching",
+      currentOperationStartedAt: "2026-09-18T11:57:46Z",
+    }),
+  }));
+  const container = await mount(api);
+  expect(container.textContent).toContain("Researching · 2m 14s");
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(container.textContent).toContain("Researching · 2m 15s");
+  expect(container.textContent).not.toContain("2m 14s");
+});
+
+test("Stop research cancels the job and refreshes into the interrupted state", async () => {
+  const api = client();
+  api.read = vi
+    .fn<DossierClient["read"]>()
+    .mockResolvedValueOnce({ ...view(), research: research({ state: "queued" }) })
+    .mockResolvedValue({
+      ...view(),
+      research: research({ state: "interrupted", detail: "Stopped before it finished." }),
+    });
+  const cancel = vi.fn(async () => ({ cancelled: true }));
+  api.cancel = cancel;
+  const container = await mount(api);
+  expect(container.textContent).toContain("Queued for research");
+  await click(container, "Stop research");
+  expect(cancel).toHaveBeenCalledWith("maya");
+  expect(container.textContent).toContain("Research interrupted");
+});
+
+test("a failed Stop research keeps its failure visible", async () => {
+  const api = client();
+  api.read = vi.fn(async () => ({ ...view(), research: research({ state: "researching" }) }));
+  api.cancel = vi.fn(async () => {
+    throw new Error("Stop research unavailable");
+  });
+  const container = await mount(api);
+  await click(container, "Stop research");
+  expect(container.textContent).toContain("Stop research unavailable");
+});
+
+test.each(["queued", "researching"] as const)(
+  "the %s surface says research continues after leaving the page",
+  async (state) => {
+    const api = client();
+    api.read = vi.fn(async () => ({ ...view(), research: research({ state }) }));
+    const container = await mount(api);
+    expect(container.textContent).toContain("You can leave this page");
+  },
+);
+
+test("a settled research surface does not advise leaving the page", async () => {
+  const api = client();
+  api.read = vi.fn(async () => ({
+    ...view(),
+    research: research({ state: "current", detail: "Research is current." }),
+  }));
+  const container = await mount(api);
+  expect(container.textContent).not.toContain("You can leave this page");
+});
+
+test("Prioritise research acknowledges the click before the request settles", async () => {
+  const api = client();
+  const pending = Promise.withResolvers<void>();
+  api.research = vi.fn(() => pending.promise);
+  const container = await mount(api);
+  const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (item) => item.textContent === "Prioritise research",
+  )!;
+  await act(async () => button.click());
+  expect(button.disabled).toBe(true);
+  expect(button.textContent).toBe("Starting research…");
+  await act(async () => pending.resolve());
+  expect(button.disabled).toBe(false);
+  expect(button.textContent).toBe("Prioritise research");
 });

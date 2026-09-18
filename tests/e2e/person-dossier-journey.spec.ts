@@ -1,6 +1,14 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { PersonResearchProfileSummary } from "@chief-of-staff-demo/shared";
+import type { Page } from "@playwright/test";
 import { expect, test } from "./fixture";
+
+/* The Sources tab's retained-source buttons carry readable labels (source
+   title or site) rather than positional text, so tests target them by their
+   position in the list — the Nth retained source, in dossier order. */
+function retainedSource(page: Page, index = 0) {
+  return page.locator("#dossier-panel > ul > li > button").nth(index);
+}
 
 test("automatic dossier journey — add, research, inspect source, and query demonstrated work", async ({
   page,
@@ -99,7 +107,7 @@ test("automatic dossier journey — add, research, inspect source, and query dem
     page.getByText("Reading historical dossier revision 1.", { exact: false }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Sources", exact: true }).click();
-  const retained = page.getByRole("button", { name: "Inspect retained source 1", exact: true });
+  const retained = retainedSource(page);
   await retained.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("region", { name: "Retained source" })).toContainText(quote);
@@ -144,10 +152,8 @@ test("sparse and unavailable dossiers keep unquoted sources accessible with queu
   });
   await page.request.patch("/api/people/research/settings", { data: { paused: false } });
   await page.getByRole("tab", { name: "Sources", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Inspect retained source 1", exact: true }),
-  ).toBeVisible({ timeout: 30000 });
-  await page.getByRole("button", { name: "Inspect retained source 1", exact: true }).focus();
+  await expect(retainedSource(page)).toBeVisible({ timeout: 30000 });
+  await retainedSource(page).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("region", { name: "Retained source" })).toContainText(
     "model extraction is unavailable",
@@ -267,10 +273,8 @@ test("Calendar and repeated Transcript entry reach automatically populated dossi
       .toBe(1);
     await page.goto(`/people/${id}`);
     await page.getByRole("tab", { name: "Sources", exact: true }).click();
-    await expect(
-      page.getByRole("button", { name: "Inspect retained source 1", exact: true }),
-    ).toBeVisible({ timeout: 30000 });
-    await page.getByRole("button", { name: "Inspect retained source 1", exact: true }).click();
+    await expect(retainedSource(page)).toBeVisible({ timeout: 30000 });
+    await retainedSource(page).click();
     await expect(page.getByRole("region", { name: "Retained source" })).toContainText(email);
   }
 });
@@ -326,7 +330,7 @@ test("completed research explains gaps and provider interruption keeps retained 
       await expect(page.getByText("model-boundary-failed", { exact: true })).toBeVisible();
     }
     await page.getByRole("tab", { name: "Sources", exact: true }).click();
-    await page.getByRole("button", { name: "Inspect retained source 1", exact: true }).click();
+    await retainedSource(page).click();
     await expect(page.getByRole("region", { name: "Retained source" })).toContainText(email);
   }
 });
@@ -405,7 +409,9 @@ test("published claims remain readable while the same operation awaits another e
       .toBe(true);
     await page.getByRole("tab", { name: "Body of work", exact: true }).click();
     await expect(page.getByRole("article").getByText(firstQuote, { exact: true })).toBeVisible();
-    await expect(page.getByText("Researching", { exact: true })).toBeVisible();
+    /* The live surface appends the elapsed time (UX audit F7), so match the
+       state word as a prefix rather than an exact string. */
+    await expect(page.getByText(/^Researching/)).toBeVisible();
     await expect(page.getByText(secondQuote, { exact: true })).toHaveCount(0);
     const active = await summary();
     expect(active?.state).toBe("researching");

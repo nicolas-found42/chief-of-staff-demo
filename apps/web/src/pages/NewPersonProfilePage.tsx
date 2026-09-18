@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import type { PersonProfile } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
 import { peopleApi, type PeopleClient } from "../clients/people";
 import { usePageFocus } from "../usePageFocus";
@@ -22,8 +23,37 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [identifier, setIdentifier] = useState("");
+  const [identifierFullName, setIdentifierFullName] = useState("");
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  /* The same-name warning holds one pending creation until the owner decides;
+     nothing is created or researched while it shows (UX audit F4). */
+  const [duplicate, setDuplicate] = useState<PersonProfile | null>(null);
+  const [heldCreation, setHeldCreation] = useState<"manual" | "lookup" | null>(null);
+
+  /* One list read per mount backs every duplicate check. A read that fails
+     answers "no match" rather than blocking creation: the warning is a
+     courtesy, and the service still refuses an exact duplicate email. */
+  const peopleCache = useRef<PersonProfile[] | null>(null);
+  const findExistingByName = useCallback(
+    async (name: string): Promise<PersonProfile | null> => {
+      const target = name.trim().toLowerCase();
+      if (!target) return null;
+      if (peopleCache.current === null) {
+        try {
+          peopleCache.current = await client.people();
+        } catch {
+          return null;
+        }
+      }
+      return (
+        peopleCache.current.find(
+          (profile) => !profile.archivedAt && profile.fullName?.trim().toLowerCase() === target,
+        ) ?? null
+      );
+    },
+    [client],
+  );
 
   async function acceptLookup(event?: React.FormEvent) {
     event?.preventDefault();
@@ -37,8 +67,26 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
     }
     setLookupBusy(true);
     setLookupError(null);
+    const existing = await findExistingByName(identifierFullName);
+    if (existing) {
+      setDuplicate(existing);
+      setHeldCreation("lookup");
+      setLookupBusy(false);
+      return;
+    }
+    await acceptIdentifierLookup();
+  }
+
+  async function acceptIdentifierLookup() {
+    setLookupBusy(true);
     try {
-      const accepted = await client.acceptPersonProfileLookup(identifier);
+      /* The name is optional but load-bearing: without one the server cannot
+         attribute what it reads, and the Profile stays "(unnamed)" after
+         research (UX audit F5). */
+      const accepted = await client.acceptPersonProfileLookup(
+        identifier,
+        identifierFullName.trim() || undefined,
+      );
       void navigate(`/people/${encodeURIComponent(accepted.profile.id)}`);
     } catch (err) {
       setLookupError(errorMessage(err));
@@ -56,6 +104,20 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
       return;
     }
     setBusy(true);
+    const existing = await findExistingByName(name);
+    if (existing) {
+      setDuplicate(existing);
+      setHeldCreation("manual");
+      setBusy(false);
+      return;
+    }
+    await createProfile();
+  }
+
+  async function createProfile() {
+    setBusy(true);
+    const name = fullName.trim();
+    const email = primaryEmail.trim();
     try {
       const input: {
         fullName?: string;
@@ -80,6 +142,15 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
     }
   }
 
+  /** Runs the creation the same-name warning held back (UX audit F4). */
+  async function createAnyway() {
+    const action = heldCreation;
+    setDuplicate(null);
+    setHeldCreation(null);
+    if (action === "manual") await createProfile();
+    else if (action === "lookup") await acceptIdentifierLookup();
+  }
+
   return (
     <>
       <h1 ref={focusRef} tabIndex={-1}>
@@ -88,8 +159,22 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
       <p className="muted">
         Start from an identifier and let the public web fill the Profile in, or enter the facts
         yourself. The Profile is saved immediately. Automatic background research starts once
-        workspace research is ready.
+        workspace research is ready:
       </p>
+      {/* The chain was invisible here, so a beginner who did the natural thing
+          got a Profile that silently never researched (UX audit F2). Guidance,
+          not a gate: both forms below stay usable throughout. */}
+      <ol className="muted">
+        <li>
+          Add a model provider key in{" "}
+          <Link to="/settings#group-provider">Settings → Extraction provider</Link>.
+        </li>
+        <li>
+          Create a Person Profile for yourself, using the email your Google account is connected
+          with.
+        </li>
+        <li>Confirm your Profile in Settings → Owner Profile.</li>
+      </ol>
 
       <div className="card">
         <h2>Find by email or profile URL</h2>
@@ -111,8 +196,28 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
               value={identifier}
               autoComplete="off"
               placeholder="someone@example.com or linkedin.com/in/someone"
-              onChange={(event) => setIdentifier(event.target.value)}
+              onChange={(event) => {
+                setIdentifier(event.target.value);
+                /* A refusal about what was typed is stale the moment it
+                   changes (UX audit F13). */
+                setLookupError(null);
+              }}
             />
+          </div>
+          {/* Research attributes nothing without a name, and this card is the
+              path the page recommends first (UX audit F5). */}
+          <div className="field-row">
+            <label htmlFor="profile-identifier-name">
+              Full name (helps research know who this is)
+            </label>
+            <input
+              id="profile-identifier-name"
+              value={identifierFullName}
+              autoComplete="off"
+              onChange={(event) => setIdentifierFullName(event.target.value)}
+            />
+          </div>
+          <div className="field-row">
             {/* Announced availability matches what activation does: the
                 control stays operable on an empty field and explains the
                 problem, rather than reporting itself disabled and then
@@ -128,6 +233,26 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
           </p>
         )}
       </div>
+      {duplicate && (
+        <div className="card banner-warn" role="alert">
+          <p>
+            A profile named <strong>{duplicate.fullName ?? "(unnamed)"}</strong> already exists.
+          </p>
+          <div className="field-row">
+            <Link className="action-button" to={`/people/${encodeURIComponent(duplicate.id)}`}>
+              Open the existing profile
+            </Link>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy || lookupBusy}
+              onClick={() => void createAnyway()}
+            >
+              Create anyway
+            </button>
+          </div>
+        </div>
+      )}
       {error && (
         <p className="banner-error" role="alert">
           {error}

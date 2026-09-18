@@ -238,6 +238,13 @@ function DependentConfigurationDisclosure({
   );
 }
 
+/* A real run mints a revision per retained source version, so the history
+   reaches hundreds of indistinguishable entries; the newest stay clickable and
+   the rest are counted (UX audit F13). */
+const REVISION_HISTORY_LIMIT = 30;
+
+/** The subtitle under the heading. The heading already names the person, so
+    this line carries role and employer only (UX audit F13). */
 function described(profile: PersonProfile): string {
   const role = profile.researchFacts?.role;
   const employer = profile.researchFacts?.currentEmployer;
@@ -247,9 +254,7 @@ function described(profile: PersonProfile): string {
     role.sourceIds.some((source) => employer.sourceIds.includes(source));
   const combinedRole =
     profile.currentEmployer && (role || employer) && !sharedPeriod ? null : profile.role;
-  return [profile.fullName, combinedRole, profile.currentEmployer]
-    .filter((value) => value !== null)
-    .join(" — ");
+  return [combinedRole, profile.currentEmployer].filter((value) => value !== null).join(" — ");
 }
 
 /**
@@ -688,6 +693,8 @@ function PersonProfileDetail({
 
   const profile = viewed ?? current;
   const isHistorical = viewed !== null && viewed.revision !== current.revision;
+  const recentRevisions = [...revisions].sort((a, b) => b - a);
+  const visibleRevisions = recentRevisions.slice(0, REVISION_HISTORY_LIMIT);
   const detachableEvidence = [...current.publications, ...current.mentions, ...current.evidence];
   const signals: string[] = [
     ...profile.emails,
@@ -1174,7 +1181,7 @@ function PersonProfileDetail({
         <div className="card">
           <h2>Revision history</h2>
           <ul>
-            {revisions.map((revision) => (
+            {visibleRevisions.map((revision) => (
               <li key={revision}>
                 {/* Every row opens the exact recorded revision, the current one
                   included: reading what was true then is always one click. */}
@@ -1189,6 +1196,11 @@ function PersonProfileDetail({
               </li>
             ))}
           </ul>
+          {recentRevisions.length > visibleRevisions.length && (
+            <p className="muted">
+              …{recentRevisions.length - visibleRevisions.length} older revisions not listed
+            </p>
+          )}
         </div>
 
         <div className="card">
