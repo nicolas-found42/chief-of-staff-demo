@@ -702,11 +702,20 @@ export function contentResearchBackfillModule(
       };
     },
     planRecovery(state) {
-      if (state.intake !== CONTENT_RESEARCH_BACKFILL_INTAKE || state.status !== "pending")
+      /* A restart loses running work as well as pending admission (#417 F6).
+         Keep recovery intake-scoped: sibling Runners share the Module id. */
+      if (
+        state.intake !== CONTENT_RESEARCH_BACKFILL_INTAKE ||
+        (state.status !== "pending" && state.status !== "running")
+      )
         return null;
       const days = Number(state.externalId?.split(":")[1]);
       if (days !== 7 && days !== 30 && days !== 90) return null;
-      return { fromStage: "collect", reason: "setup_wait_cleared", input: { windowDays: days } };
+      return {
+        fromStage: "collect",
+        reason: state.status === "running" ? "application_restart" : "setup_wait_cleared",
+        input: { windowDays: days },
+      };
     },
     async run(ctx: RunContext, input: { windowDays: 7 | 30 | 90 }): Promise<RunOutcome> {
       const watched = deps.store.listPeople();
@@ -840,11 +849,16 @@ export function peopleDiscoveryModule(
     version: CONTENT_RESEARCH_MODULE_VERSION,
     failureHint: () => "People Discovery could not produce suggestions.",
     planRecovery(state) {
-      if (state.intake !== CONTENT_RESEARCH_DISCOVERY_INTAKE || state.status !== "pending")
+      /* Same restart hole as backfill (#417 F6): a discovery Run that was
+         running when the process died stays this Intake's to recover. */
+      if (
+        state.intake !== CONTENT_RESEARCH_DISCOVERY_INTAKE ||
+        (state.status !== "pending" && state.status !== "running")
+      )
         return null;
       return {
         fromStage: "discover",
-        reason: "setup_wait_cleared",
+        reason: state.status === "running" ? "application_restart" : "setup_wait_cleared",
         input: { invocation: "scheduled" },
       };
     },

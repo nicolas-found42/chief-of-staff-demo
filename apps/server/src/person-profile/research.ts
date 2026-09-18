@@ -155,6 +155,13 @@ export interface ResearchAllowance {
    * fresh one, exactly as before this field existed.
    */
   operationId?: string;
+  /**
+   * A deliberate request (not a retry, refresh, or restart) cut this
+   * allowance: the Profile's own seed URLs are re-investigated against the
+   * public pages as they are now, while the retained traversal keeps its
+   * checkpoint. Restarts are continuation, never permission to re-capture.
+   */
+  explicit?: boolean;
   /** Model calls (extraction parts and planning) before the operation is bounded. */
   maxModelCalls: number;
   /** Network requests (discovery and reading) before the operation is bounded. */
@@ -313,7 +320,15 @@ export class PersonResearch {
     const startedAt = now();
     const started = Date.now();
     const coverage = buildCoveragePlan();
-    const leads = new LeadRegistry(allowance.checkpoint?.visited ?? []);
+    /* A deliberate request re-investigates the Profile's own seeds, so the
+       checkpoint's visited list must not deduplicate them; every other lead
+       keeps its earlier disposition. */
+    const seedTargets = new Set(profile.profileUrls.map((url) => canonicalSourceUrl(url)));
+    const leads = new LeadRegistry(
+      allowance.explicit
+        ? (allowance.checkpoint?.visited ?? []).filter((target) => !seedTargets.has(target))
+        : (allowance.checkpoint?.visited ?? []),
+    );
     const linked = new Set<string>(allowance.checkpoint?.linked ?? []);
     const rejectedEntries = [...new Set(this.deps.dossiers.rejectedEntries(profile.id))];
     const rejected = new Set(
@@ -378,7 +393,11 @@ export class PersonResearch {
     const resumableSources = new Map<string, PersonSourceDocument>();
     for (const id of pendingSourceIds) {
       const source = this.deps.dossiers.source(profile.id, id);
-      if (source) resumableSources.set(canonicalSourceUrl(source.url), source);
+      if (!source) continue;
+      /* A deliberate request re-reads the Profile's own pages as they are
+         now; every other retained source resumes its capture. */
+      if (allowance.explicit && seedTargets.has(canonicalSourceUrl(source.url))) continue;
+      resumableSources.set(canonicalSourceUrl(source.url), source);
     }
     const factualUpdates: Parameters<WorkspacePersonProfiles["acceptResearchFacts"]>[2] = [];
 
@@ -1246,13 +1265,13 @@ export class PersonResearch {
               /* A provider that keeps failing is an interruption of the
                  operation; one that failed on this document is a gap in it. */
               if (extractionHealth.failure()) {
+                /* The latch's wording is the observed classification's
+                   wording (#417 F2): a schema-breaking or empty answer is
+                   not a provider outage, and this operation did observe one. */
+                const described = describeExtractionBoundaryInterruption([...recorder.all()]);
                 interruption = {
-                  code: {
-                    code: "model-boundary-failed",
-                    reason: "The configured model provider failed during extraction.",
-                  },
-                  reason:
-                    "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
+                  code: { code: described.code, reason: described.codeReason },
+                  reason: described.detail,
                 };
                 documentInterrupted = true;
               }

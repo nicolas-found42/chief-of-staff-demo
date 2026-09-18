@@ -56,7 +56,7 @@ test("a public-only person has a separate empty Relationship history tab while r
 });
 
 function makeClient(): DossierClient {
-  const research: NonNullable<Awaited<ReturnType<DossierClient["summary"]>>> = {
+  const research: PersonResearchProfileSummary = {
     schemaVersion: 1,
     profileId: "maya",
     readiness: { state: "ready", reason: "ready" },
@@ -98,7 +98,10 @@ function makeClient(): DossierClient {
       },
     }),
     configure: async () => {},
-    summary: async () => research,
+    summary: async () => ({
+      summary: research,
+      readiness: { state: "ready", reason: "ready" },
+    }),
     diagnostics: async () => null,
   };
 }
@@ -215,6 +218,39 @@ test("a previous conclusion stays visible as labeled history and is never shown 
     expect(container.textContent).not.toContain("Research interrupted");
     expect(container.textContent).toContain("Previous research attempt");
     expect(container.textContent).toContain("transport or provider-side failure");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("a real unusable-shape interruption names the extraction boundary, not a generic interruption", async () => {
+  /* Production path (#417 F2, ReadinessAudit): an unusable shape latches the
+     operation into `interrupted` with pending work retained — not an `empty`
+     settled state. The title must come from the decisive classification. */
+  const { container, root } = await mountWithResearch(
+    researchFixture({
+      state: "interrupted",
+      detail: "Extraction responses did not match the dossier extraction schema.",
+      decisive: {
+        operationId: "op-1",
+        profileId: "maya",
+        stage: "extraction",
+        disposition: "interrupted",
+        classification: "no-usable-model-answer",
+        cause: "observed",
+        reason: "The model returned no usable extraction answer; retained evidence is preserved.",
+        recoveryAttempts: 0,
+        completedUnits: 0,
+        incompleteUnits: 1,
+        recordedAt: "2026-09-05T00:00:00Z",
+      },
+    }),
+  );
+  try {
+    expect(container.textContent).toContain("No usable extraction answer");
+    expect(container.textContent).toContain("retained evidence is preserved");
+    expect(container.textContent).not.toContain("Research interrupted");
   } finally {
     await act(async () => root.unmount());
     container.remove();

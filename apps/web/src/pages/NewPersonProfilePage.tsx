@@ -87,7 +87,8 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
       </h1>
       <p className="muted">
         Start from an identifier and let the public web fill the Profile in, or enter the facts
-        yourself. The Profile is saved immediately and researched automatically in the background.
+        yourself. The Profile is saved immediately. Automatic background research starts once
+        workspace research is ready.
       </p>
 
       <div className="card">
@@ -95,7 +96,8 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
         <p className="muted">
           An email address or a profile address — <code>linkedin.com/in/someone</code> — is searched
           automatically. A matching existing Profile is reused; otherwise a new Profile is created.
-          Research fills its dossier as sources are found. Uncertain information remains labeled.
+          Once workspace research is ready, research fills its dossier as sources are found.
+          Uncertain information remains labeled.
         </p>
         {/* A form, so Enter in the field submits the same handler the button
             runs — the most natural keyboard action used to do nothing at all

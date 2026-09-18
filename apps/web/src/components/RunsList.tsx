@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { RUNS_PAGE_SIZE, type RunSummary } from "@chief-of-staff-demo/shared";
+import { RUNS_PAGE_SIZE, type RunActivity } from "@chief-of-staff-demo/shared";
 import { IntakeBadge, StatusPill } from "./StatusPill";
-import { formatTime, relativeTime, runTitle } from "../display";
+import {
+  formatTime,
+  isActiveRunActivity,
+  personResearchPhaseLabel,
+  relativeTime,
+  runActivityLink,
+  runTitle,
+} from "../display";
 import { runsApi } from "../clients/workspace";
 import { errorMessage } from "../client";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { useModuleLabel } from "../useModules";
-
-const ACTIVE = new Set(["pending", "running"]);
 
 export interface RunsListProps {
   /**
@@ -36,7 +41,7 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
   /* Where the row's press started, so the click can tell a tap from a drag
      that was selecting text. */
   const press = useRef<{ x: number; y: number } | null>(null);
-  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [runs, setRuns] = useState<RunActivity[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -74,7 +79,7 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
     void refresh();
   }, [refresh]);
 
-  const activeCount = runs === null ? 0 : runs.filter((run) => ACTIVE.has(run.status)).length;
+  const activeCount = runs === null ? 0 : runs.filter(isActiveRunActivity).length;
 
   // The list used to auto-update every 3s for as long as it was open, with no
   // way to pause or stop it and nothing to show for it once every run was
@@ -215,7 +220,7 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                       const down = press.current;
                       if (!down) return;
                       if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return;
-                      void navigate(`/runs/${run.id}`);
+                      void navigate(runActivityLink(run));
                     }}
                   >
                     {/* What happened leads: the title is derived at render so
@@ -224,13 +229,21 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                         screen-reader route into the run. */}
                     <td role="cell" data-label="Run" className="run-file-name">
                       <Link
-                        to={`/runs/${run.id}`}
+                        to={runActivityLink(run)}
                         className="run-link"
-                        title={run.fileName ?? run.id}
+                        title={
+                          run.kind === "person-research" ? run.profileId : (run.fileName ?? run.id)
+                        }
                       >
-                        {runTitle(run.fileName ?? run.id)}
+                        {run.kind === "person-research"
+                          ? "Person research"
+                          : runTitle(run.fileName ?? run.id)}
                       </Link>
-                      {run.fileName ? (
+                      {run.kind === "person-research" ? (
+                        <span className="muted run-file-meta">
+                          {run.profileId} · {personResearchPhaseLabel(run)}
+                        </span>
+                      ) : run.fileName ? (
                         <span className="muted run-file-meta">{run.fileName}</span>
                       ) : null}
                     </td>
@@ -239,22 +252,31 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                          except for a Run whose Module is gone, which keeps its
                          raw id rather than disappearing. */
                       <td role="cell" data-label="Module" className="muted">
-                        {moduleLabel(run.module)}
+                        {run.kind === "person-research"
+                          ? "Person Profiles"
+                          : moduleLabel(run.module)}
                       </td>
                     ) : (
                       <td role="cell" data-label="Source">
-                        <IntakeBadge intake={run.intake} />
+                        {run.kind === "module-run" && <IntakeBadge intake={run.intake} />}
                       </td>
                     )}
                     <td role="cell" data-label="Outcome">
-                      <StatusPill status={run.status} connectionState={run.connectionState} />
+                      <StatusPill
+                        status={run.status}
+                        connectionState={
+                          run.kind === "module-run" ? run.connectionState : undefined
+                        }
+                      />
                     </td>
                     <td role="cell" data-label="What it did" className="muted run-summary-cell">
-                      {run.status === "skipped" && run.skipReason
-                        ? run.skipReason
-                        : run.status === "blocked" && run.wait?.reason
-                          ? run.wait.reason
-                          : (run.summary ?? "")}
+                      {run.kind === "person-research"
+                        ? run.summary
+                        : run.status === "skipped" && run.skipReason
+                          ? run.skipReason
+                          : run.status === "blocked" && run.wait?.reason
+                            ? run.wait.reason
+                            : (run.summary ?? "")}
                     </td>
                     <td role="cell" data-label="When">
                       <time dateTime={run.createdAt} title={formatTime(run.createdAt)}>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RunStatus, RunSummary } from "@chief-of-staff-demo/shared";
+import type { PersonResearchRunSummary, RunActivity, RunStatus } from "@chief-of-staff-demo/shared";
 import { homeStatus } from "../../../apps/web/src/homeStatus";
 
 /**
@@ -11,8 +11,13 @@ import { homeStatus } from "../../../apps/web/src/homeStatus";
  * sentence is a pure function of what the Shell observes precisely so those
  * states can be asserted somewhere.
  */
-function run(id: string, status: RunStatus, fileName = `${id}.txt`): RunSummary {
+function run(
+  id: string,
+  status: RunStatus,
+  fileName = `${id}.txt`,
+): Extract<RunActivity, { kind: "module-run" }> {
   return {
+    kind: "module-run",
     id,
     createdAt: "2026-08-20T10:00:00.000Z",
     module: "transcript",
@@ -26,6 +31,81 @@ function run(id: string, status: RunStatus, fileName = `${id}.txt`): RunSummary 
 }
 
 const REAL = "openai";
+
+function research(
+  status: PersonResearchRunSummary["status"],
+  phase: PersonResearchRunSummary["phase"] = "current",
+): PersonResearchRunSummary {
+  return {
+    kind: "person-research",
+    id: `research-${status}-${phase}`,
+    profileId: "person/one",
+    operationId: "operation-one",
+    phase,
+    createdAt: "2026-09-16T10:00:00.000Z",
+    status,
+    summary: "Only verified sources retained",
+  };
+}
+
+describe("Home person research activity", () => {
+  it("links interrupted and bounded current research to the profile without engine recovery", () => {
+    const status = homeStatus(
+      [research("interrupted"), { ...research("bounded"), profileId: "person-two" }],
+      REAL,
+      false,
+    );
+    expect(status.rows.map(({ text, to, cta }) => ({ text, to, cta }))).toEqual([
+      {
+        text: "Person research — person/one · Current research · Interrupted — Only verified sources retained",
+        to: "/people/person%2Fone",
+        cta: "Open profile",
+      },
+      {
+        text: "Person research — person-two · Current research · Bounded — Only verified sources retained",
+        to: "/people/person-two",
+        cta: "Open profile",
+      },
+    ]);
+    expect(status.sentence).toContain("2 person research operations need attention");
+    expect(status.feed).toEqual([]);
+  });
+
+  it("counts current research as active while retaining previous interruption as history", () => {
+    const status = homeStatus(
+      [research("researching"), research("interrupted", "previous"), run("engine", "pending")],
+      REAL,
+      false,
+    );
+    expect(status.sentence).toContain("2 runs in progress");
+    expect(status.rows).toEqual([]);
+    expect(status.feed).toEqual([
+      {
+        id: "research-interrupted-previous",
+        title: "Person research — person/one",
+        outcome: "Previous conclusion · Interrupted — Only verified sources retained",
+        at: "2026-09-16T10:00:00.000Z",
+        to: "/people/person%2Fone",
+      },
+    ]);
+  });
+
+  it("shows incomplete and unavailable as attention but completed and paused as settled activity", () => {
+    const status = homeStatus(
+      [research("incomplete"), research("unavailable"), research("completed"), research("paused")],
+      REAL,
+      false,
+    );
+    expect(status.rows.map((row) => row.text)).toEqual([
+      "Person research — person/one · Current research · Incomplete — Only verified sources retained",
+      "Person research — person/one · Current research · Unavailable — Only verified sources retained",
+    ]);
+    expect(status.feed.map((entry) => [entry.outcome, entry.to])).toEqual([
+      ["Current research · Completed — Only verified sources retained", "/people/person%2Fone"],
+      ["Current research · Paused — Only verified sources retained", "/people/person%2Fone"],
+    ]);
+  });
+});
 
 describe("Home's sentence", () => {
   it("says nothing has run yet, and never claims an all-clear there", () => {

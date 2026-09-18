@@ -40,16 +40,21 @@ export interface DossierClient {
   analysis(id: string): Promise<PersonDossierAnalysis | null>;
   research(id: string): Promise<unknown>;
   detach(id: string, sourceId: string): Promise<unknown>;
-  settings(): Promise<PersonResearchAggregateStatus & { readiness?: PersonResearchReadiness }>;
+  settings: () => Promise<PersonResearchAggregateStatus & { readiness?: PersonResearchReadiness }>;
   configure(settings: Partial<PersonResearchSettings>): Promise<unknown>;
   /**
    * The bounded per-profile summary a normal poll reads (issue #418, T9,
-   * spec §7): side-effect-free, never enqueues. Distinct from `read`, whose
-   * dossier route retains its own intentional "viewed" scheduling nudge
-   * (spec §7) and is not something routine polling should repeat every
-   * cycle.
+   * spec §7): side-effect-free, never enqueues. Returns the route's whole
+   * envelope: `summary` is null when no job exists yet, and `readiness` is
+   * the pipeline's current readiness so a no-job poll still carries fresh
+   * pipeline state (#417 F1) without a second aggregate status request.
+   * Distinct from `read`, whose dossier route retains its own intentional
+   * "viewed" scheduling nudge (spec §7) and is not something routine
+   * polling should repeat every cycle.
    */
-  summary(id: string): Promise<PersonResearchProfileSummary | null>;
+  summary(
+    id: string,
+  ): Promise<{ summary: PersonResearchProfileSummary | null; readiness: PersonResearchReadiness }>;
   /** Paged, source-free attempt history, fetched only on explicit demand. */
   diagnostics(id: string, cursor?: string): Promise<PersonResearchDiagnosticsPage | null>;
 }
@@ -80,12 +85,10 @@ const api: DossierClient = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(settings),
     }),
-  summary: async (id) =>
-    (
-      await request<{ summary: PersonResearchProfileSummary | null }>(
-        `/api/people/${encodeURIComponent(id)}/research/summary`,
-      )
-    ).summary,
+  summary: (id) =>
+    request<{ summary: PersonResearchProfileSummary | null; readiness: PersonResearchReadiness }>(
+      `/api/people/${encodeURIComponent(id)}/research/summary`,
+    ),
   diagnostics: (id, cursor) =>
     request(
       `/api/people/${encodeURIComponent(id)}/research/diagnostics${
@@ -182,6 +185,13 @@ function jobStateSurface(research: PersonResearchProfileSummary): {
         detail: "Research is queued but waiting for available concurrency.",
       };
     case "interrupted":
+      /* The same observed failure can settle a run interrupted rather than
+         empty: the operation kept pending work. When the decisive
+         classification names the usable-answer boundary, the truthful title
+         is that fact (ReadinessAudit, #417 F2) — not a generic interruption
+         label, and never a provider-downtime claim. */
+      if (decisive?.classification === "no-usable-model-answer")
+        return { title: "No usable extraction answer", detail: decisive.reason };
       return { title: "Research interrupted", detail: decisive?.reason ?? research.detail };
     case "incomplete":
       return {
@@ -359,6 +369,13 @@ export function PersonDossierPanel({
       setCurrentSources({ profileId, ids: current.dossier?.sourceIds ?? [] });
       const data = revision === undefined ? current : await client.read(profileId, revision);
       if (generation !== readGeneration.current) return;
+      if (
+        data.research?.currentOperationId !== viewRef.current?.research?.currentOperationId ||
+        data.research?.operationRevision !== viewRef.current?.research?.operationRevision
+      ) {
+        setDiagnosticsPage(null);
+        setDiagnosticsError("");
+      }
       setView(data);
       lastProgress.current = progressOf(data.research);
       const nextAnalysis =
@@ -386,15 +403,14 @@ export function PersonDossierPanel({
   const pollResearch = useCallback(async () => {
     const generation = readGeneration.current;
     try {
-      const summary = await client.summary(profileId);
+      const envelope = await client.summary(profileId);
       if (generation !== readGeneration.current) return;
-      if (!summary) {
-        const status = await client.settings();
-        if (generation !== readGeneration.current) return;
-        setView((current) =>
-          current && status.readiness ? { ...current, readiness: status.readiness } : current,
-        );
-      }
+      const summary = envelope.summary;
+      /* No job yet: the envelope's own pipeline readiness is still fresh
+         every cycle (#417 F1), so a blocked pipeline updates its surface
+         without touching the dossier. */
+      if (!summary)
+        setView((current) => (current ? { ...current, readiness: envelope.readiness } : current));
       const progress = progressOf(summary);
       if (!progressEqual(progress, lastProgress.current)) {
         lastProgress.current = progress;
@@ -536,6 +552,18 @@ export function PersonDossierPanel({
       : researchSurface(view?.research ?? null);
   const dossier = view?.dossier;
   const claims = dossier?.claims ?? [];
+  /* The whole-operation failure counts survive the display bound (#417 F9):
+     `byCode` covers every attempt while `sample` may omit the kind entirely,
+     so the aggregate renderer-failed count is read from there, never from
+     the sample. Whether those sheds were renderer-busy saturation is only
+     asserted from busy evidence actually recorded on attempts, using the
+     full-ledger `rendererBusyReportedCount` when available. */
+  const rendererFailed = view?.research?.diagnostics.byCode["rendering-failed"] ?? 0;
+  const rendererBusyCount =
+    view?.research?.diagnostics.rendererBusyReportedCount ??
+    (view?.research?.diagnostics.sample ?? []).filter(
+      (attempt) => attempt.code === "rendering-failed" && /busy/i.test(attempt.reason),
+    ).length;
   const activeClaims = claims.filter((c) => c.status !== "superseded");
   const section = dossier?.sections.find((s) => s.key === tab);
   const overviewClaims = personOverviewClaims(activeClaims);
@@ -762,8 +790,10 @@ export function PersonDossierPanel({
       )}
       {/* The bounded diagnostics digest (issue #418, T5) is what normal
           polling already carries; the full paged history is fetched only on
-          explicit demand (spec §7), never automatically. */}
-      {!!view?.research?.diagnostics.sample.length && (
+          explicit demand (spec §7), never automatically. Renderer failures
+          recorded beyond the 8-entry sample still get their own surface
+          (#417 F9), even when the sample carries none of them. */}
+      {!!view?.research && (view.research.diagnostics.sample.length > 0 || rendererFailed > 0) && (
         <details className="card">
           <summary>Source and identity diagnostics</summary>
           <p className="muted">
@@ -788,24 +818,47 @@ export function PersonDossierPanel({
               view.research.diagnostics.sample.length) && (
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                const generation = readGeneration.current;
                 void client
                   .diagnostics(profileId, diagnosticsPage?.nextCursor ?? undefined)
                   .then((page) => {
+                    if (generation !== readGeneration.current) return;
                     setDiagnosticsError("");
-                    setDiagnosticsPage((previous) =>
-                      page
-                        ? { ...page, entries: [...(previous?.entries ?? []), ...page.entries] }
-                        : previous,
-                    );
+                    setDiagnosticsPage((previous) => {
+                      if (!page) return previous;
+                      // A cursor from the previous operation cannot establish the new one's first page.
+                      if (previous && previous.operationId !== page.operationId) return null;
+                      return {
+                        ...page,
+                        entries: [...(previous?.entries ?? []), ...page.entries],
+                      };
+                    });
                   })
-                  .catch((error: unknown) => setDiagnosticsError(errorMessage(error)))
-              }
+                  .catch((error: unknown) => {
+                    if (generation === readGeneration.current)
+                      setDiagnosticsError(errorMessage(error));
+                  });
+              }}
             >
               {diagnosticsPage ? "Load more diagnostics" : "Load full diagnostic history"}
             </button>
           )}
         </details>
+      )}
+      {/* The aggregate renderer-failure count is its own non-collapsible
+          surface (#417 F9): saturation is claimed only from recorded
+          renderer-busy evidence, otherwise the honest wording tells the user
+          where the per-failure reasons live. */}
+      {rendererFailed > 0 && (
+        <p className="muted" aria-label="Renderer failure aggregate">
+          {rendererFailed === 1
+            ? "1 source read failed at rendering."
+            : `${rendererFailed} source reads failed at rendering.`}{" "}
+          {rendererBusyCount > 0
+            ? `${rendererBusyCount === 1 ? "1 was" : `${rendererBusyCount} were`} shed because the browser source renderer was busy.`
+            : "The bounded sample records no renderer-busy reason; the full diagnostic history below names each failure's recorded reason."}
+        </p>
       )}
       {!!view?.research?.gaps?.length && (
         <details className="card">

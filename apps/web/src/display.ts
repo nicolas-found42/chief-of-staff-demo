@@ -7,7 +7,13 @@
  * itself rather than disappearing: a diagnostic is better than a blank pill.
  */
 
-import type { GoogleConnectionState, RunEvent, RunSummary } from "@chief-of-staff-demo/shared";
+import type {
+  GoogleConnectionState,
+  PersonResearchRunSummary,
+  RunActivity,
+  RunEvent,
+  RunSummary,
+} from "@chief-of-staff-demo/shared";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Queued",
@@ -16,6 +22,16 @@ const STATUS_LABELS: Record<string, string> = {
   done: "Completed",
   skipped: "Skipped",
   failed: "Failed",
+  queued: "Queued",
+  researching: "Researching",
+  paused: "Paused",
+  incomplete: "Incomplete",
+  unavailable: "Unavailable",
+  interrupted: "Interrupted",
+  empty: "Empty",
+  current: "Current",
+  completed: "Completed",
+  bounded: "Bounded",
 };
 
 /**
@@ -65,7 +81,8 @@ const MODULE_WORK_LABELS: Record<string, string> = {
  * is one, else what its Module does — never the Run id, which is a diagnostic
  * identity and belongs on the Run detail page.
  */
-export function runDisplayName(run: Pick<RunSummary, "fileName" | "module">): string {
+export function runDisplayName(run: RunActivity): string {
+  if (run.kind === "person-research") return `Person research — ${run.profileId}`;
   /* A Run that has a file names itself after it, even when that name is empty
      — `runTitle` has its own word for that, and the runs table uses it. Only a
      Run with no file at all falls back to what its Module does. */
@@ -75,6 +92,25 @@ export function runDisplayName(run: Pick<RunSummary, "fileName" | "module">): st
 
 export function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status;
+}
+
+/** Current work can change; retained conclusions must never restart polling. */
+export function isActiveRunActivity(run: RunActivity): boolean {
+  return run.kind === "person-research"
+    ? run.phase === "current" && (run.status === "queued" || run.status === "researching")
+    : run.status === "pending" || run.status === "running";
+}
+
+/** Both research projections open their owning profile, never engine diagnostics. */
+export function runActivityLink(run: RunActivity): string {
+  return run.kind === "person-research"
+    ? `/people/${encodeURIComponent(run.profileId)}`
+    : `/runs/${run.id}`;
+}
+
+/** Phase distinguishes a retained conclusion from what is happening now. */
+export function personResearchPhaseLabel(run: PersonResearchRunSummary): string {
+  return run.phase === "previous" ? "Previous conclusion" : "Current research";
 }
 
 export function stageLabel(stage: string): string {

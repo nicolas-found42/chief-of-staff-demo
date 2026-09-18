@@ -238,7 +238,23 @@ function digestDiagnostics(
   detailHref: string,
 ): PersonResearchDiagnosticsDigest {
   const byCode: Record<string, number> = {};
-  for (const attempt of attempts) byCode[attempt.code] = (byCode[attempt.code] ?? 0) + 1;
+  let rendererBusyReportedCount = 0;
+  for (const attempt of attempts) {
+    byCode[attempt.code] = (byCode[attempt.code] ?? 0) + 1;
+    // Legacy attempts have no typed renderer failure cause. Count only the
+    // known record emitted by the anonymous renderer catch, including its
+    // doubled punctuation; this reports what it said, not a saturation diagnosis.
+    if (
+      attempt.stage === "rendering" &&
+      attempt.code === "rendering-failed" &&
+      attempt.outcome === "failed" &&
+      attempt.cause === "observed" &&
+      attempt.collector === "browser-renderer" &&
+      attempt.reason ===
+        "The anonymous browser route failed: Browser source renderer is busy; retry later.."
+    )
+      rendererBusyReportedCount += 1;
+  }
   const ranked = [...attempts].sort((a, b) => {
     const weight = (entry: PersonResearchAttempt) => (entry.outcome === "failed" ? 0 : 1);
     return weight(a) - weight(b) || b.occurredAt.localeCompare(a.occurredAt);
@@ -253,6 +269,7 @@ function digestDiagnostics(
   return {
     totalAttempts: attempts.length,
     byCode,
+    rendererBusyReportedCount,
     sample,
     truncated: attempts.length > sample.length,
     detailHref,

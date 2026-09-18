@@ -13,6 +13,8 @@ import {
   type PersonResearchEnqueueDecision,
   type PersonResearchProfileSummary,
   type PersonResearchDiagnosticsPage,
+  type PersonResearchRunSummary,
+  type PersonResearchHistoryEntry,
 } from "@chief-of-staff-demo/shared";
 import type { WorkspacePersonProfiles } from "./profiles.js";
 import type { PersonResearch } from "./research.js";
@@ -22,6 +24,8 @@ import { buildProfileSummary, pagedDiagnostics } from "./research-summary.js";
 export type PersonResearchSettingsPatch = {
   [K in keyof PersonResearchSettings]?: PersonResearchSettings[K] | undefined;
 };
+
+const PERSON_RESEARCH_HISTORY_PER_PROFILE = 50;
 
 /**
  * One Workspace runtime owns dispatch of continuous research operations.
@@ -40,6 +44,9 @@ export class PersonResearchQueue {
   private readonly removed = new Set<string>();
   /** Profiles the file already held when this instance loaded it. */
   private readonly loaded = new Set<string>();
+  /** Profiles whose next dispatch was cut by a deliberate request; an
+   * in-memory-only signal, so a restart downgrades to continuation. */
+  private readonly explicitDispatches = new Set<string>();
   private generation = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private pending: Promise<void> | undefined;
@@ -70,7 +77,11 @@ export class PersonResearchQueue {
           day: this.now().slice(0, 10),
           usedCalls: 0,
           jobs: [],
+          history: [],
         };
+    if (!this.state.history) {
+      this.state.history = this.seedHistoryFromJobs(this.state.jobs);
+    }
     for (const job of this.state.jobs) this.loaded.add(job.profileId);
     /* A process cannot carry its in-flight operation through a restart, and a
        shutdown is an interruption rather than a completion: the job says so,
@@ -185,6 +196,92 @@ export class PersonResearchQueue {
       running: this.running.size,
     };
   }
+  /**
+   * Retained operation identities for unified history (#417 F8), not a claim
+   * to a full archive. Read scalar facts directly: neither job() nor status()
+   * belongs on a list path because both clone attempt/checkpoint payloads.
+   * Keep at most the requested page while scanning the in-memory queue.
+   */
+  history(
+    options: {
+      limit?: number;
+      before?: { createdAt: string; id: string };
+    } = {},
+  ): PersonResearchRunSummary[] {
+    const rows: PersonResearchRunSummary[] = [];
+    const limit = options.limit ?? Infinity;
+    const compare = (a: { createdAt: string; id: string }, b: { createdAt: string; id: string }) =>
+      b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id);
+    const add = (row: PersonResearchRunSummary) => {
+      if (options.before && compare(row, options.before) <= 0) return;
+      if (rows.length >= limit && compare(row, rows[rows.length - 1]!) >= 0) return;
+      const index = rows.findIndex((existing) => compare(row, existing) < 0);
+      rows.splice(index < 0 ? rows.length : index, 0, row);
+      if (rows.length > limit) rows.pop();
+    };
+    for (const job of this.state.jobs) {
+      const operation = job.operation;
+      const liveId = job.currentOperationId;
+      const live = liveId && (job.state === "researching" || liveId !== operation?.operationId);
+      const entries = (this.state.history ?? []).filter((e) => e.profileId === job.profileId);
+      const currentId = live ? liveId : (operation?.operationId ?? entries[0]?.operationId);
+      const seen = new Set<string>();
+      const retain = (row: Omit<PersonResearchRunSummary, "kind" | "id" | "profileId">) => {
+        if (seen.has(row.operationId)) return;
+        seen.add(row.operationId);
+        add({
+          ...row,
+          kind: "person-research",
+          id: `person-research:${job.profileId}:${row.operationId}`,
+          profileId: job.profileId,
+          summary: row.summary.slice(0, 300),
+        });
+      };
+      if (live && liveId)
+        retain({
+          operationId: liveId,
+          ...(job.currentOperationRevision !== undefined
+            ? { revision: job.currentOperationRevision }
+            : {}),
+          phase: "current",
+          createdAt: job.currentOperationStartedAt ?? job.startedAt ?? job.queuedAt,
+          status: job.state,
+          summary: job.detail,
+        });
+      for (const entry of entries)
+        retain({
+          operationId: entry.operationId,
+          ...(entry.revision !== undefined ? { revision: entry.revision } : {}),
+          phase: entry.operationId === currentId ? "current" : "previous",
+          createdAt: entry.startedAt,
+          finishedAt: entry.finishedAt,
+          status: entry.conclusion,
+          summary: entry.detail,
+        });
+      if (operation)
+        retain({
+          operationId: operation.operationId,
+          ...(job.operationRevision !== undefined ? { revision: job.operationRevision } : {}),
+          phase: operation.operationId === currentId ? "current" : "previous",
+          createdAt: operation.startedAt,
+          finishedAt: operation.finishedAt,
+          status: operation.conclusion,
+          summary: operation.detail,
+        });
+      const previous = job.previousConclusion;
+      if (previous)
+        retain({
+          operationId: previous.operationId,
+          revision: previous.revision,
+          phase: "previous",
+          createdAt: previous.finishedAt,
+          finishedAt: previous.finishedAt,
+          status: previous.conclusion,
+          summary: previous.detail,
+        });
+    }
+    return rows;
+  }
   configure(input: PersonResearchSettingsPatch): PersonResearchStatus {
     /* A patch names only the settings the owner changed: an absent key leaves
        the live value alone, so an unrelated edit cannot re-assert `paused` and
@@ -249,6 +346,7 @@ export class PersonResearchQueue {
         return { kind: "deferred", profileId, nextAt: old.nextAt };
       }
       old.state = "queued";
+      old.detail = "Waiting for a research slot.";
       if (
         !renewQueued &&
         old.operation?.conclusion !== "bounded" &&
@@ -271,6 +369,7 @@ export class PersonResearchQueue {
            and the day-wide, request and time ceilings are untouched. */
         old.calls = 0;
         old.elapsedMilliseconds = 0;
+        this.explicitDispatches.add(profileId);
       }
       delete old.startedAt;
       old.queuedAt = now;
@@ -293,6 +392,9 @@ export class PersonResearchQueue {
   }
   remove(profileId: string): void {
     this.state.jobs = this.state.jobs.filter((j) => j.profileId !== profileId);
+    if (this.state.history) {
+      this.state.history = this.state.history.filter((e) => e.profileId !== profileId);
+    }
     /* A removal is a decision, and the merge on save must not mistake it for
        a Profile this instance never knew about. Privacy deletion in
        particular has to survive a concurrent runtime's snapshot. */
@@ -325,6 +427,47 @@ export class PersonResearchQueue {
   async drain(): Promise<void> {
     this.stop();
     await this.pending;
+  }
+  reset(): void {
+    this.loaded.clear();
+    this.running.clear();
+    this.explicitDispatches.clear();
+    this.removed.clear();
+    this.state = existsSync(this.file)
+      ? PersonResearchStatusSchema.parse(JSON.parse(readFileSync(this.file, "utf8")))
+      : {
+          schemaVersion: 1,
+          settings: PersonResearchSettingsSchema.parse({
+            paused: false,
+            concurrency: 1,
+            refreshHours: 168,
+          }),
+          day: this.now().slice(0, 10),
+          usedCalls: 0,
+          jobs: [],
+          history: [],
+        };
+    if (!this.state.history) {
+      this.state.history = this.seedHistoryFromJobs(this.state.jobs);
+    }
+    for (const job of this.state.jobs) this.loaded.add(job.profileId);
+  }
+  async runNow(profileId: string): Promise<PersonResearchOperationOutcome | null> {
+    const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
+    if (
+      job &&
+      job.checkpoint &&
+      (job.state === "interrupted" || job.operation?.conclusion === "interrupted")
+    ) {
+      job.state = "queued";
+      job.nextAt = this.now();
+      delete job.startedAt;
+      this.save();
+    } else {
+      this.enqueue(profileId, "explicit");
+    }
+    await this.tick(profileId);
+    return this.operation(profileId);
   }
 
   async tick(profileId?: string): Promise<void> {
@@ -450,7 +593,7 @@ export class PersonResearchQueue {
         revision: job.operationRevision ?? 0,
         conclusion: job.operation.conclusion,
         finishedAt: job.operation.finishedAt,
-        detail: job.detail,
+        detail: job.operation.detail,
         ...(job.operation.decisiveExtraction ? { decisive: job.operation.decisiveExtraction } : {}),
       };
     }
@@ -458,6 +601,7 @@ export class PersonResearchQueue {
     job.attempts += 1;
     job.currentOperationId = operationId;
     job.currentOperationRevision = job.attempts;
+    job.currentOperationStartedAt = this.now();
     job.detail = "Research is in progress.";
     job.updatedAt = this.now();
     this.running.add(job.profileId);
@@ -467,6 +611,10 @@ export class PersonResearchQueue {
       const result = await this.deps.research.run(profile, {
         operationId,
         scope: historical ? "full" : "current",
+        /* Consumed here, not in enqueue: only the dispatch that actually
+           runs the deliberate operation re-investigates the seeds, and a
+           later interrupted re-dispatch is continuation, not re-investigation. */
+        ...(this.explicitDispatches.delete(job.profileId) ? { explicit: true } : {}),
         maxModelCalls: Math.max(1, settings.profileCalls - job.calls),
         maxRequests: Math.max(1, settings.profileCalls * 8),
         maxMilliseconds: Math.max(
@@ -592,6 +740,83 @@ export class PersonResearchQueue {
     }
     job.operation = operation;
     job.sources = operation.sourcesRetained;
+    this.recordHistory(job, operation);
+  }
+  private recordHistory(job: PersonResearchJob, operation: PersonResearchOperationOutcome): void {
+    const entries = (this.state.history ??= []);
+    const entry: PersonResearchHistoryEntry = {
+      profileId: job.profileId,
+      operationId: operation.operationId,
+      ...(job.currentOperationRevision !== undefined
+        ? { revision: job.currentOperationRevision }
+        : job.operationRevision !== undefined
+          ? { revision: job.operationRevision }
+          : {}),
+      startedAt: operation.startedAt,
+      finishedAt: operation.finishedAt,
+      conclusion: operation.conclusion,
+      detail: operation.detail.slice(0, 300),
+      ...(operation.decisiveExtraction ? { decisive: operation.decisiveExtraction } : {}),
+    };
+    const key = `${entry.profileId}:${entry.operationId}`;
+    const index = entries.findIndex((e) => `${e.profileId}:${e.operationId}` === key);
+    if (index >= 0) {
+      entries[index] = entry;
+    } else {
+      entries.unshift(entry);
+    }
+    let count = 0;
+    for (let i = 0; i < entries.length;) {
+      if (entries[i]!.profileId === job.profileId) {
+        count += 1;
+        if (count > PERSON_RESEARCH_HISTORY_PER_PROFILE) {
+          entries.splice(i, 1);
+          continue;
+        }
+      }
+      i += 1;
+    }
+  }
+  private seedHistoryFromJobs(jobs: PersonResearchJob[]): PersonResearchHistoryEntry[] {
+    const map = new Map<string, PersonResearchHistoryEntry>();
+    for (const job of jobs) {
+      if (job.previousConclusion) {
+        const prev = job.previousConclusion;
+        map.set(`${job.profileId}:${prev.operationId}`, {
+          profileId: job.profileId,
+          operationId: prev.operationId,
+          revision: prev.revision,
+          startedAt: prev.finishedAt,
+          finishedAt: prev.finishedAt,
+          conclusion: prev.conclusion,
+          detail: prev.detail,
+          ...(prev.decisive ? { decisive: prev.decisive } : {}),
+        });
+      }
+      if (job.operation) {
+        const op = job.operation;
+        map.set(`${job.profileId}:${op.operationId}`, {
+          profileId: job.profileId,
+          operationId: op.operationId,
+          ...(job.operationRevision !== undefined
+            ? { revision: job.operationRevision }
+            : job.currentOperationRevision !== undefined
+              ? { revision: job.currentOperationRevision }
+              : {}),
+          startedAt: op.startedAt,
+          finishedAt: op.finishedAt,
+          conclusion: op.conclusion,
+          detail: op.detail.slice(0, 300),
+          ...(op.decisiveExtraction ? { decisive: op.decisiveExtraction } : {}),
+        });
+      }
+    }
+    const entries = [...map.values()];
+    entries.sort(
+      (a, b) =>
+        b.startedAt.localeCompare(a.startedAt) || b.operationId.localeCompare(a.operationId),
+    );
+    return entries;
   }
   private rollDay(): void {
     const day = this.now().slice(0, 10);
@@ -644,6 +869,24 @@ export class PersonResearchQueue {
     }
     for (const job of this.state.jobs)
       if (!merged.has(job.profileId) && !this.loaded.has(job.profileId)) jobs.push(job);
+    const historyMap = new Map<string, PersonResearchHistoryEntry>();
+    for (const entry of disk.history ?? []) {
+      if (this.removed.has(entry.profileId)) continue;
+      historyMap.set(`${entry.profileId}:${entry.operationId}`, entry);
+    }
+    for (const entry of this.state.history ?? []) {
+      if (this.removed.has(entry.profileId)) continue;
+      historyMap.set(`${entry.profileId}:${entry.operationId}`, entry);
+    }
+    const mergedProfileIds = new Set(jobs.map((job) => job.profileId));
+    const history = [...historyMap.values()].filter((entry) =>
+      mergedProfileIds.has(entry.profileId),
+    );
+    history.sort(
+      (a, b) =>
+        b.startedAt.localeCompare(a.startedAt) || b.operationId.localeCompare(a.operationId),
+    );
+    this.state.history = history;
     return {
       ...this.state,
       usedCalls:
@@ -651,6 +894,7 @@ export class PersonResearchQueue {
           ? Math.max(this.state.usedCalls, disk.usedCalls)
           : this.state.usedCalls,
       jobs,
+      history,
     };
   }
   /**

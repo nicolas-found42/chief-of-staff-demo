@@ -153,23 +153,73 @@ describe("public browser rendering", () => {
     expect(browser.close).toHaveBeenCalledOnce();
   });
 
-  it("rejects overlapping renders and releases admission after cleanup", async () => {
+  it("renders overlapping requests sequentially instead of shedding the second", async () => {
     const page = pageFixture();
-    let finish!: () => void;
-    page.goto.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = () => resolve({ status: () => 200 });
-        }),
+    const { promise: firstGoto, resolve: finishFirst } = Promise.withResolvers<{
+      status: () => 200;
+    }>();
+    page.goto
+      .mockImplementationOnce(() => firstGoto)
+      .mockImplementationOnce(async () => ({ status: () => 200 }));
+    const first = playwrightBrowserRenderer()("https://example.com/first");
+    await vi.waitFor(() => expect(page.goto).toHaveBeenCalledTimes(1));
+    const second = playwrightBrowserRenderer()("https://example.com/second");
+    let secondSettled = false;
+    void second.then(
+      () => {
+        secondSettled = true;
+      },
+      () => {
+        secondSettled = true;
+      },
     );
-    const first = playwrightBrowserRenderer()("https://example.com");
-    await vi.waitFor(() => expect(page.goto).toHaveBeenCalled());
-    await expect(playwrightBrowserRenderer()("https://example.com")).rejects.toThrow("busy");
-    finish();
-    await first;
-    await expect(playwrightBrowserRenderer()("https://example.com")).resolves.toMatchObject({
-      status: 200,
-    });
+    /* The busy-shed path rejects synchronously at call time, so an immediate
+       settled flag distinguishes it from a queued render. */
+    expect(secondSettled).toBe(false);
+    expect(page.goto).toHaveBeenCalledTimes(1);
+    finishFirst({ status: () => 200 });
+    await expect(first).resolves.toMatchObject({ status: 200 });
+    await vi.waitFor(() => expect(page.goto).toHaveBeenCalledTimes(2));
+    await expect(second).resolves.toMatchObject({ status: 200 });
+    expect(browser.close).toHaveBeenCalledTimes(2);
+  });
+
+  it("releases the queue when a render fails so the next one still completes", async () => {
+    const page = pageFixture();
+    page.goto.mockRejectedValueOnce(
+      Object.assign(new Error("Timed out"), { name: "TimeoutError" }),
+    );
+    const failing = playwrightBrowserRenderer()("https://example.com/failing").catch(
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(page.goto).toHaveBeenCalledTimes(1));
+    const next = playwrightBrowserRenderer()("https://example.com/next");
+    expect(await failing).toMatchObject({ name: "AbortError" });
+    expect(browser.close).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(page.goto).toHaveBeenCalledTimes(2));
+    await expect(next).resolves.toMatchObject({ status: 200 });
+    expect(browser.close).toHaveBeenCalledTimes(2);
+  });
+
+  it("admits overlapping renders in request order", async () => {
+    const page = pageFixture();
+    const order: string[] = [];
+    page.goto.mockImplementation((async (url: string) => {
+      order.push(url);
+      return { status: () => 200 };
+    }) as unknown as () => Promise<{ status: () => 200 }>);
+    const renders = [
+      playwrightBrowserRenderer()("https://example.com/1"),
+      playwrightBrowserRenderer()("https://example.com/2"),
+      playwrightBrowserRenderer()("https://example.com/3"),
+    ];
+    await Promise.all(renders);
+    expect(order).toEqual([
+      "https://example.com/1",
+      "https://example.com/2",
+      "https://example.com/3",
+    ]);
+    expect(browser.close).toHaveBeenCalledTimes(3);
   });
 
   it("reads the landing document when a navigation interrupts the first snapshot", async () => {

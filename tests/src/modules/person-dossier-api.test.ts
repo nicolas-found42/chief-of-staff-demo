@@ -125,6 +125,17 @@ test("POST /research returns 409 research-disabled with a Settings next action w
     /* Not accepted: no job exists at all. */
     expect(queue.job(person.id)).toBeNull();
 
+    const summary = await app.inject(`/api/people/${person.id}/research/summary`);
+    expect(summary.statusCode).toBe(200);
+    expect(summary.json()).toEqual({
+      summary: null,
+      readiness: {
+        state: "setup-required",
+        reason: "owner-not-confirmed",
+        nextAction: { label: "Open Settings", href: "/settings" },
+      },
+    });
+
     /* A dossier read stays a read: the same blocked readiness is exposed
        without turning it into an error. */
     const read = await app.inject(`/api/people/${person.id}/dossier`);
@@ -245,7 +256,10 @@ test("GET /research/summary and /research/diagnostics are side-effect-free, boun
 
     const beforeSummary = await app.inject(`/api/people/${person.id}/research/summary`);
     expect(beforeSummary.statusCode).toBe(200);
-    expect(beforeSummary.json()).toEqual({ summary: null });
+    expect(beforeSummary.json()).toEqual({
+      summary: null,
+      readiness: { state: "ready", reason: "ready" },
+    });
     /* Reading the summary never enqueues (unlike GET /dossier, whose
        "viewed" scheduling side effect is a distinct, deliberate decision). */
     expect(queue.job(person.id)).toBeNull();

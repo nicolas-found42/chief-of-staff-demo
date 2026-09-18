@@ -17,13 +17,17 @@ export function StatusPill({
   const needsAttention = status === "failed" && isExpectedConnectionExpiry(connectionState);
   const cls = needsAttention
     ? "status-attention"
-    : status === "blocked"
+    : status === "blocked" ||
+        status === "interrupted" ||
+        status === "incomplete" ||
+        status === "unavailable" ||
+        status === "bounded"
       ? "status-attention"
-      : status === "done"
+      : status === "done" || status === "completed" || status === "current"
         ? "status-done"
         : status === "failed"
           ? "status-failed"
-          : status === "skipped"
+          : status === "skipped" || status === "empty" || status === "paused"
             ? "status-skipped"
             : "status-active";
   return (

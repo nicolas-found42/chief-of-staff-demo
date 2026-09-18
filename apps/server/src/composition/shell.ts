@@ -798,8 +798,8 @@ the oldest Transcript. */
             capturedAt: new Date().toISOString(),
             actionItemPolicy: configStore.get().tasks.actionItemPolicy,
             /* The reservation records the release restriction and the owner's
-             explicit enablement alongside the preference (#360), so a later
-             release never reopens this operation. */
+           explicit enablement alongside the preference (#360), so a later
+           release never reopens this operation. */
             authorization: taskProduct.promotion.facts(configStore.get().tasks.actionItemPolicy),
           }),
           log: (message) => console.log(`[meeting-debrief] ${message}`),
@@ -915,6 +915,9 @@ the oldest Transcript. */
     stopModules,
     startModules,
     drain: drainModules,
+    onCleared: () => {
+      personProfilesProduct.reset();
+    },
   });
 
   /* One level deeper than main.ts was: apps/server/dist/composition → apps/web/dist. */

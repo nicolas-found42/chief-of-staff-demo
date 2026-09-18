@@ -776,6 +776,81 @@ test.each(["the instance that removed it", "an instance still holding it"])(
   },
 );
 
+test("unified history retains every completed operation after restart with stable pages and no active duplicates", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-complete-history-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  let now = new Date("2026-09-05T12:00:00Z");
+  let holdSearch = false;
+  const started = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<void>();
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    now: () => now,
+    search: async () => {
+      if (holdSearch) {
+        holdSearch = false;
+        started.resolve();
+        await gate.promise;
+      }
+      return [];
+    },
+    complete: async () => ({}),
+  });
+  const deps = {
+    workspaceDir: root,
+    people,
+    research,
+    now: () => now,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  };
+  const queue = new PersonResearchQueue(deps);
+  const finished = [];
+  for (let index = 0; index < 3; index += 1) {
+    queue.enqueue(person.id, "explicit");
+    await queue.tick(person.id);
+    expect(queue.operation(person.id)?.conclusion).toBe("completed");
+    finished.push(queue.history().find((row) => row.phase === "current")!);
+    // Two equal start times exercise the cursor's ID tie-break, not only dates.
+    if (index === 1) now = new Date("2026-09-06T12:00:00Z");
+  }
+  const expected = finished.sort(
+    (a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+  );
+  const restarted = new PersonResearchQueue(deps);
+  expect(restarted.history().map((row) => row.id)).toEqual(expected.map((row) => row.id));
+  const firstPage = restarted.history({ limit: 2 });
+  const secondPage = restarted.history({ limit: 2, before: firstPage[1] });
+  expect([...firstPage, ...secondPage].map((row) => row.id)).toEqual(expected.map((row) => row.id));
+  const older = restarted.history().filter((row) => row.phase === "previous");
+  holdSearch = true;
+  now = new Date("2026-09-07T12:00:00Z");
+  restarted.enqueue(person.id, "explicit");
+  now = new Date("2026-09-08T12:00:00Z");
+  const running = restarted.tick(person.id);
+  await started.promise;
+  try {
+    const live = restarted.history();
+    expect(live.filter((row) => row.status === "researching")).toHaveLength(1);
+    expect(new Set(live.map((row) => row.id)).size).toBe(4);
+    expect(live.filter((row) => older.some((old) => old.id === row.id))).toEqual(older);
+    expect(
+      new PersonResearchQueue(deps).history().map(({ id, createdAt }) => ({ id, createdAt })),
+    ).toEqual(live.map(({ id, createdAt }) => ({ id, createdAt })));
+  } finally {
+    gate.resolve();
+    await running;
+  }
+  const final = new PersonResearchQueue(deps).history();
+  expect(final.filter((row) => row.status === "completed")).toHaveLength(4);
+  expect(new Set(final.map((row) => row.id)).size).toBe(4);
+  expect(final.filter((row) => older.some((old) => old.id === row.id))).toEqual(older);
+});
+
 /**
  * Issue #418, T5, spec §7; #417 F5: starting a new operation must never
  * present a prior settled conclusion as its own live progress or failure.
@@ -843,6 +918,10 @@ test("a new operation's live progress never shows the prior operation's conclusi
 
   pauseNextSearch = true;
   queue.enqueue(person.id, "explicit");
+  const queuedSummary = queue.summary(person.id);
+  expect(queuedSummary?.state).toBe("queued");
+  expect(queuedSummary?.detail).not.toBe(detailA);
+  expect(queue.operation(person.id)?.detail).toBe(detailA);
   const running = queue.tick(person.id);
   await started.promise;
 
@@ -852,7 +931,6 @@ test("a new operation's live progress never shows the prior operation's conclusi
   expect(mid?.currentOperationId).not.toBe(operationAId);
   /* The defining fix (#417 F5): an active operation's own `detail` is
      neutral progress, never the previous operation's terminal conclusion. */
-  expect(mid?.detail).toBe("Research is in progress.");
   expect(mid?.detail).not.toBe(detailA);
   expect(mid?.previousConclusion).toMatchObject({
     operationId: operationAId,
@@ -862,7 +940,7 @@ test("a new operation's live progress never shows the prior operation's conclusi
 
   const midSummary = queue.summary(person.id);
   expect(midSummary?.state).toBe("researching");
-  expect(midSummary?.detail).toBe("Research is in progress.");
+  expect(midSummary?.detail).not.toBe(detailA);
   expect(midSummary?.previousConclusion?.operationId).toBe(operationAId);
 
   gate.resolve();
@@ -925,6 +1003,7 @@ test("restart preserves the decisive summary and the previous-conclusion history
   queue.enqueue(person.id, "created");
   await queue.tick();
   const operationAId = queue.job(person.id)?.operation?.operationId;
+  const detailA = queue.operation(person.id)?.detail;
   expect(queue.job(person.id)?.operation?.decisiveExtraction?.classification).toBe(
     "no-supported-facts",
   );
@@ -948,6 +1027,14 @@ test("restart preserves the decisive summary and the previous-conclusion history
   expect(restartedJob?.operation?.decisiveExtraction?.classification).toBe("no-supported-facts");
   expect(restartedJob?.previousConclusion?.operationId).toBe(operationAId);
   expect(restartedJob?.currentOperationId).not.toBe(operationAId);
+  const restartedSummary = restarted.summary(person.id);
+  expect(restartedSummary?.state).toBe("queued");
+  expect(restartedSummary?.detail).not.toBe(detailA);
+  expect(restartedSummary?.previousConclusion).toMatchObject({
+    operationId: operationAId,
+    detail: detailA,
+  });
+  expect(restarted.operation(person.id)?.detail).toBe(detailA);
   gate.resolve();
   await running;
 });

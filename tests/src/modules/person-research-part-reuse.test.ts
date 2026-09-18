@@ -487,6 +487,16 @@ describe("allowance and health", () => {
     expect(outcome.operation.conclusion).toBe("interrupted");
     expect(outcome.operation.interruption?.code).toBe("model-boundary-failed");
     expect(fx.dossiers.get(fx.person.id)?.claims ?? []).toEqual([]);
+    /* #417 F2: the latch's own wording derives from the observed boundary,
+       not a provider-failure assertion a schema-breaking reply cannot back.
+       These latching failures are real boundary failures, so the operation
+       detail names the boundary rather than claiming a provider outage. */
+    expect(outcome.operation.interruption?.reason).not.toContain(
+      "Model-provider failure interrupted research",
+    );
+    expect(outcome.operation.interruption?.reason).toContain(
+      "retrieved evidence and pending work are retained",
+    );
   });
 
   it("stops serving hits once the operation is no longer active", async () => {

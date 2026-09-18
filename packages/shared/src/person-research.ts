@@ -584,6 +584,8 @@ export type PersonResearchDiagnosticDigest = z.infer<typeof PersonResearchDiagno
 export const PersonResearchDiagnosticsDigestSchema = z.object({
   totalAttempts: z.number().int().nonnegative(),
   byCode: z.record(z.string(), z.number().int().nonnegative()),
+  /** Full-ledger matches of the legacy renderer-busy failure record, not a diagnosed cause. */
+  rendererBusyReportedCount: z.number().int().nonnegative().optional(),
   sample: z.array(PersonResearchDiagnosticDigestSchema).max(8),
   truncated: z.boolean(),
   /** Where the paged, source-free detail for this operation can be read. */
@@ -623,6 +625,29 @@ export const PersonResearchPreviousConclusionSchema = z.object({
 export type PersonResearchPreviousConclusion = z.infer<
   typeof PersonResearchPreviousConclusionSchema
 >;
+
+/**
+ * A compact immutable record of one concluded research operation, retained
+ * queue-wide so a restart and later operations cannot erase it (#417 F8).
+ * Deliberately bounded: no attempt ledger, leads, or checkpoint — the full
+ * record stays on the operation outcome the job carried; this is the
+ * identity, timing, conclusion, and one-sentence summary needed for unified
+ * history. Old binaries strip it on their next save, which is acceptable:
+ * rollback restores a quiesced baseline rather than re-writing new-format
+ * state with an old binary.
+ */
+export const PersonResearchHistoryEntrySchema = z.object({
+  profileId: z.string(),
+  operationId: z.string().max(64),
+  /** The dossier revision the operation settled at, when it published. */
+  revision: z.number().int().nonnegative().optional(),
+  startedAt: z.string().max(40),
+  finishedAt: z.string().max(40),
+  conclusion: PersonResearchConclusionSchema,
+  detail: z.string().max(300),
+  decisive: DecisiveExtractionSummarySchema.optional(),
+});
+export type PersonResearchHistoryEntry = z.infer<typeof PersonResearchHistoryEntrySchema>;
 
 /**
  * The compact view of one Profile's research a normal poll reads (issue
