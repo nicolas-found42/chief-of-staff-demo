@@ -114,17 +114,27 @@ describe("PersonProfileDetailPage revision history", () => {
     return card;
   }
 
-  it("lists the 30 most recent revisions and counts the older ones", async () => {
+  it("lists the 30 most recent revisions, then expands the rest on Show all", async () => {
     const history = Array.from({ length: 35 }, (_, index) => profile(35 - index));
     const container = await mountPage(fakeClient(history[0], history));
 
     const card = revisionCard(container);
-    const rows = [...card.querySelectorAll("li")].map((item) => item.textContent);
-    expect(rows).toHaveLength(30);
-    expect(rows[0]).toContain("Revision 35 (current)");
-    expect(rows[29]).toContain("Revision 6");
-    expect(card.textContent).toContain("…5 older revisions not listed");
+    const rows = () => [...card.querySelectorAll("li")].map((item) => item.textContent);
+    expect(rows()).toHaveLength(30);
+    expect(rows()[0]).toContain("Revision 35 (current)");
+    expect(rows()[29]).toContain("Revision 6");
+    /* Older revisions stay one click away: the toggle names the count and
+       expands the full history. */
+    const toggle = [...card.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Show all 35 revisions"),
+    );
+    expect(toggle).toBeDefined();
     expect(card.textContent).not.toContain("Revision 5");
+    await act(async () => {
+      toggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(rows()).toHaveLength(35);
+    expect(rows()[34]).toContain("Revision 1");
   });
 
   it("lists every revision and no note when the history is short", async () => {

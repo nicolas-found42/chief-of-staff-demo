@@ -186,12 +186,13 @@ function elapsedLabel(milliseconds: number): string {
 
 /** The revision selector's options (UX audit F13): a Profile with hundreds of
     revisions otherwise offers indistinguishable "Revision N" options for its
-    whole history. The newest 50 stay listed, and a revision older than that
-    window is still included when it is the one selected, so the select keeps
-    showing the truth rather than jumping to another revision's claims. */
+    whole history. The newest 50 stay listed until the reader asks for the
+    full history ("Show all"), and a revision older than that window is still
+    included when it is the one selected, so the select keeps showing the
+    truth rather than jumping to another revision's claims. */
 const REVISION_WINDOW = 50;
-function revisionOptions(latest: number, selected: number | undefined): number[] {
-  const oldestListed = Math.max(1, latest - REVISION_WINDOW + 1);
+function revisionOptions(latest: number, selected: number | undefined, all = false): number[] {
+  const oldestListed = all ? 1 : Math.max(1, latest - REVISION_WINDOW + 1);
   const values = Array.from({ length: latest - oldestListed + 1 }, (_, index) => latest - index);
   if (selected !== undefined && selected < oldestListed) values.push(selected);
   return values;
@@ -220,13 +221,35 @@ function rankForDisplay(claims: PersonClaim[]): PersonClaim[] {
     .map((entry) => entry.claim);
 }
 
-/** A citation's readable label (UX audit F6): the source's title or site, not
-    a raw retained fragment. The quote itself stays in the opened inspector;
-    the fallback caps the quote like the fragment buttons always did. */
+/** A captured date in the same readable form EvidenceDate renders, or null
+    when the capture time is unknown or not anchored to a day. */
+function capturedDateLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const hasZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
+  if (!dateOnly && !hasZone) return null;
+  const parsed = new Date(dateOnly ? `${value}T12:00:00Z` : value);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  if (dateOnly && parsed.toISOString().slice(0, 10) !== value) return null;
+  return new Intl.DateTimeFormat("en", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(parsed);
+}
+
+/** A citation's readable label (UX audit F6): the source's name, its site and
+    the date it was captured — not a raw retained fragment. The quote itself
+    stays in the opened inspector; the fallback caps the quote like the
+    fragment buttons always did. */
 function citationLabel(summary: PersonSourceSummary | undefined, fallback: string): string {
+  const parts: string[] = [];
   const title = summary?.title.trim();
-  if (title) return title.length > 90 ? `${title.slice(0, 90)}…` : title;
-  if (summary?.domain) return summary.domain;
+  if (title) parts.push(title.length > 70 ? `${title.slice(0, 70)}…` : title);
+  else if (summary?.domain) parts.push(summary.domain);
+  const captured = capturedDateLabel(summary?.capturedAt);
+  if (captured) parts.push(captured);
+  if (parts.length) return parts.join(" — ");
   return fallback.length > 180 ? `${fallback.slice(0, 180)}…` : fallback;
 }
 /**
@@ -446,6 +469,7 @@ export function PersonDossierPanel({
    * error. While set, the last known job state is never presented as live.
    */
   const [unreachable, setUnreachable] = useState(false);
+  const [showAllRevisions, setShowAllRevisions] = useState(false);
   /** Immediate acknowledgment for Prioritise research (UX audit F8). */
   const [startingResearch, setStartingResearch] = useState(false);
   /** Elapsed milliseconds of the operation now researching (UX audit F7a). */
@@ -837,18 +861,23 @@ export function PersonDossierPanel({
             }}
           >
             <option value="current">Current</option>
-            {latestRevision > REVISION_WINDOW && (
+            {latestRevision > REVISION_WINDOW && !showAllRevisions && (
               <option disabled>
                 …{latestRevision - REVISION_WINDOW} older revisions not listed
               </option>
             )}
-            {revisionOptions(latestRevision, revision).map((value) => (
+            {revisionOptions(latestRevision, revision, showAllRevisions).map((value) => (
               <option key={value} value={value}>
                 Revision {value}
               </option>
             ))}
           </select>
         </label>
+      )}
+      {latestRevision > REVISION_WINDOW && !showAllRevisions && (
+        <button type="button" className="linklike" onClick={() => setShowAllRevisions(true)}>
+          Show all {latestRevision} revisions
+        </button>
       )}
       {revision !== undefined && (
         <p role="status">

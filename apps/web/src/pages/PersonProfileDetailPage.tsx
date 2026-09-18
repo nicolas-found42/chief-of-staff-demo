@@ -239,8 +239,9 @@ function DependentConfigurationDisclosure({
 }
 
 /* A real run mints a revision per retained source version, so the history
-   reaches hundreds of indistinguishable entries; the newest stay clickable and
-   the rest are counted (UX audit F13). */
+   reaches hundreds of indistinguishable entries; the newest are listed first
+   and an explicit "Show all" expands the rest — every recorded revision stays
+   one click away (UX audit F13; the page's own contract). */
 const REVISION_HISTORY_LIMIT = 30;
 
 /** The subtitle under the heading. The heading already names the person, so
@@ -295,6 +296,7 @@ function PersonProfileDetail({
   const [current, setCurrent] = useState<PersonProfile | null>(null);
   const [viewed, setViewed] = useState<PersonProfile | null>(null);
   const [revisions, setRevisions] = useState<number[]>([]);
+  const [showAllRevisions, setShowAllRevisions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const focusRef = usePageFocus<HTMLHeadingElement>();
 
@@ -694,7 +696,9 @@ function PersonProfileDetail({
   const profile = viewed ?? current;
   const isHistorical = viewed !== null && viewed.revision !== current.revision;
   const recentRevisions = [...revisions].sort((a, b) => b - a);
-  const visibleRevisions = recentRevisions.slice(0, REVISION_HISTORY_LIMIT);
+  const visibleRevisions = showAllRevisions
+    ? recentRevisions
+    : recentRevisions.slice(0, REVISION_HISTORY_LIMIT);
   const detachableEvidence = [...current.publications, ...current.mentions, ...current.evidence];
   const signals: string[] = [
     ...profile.emails,
@@ -1196,10 +1200,10 @@ function PersonProfileDetail({
               </li>
             ))}
           </ul>
-          {recentRevisions.length > visibleRevisions.length && (
-            <p className="muted">
-              …{recentRevisions.length - visibleRevisions.length} older revisions not listed
-            </p>
+          {recentRevisions.length > REVISION_HISTORY_LIMIT && !showAllRevisions && (
+            <button type="button" className="linklike" onClick={() => setShowAllRevisions(true)}>
+              Show all {recentRevisions.length} revisions
+            </button>
           )}
         </div>
 

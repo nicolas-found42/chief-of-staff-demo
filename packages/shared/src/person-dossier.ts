@@ -565,7 +565,17 @@ export interface PersonConnectionStep {
   citations: { sourceId: string; quote: string }[];
 }
 
-/** Keep incomplete education in the coverage account, without displacing useful overview evidence. */
+/**
+ * The Overview's claim selection (UX audit F6): a beginner should meet the
+ * person's identity facts — their name, their role, their employer — before
+ * anything the pipeline happened to discover first, so identity facts lead
+ * and the rest keeps its pipeline order. Incomplete education and unresolved
+ * fragments stay at the tail, out of the summary cap, where the coverage
+ * account can still see them.
+ */
+const OVERVIEW_IDENTITY_FIELDS = ["fullName", "role", "currentEmployer"] as const;
+const OVERVIEW_CAP = 6;
+
 export function personOverviewClaims(claims: PersonClaim[]): PersonClaim[] {
   const incomplete = claims.filter((claim) =>
     claim.statement.includes("Education — Institution unknown"),
@@ -573,10 +583,13 @@ export function personOverviewClaims(claims: PersonClaim[]): PersonClaim[] {
   const unresolved = claims.filter((claim) =>
     claim.statement.startsWith("Unresolved source fragment:"),
   );
+  const rest = claims.filter((claim) => !incomplete.includes(claim) && !unresolved.includes(claim));
+  const identity = OVERVIEW_IDENTITY_FIELDS.flatMap((field) =>
+    rest.filter((claim) => claim.fact?.field === field),
+  );
   return [
-    ...claims
-      .filter((claim) => !incomplete.includes(claim) && !unresolved.includes(claim))
-      .slice(0, 6),
+    ...identity,
+    ...rest.filter((claim) => !identity.includes(claim)).slice(0, OVERVIEW_CAP - identity.length),
     ...incomplete,
     ...unresolved,
   ];
