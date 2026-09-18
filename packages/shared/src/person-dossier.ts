@@ -91,6 +91,12 @@ export const PersonSourceRightsSchema = z.object({
     .max(10),
 });
 export type PersonSourceRights = z.infer<typeof PersonSourceRightsSchema>;
+/**
+ * Stored-format bound on the outbound link list of one retained source
+ * document. Retention bounds its list to this cap rather than failing the
+ * research operation when a recovered page carries more links.
+ */
+export const PERSON_SOURCE_OUTBOUND_URL_CAP = 200;
 export const PersonSourceDocumentSchema = z.object({
   schemaVersion: z.literal(1),
   id,
@@ -133,7 +139,7 @@ export const PersonSourceDocumentSchema = z.object({
   access: z.enum(["retrieved", "blocked", "failed", "unsupported"]),
   acquisition: text,
   transcriptId: id.optional(),
-  outboundUrls: z.array(z.string().max(4000)).max(200).optional(),
+  outboundUrls: z.array(z.string().max(4000)).max(PERSON_SOURCE_OUTBOUND_URL_CAP).optional(),
   /**
    * The source family this evidence belongs to (issue #228). Distinct from
    * `family`, which identifies duplicated *content*: two mirrors of one
