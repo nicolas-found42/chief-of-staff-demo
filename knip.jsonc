@@ -15,6 +15,7 @@
         "scripts/debug/mercury-prefix-cache-probe.mts",
         "scripts/debug/extraction-audit.mts",
         "scripts/debug/extraction-live-audit.mts",
+        "scripts/debug/provider-recovery-probe.mts",
         "scripts/run-search-canaries.mjs",
         "scripts/run-canaries.mjs",
         "scripts/task-cutover.mts",
