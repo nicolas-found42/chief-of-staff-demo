@@ -329,9 +329,17 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     diagnostics: publicSearchDiagnostics,
     ...(searxngUrl !== undefined ? { searxngUrl } : {}),
   });
-  const settingsNextAction: PersonResearchNextAction = {
-    label: "Open Settings",
-    href: "/settings",
+  /* Each gate's action names its own cure (UX audit F2): the provider gate
+     lands on the Extraction provider card, not the top of a very long
+     Settings page, and the owner gate starts the create-your-own-Profile
+     path the confirmation card itself instructs. */
+  const providerNextAction: PersonResearchNextAction = {
+    label: "Add a provider key in Settings",
+    href: "/settings#group-provider",
+  };
+  const ownerProfileNextAction: PersonResearchNextAction = {
+    label: "Create your own Profile",
+    href: "/people/new",
   };
   /**
    * Truthful readiness of automatic Person Research (issue #418, T3;
@@ -348,22 +356,25 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     if (current.provider === "mock")
       return demo
         ? { state: "ready", reason: "ready" }
-        : { state: "disabled", reason: "mock-provider-inactive", nextAction: settingsNextAction };
+        : { state: "disabled", reason: "mock-provider-inactive", nextAction: providerNextAction };
     if (current.provider !== "ollama" && !current.apiKey.trim())
       return {
         state: "setup-required",
         reason: "provider-not-configured",
-        nextAction: settingsNextAction,
+        nextAction: providerNextAction,
       };
     const owner = ownerOnboarding.confirmationStatus();
     if (owner === "unresolved")
       return { state: "initializing", reason: "owner-identity-unresolved" };
-    if (owner === "absent")
+    if (owner === "absent") {
+      const ownerEmail = ownerOnboarding.proposal()?.googleEmail ?? undefined;
       return {
         state: "setup-required",
         reason: "owner-not-confirmed",
-        nextAction: settingsNextAction,
+        nextAction: ownerProfileNextAction,
+        ...(ownerEmail ? { ownerEmail } : {}),
       };
+    }
     return { state: "ready", reason: "ready" };
   };
   /* Person Profiles (ADR-0042, ADR-0062): the Workspace's dossiers, their
@@ -798,8 +809,8 @@ the oldest Transcript. */
             capturedAt: new Date().toISOString(),
             actionItemPolicy: configStore.get().tasks.actionItemPolicy,
             /* The reservation records the release restriction and the owner's
-           explicit enablement alongside the preference (#360), so a later
-           release never reopens this operation. */
+         explicit enablement alongside the preference (#360), so a later
+         release never reopens this operation. */
             authorization: taskProduct.promotion.facts(configStore.get().tasks.actionItemPolicy),
           }),
           log: (message) => console.log(`[meeting-debrief] ${message}`),

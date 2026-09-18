@@ -72,6 +72,7 @@ function makeClient(): DossierClient {
   };
   return {
     read: async () => ({ dossier: null, research }),
+    sources: async () => ({ sources: [] }),
     source: async () => {
       throw new Error("No source requested");
     },

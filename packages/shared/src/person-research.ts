@@ -514,6 +514,13 @@ export const PersonResearchReadinessSchema = z.object({
   state: PersonResearchReadinessStateSchema,
   reason: PersonResearchReadinessReasonSchema,
   nextAction: PersonResearchNextActionSchema.optional(),
+  /**
+   * The connected Google email the owner confirmation is waiting on, present
+   * only for `owner-not-confirmed` (UX audit F2): the gate copy names the
+   * exact missing step — create a Profile carrying this email and confirm it
+   * — instead of "an owner has not yet confirmed workspace setup".
+   */
+  ownerEmail: z.string().max(200).optional(),
 });
 export type PersonResearchReadiness = z.infer<typeof PersonResearchReadinessSchema>;
 
@@ -676,6 +683,12 @@ export const PersonResearchProfileSummarySchema = z.object({
   /** The operation currently in flight, present only while `state` is `researching`. */
   currentOperationId: z.string().max(64).optional(),
   currentOperationRevision: z.number().int().nonnegative().optional(),
+  /**
+   * When the in-flight operation began (UX audit F7), so a waiting reader
+   * sees elapsed time rather than a bare state word. Optional: absent while
+   * no operation is in flight.
+   */
+  currentOperationStartedAt: z.string().max(40).optional(),
   /** The most recently settled operation's own revision, for comparison against `currentOperationRevision`. */
   operationRevision: z.number().int().nonnegative().optional(),
   stage: PersonResearchStageSchema.optional(),

@@ -1233,7 +1233,9 @@ test("audit F2/F6: an automatic attempt on a spent allowance reports the exhaust
   expect(job?.state).toBe("incomplete");
   expect(job?.detail).toContain("research allowance is spent");
   expect(job?.detail).toContain("12 of 12 model calls");
-  expect(job?.detail).toContain("138s of its 120s research time");
+  /* The spent figure is the clamped accumulator (UX audit F9): the detail can
+     never read as an overdraw like "138s of its 120s". */
+  expect(job?.detail).toContain("120s of its 120s research time");
   expect(job?.detail).not.toContain("wall-clock");
   /* Partial results and the retained traversal survive the honest refusal. */
   expect(job?.checkpoint?.operationId).toBe("op-bounded-2");

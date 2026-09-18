@@ -85,12 +85,21 @@ export class PersonResearchQueue {
     for (const job of this.state.jobs) this.loaded.add(job.profileId);
     /* A process cannot carry its in-flight operation through a restart, and a
        shutdown is an interruption rather than a completion: the job says so,
-       keeps its completed evidence, and is re-dispatched automatically. */
+       keeps its completed evidence, and is re-dispatched automatically. The
+       time billed for the interrupted slice is capped at the allowance that
+       was left: the app was down for part of `now - startedAt`, and billing
+       that downtime as research time is how a crash-restarted job came to
+       report more time spent than its allowance allows (UX audit F9). */
     for (const job of this.state.jobs)
       if (job.state === "researching") {
-        job.elapsedMilliseconds =
-          (job.elapsedMilliseconds ?? 0) +
-          (job.startedAt ? Math.max(0, Date.parse(this.now()) - Date.parse(job.startedAt)) : 0);
+        const downFor = job.startedAt
+          ? Math.max(0, Date.parse(this.now()) - Date.parse(job.startedAt))
+          : 0;
+        const allowanceLeft = Math.max(
+          0,
+          this.state.settings.profileMilliseconds - (job.elapsedMilliseconds ?? 0),
+        );
+        job.elapsedMilliseconds = (job.elapsedMilliseconds ?? 0) + Math.min(downFor, allowanceLeft);
         delete job.startedAt;
         job.state = "queued";
         job.detail =
@@ -401,6 +410,37 @@ export class PersonResearchQueue {
     this.removed.add(profileId);
     this.save();
   }
+  /**
+   * An owner's explicit stop for one Profile's research (UX audit F7).
+   *
+   * A queued or paused job is made ineligible the only way the dispatch
+   * filter already respects — `interrupted` with a `nextAt` pushed out like
+   * any settled conclusion — so the automatic backfill in `tick` defers it
+   * instead of re-queueing it. An in-flight operation is invalidated by
+   * clearing `currentOperationId`: that job's own `active()` closure reads
+   * false and its superseded-generation early return leaves the stop message
+   * standing, while every other Profile's run — concurrent dispatches are
+   * real — keeps its own generation untouched. "Prioritise research" resumes
+   * an interrupted job with a fresh allowance exactly as it does today.
+   */
+  cancel(profileId: string): boolean {
+    const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
+    if (!job || (job.state !== "queued" && job.state !== "paused" && job.state !== "researching"))
+      return false;
+    const wasResearching = job.state === "researching";
+    delete job.currentOperationId;
+    delete job.startedAt;
+    job.state = "interrupted";
+    job.detail = wasResearching
+      ? "Research was stopped by an owner; retained evidence and pending leads are preserved."
+      : "Research was stopped before it started. Prioritise research to run it.";
+    job.nextAt = new Date(
+      Date.parse(this.now()) + this.state.settings.refreshHours * 3600000,
+    ).toISOString();
+    job.updatedAt = this.now();
+    this.save();
+    return true;
+  }
   start(): void {
     if (this.timer) return;
     this.timer = setInterval(() => {
@@ -535,6 +575,11 @@ export class PersonResearchQueue {
       profileMilliseconds > 0 && (job.elapsedMilliseconds ?? 0) >= profileMilliseconds;
     if (spentCalls || spentTime) {
       const seconds = (value: number) => `${Math.round(value / 1000)}s`;
+      /* The spent figure is clamped to the allowance (UX audit F9): the
+         accumulator is enforced at billing time, and a legacy snapshot that
+         already over-drew reads "spent up to its allowance", never an
+         arithmetic contradiction like "1832s of its 900s". */
+      const spentSeconds = seconds(Math.min(job.elapsedMilliseconds ?? 0, profileMilliseconds));
       /* `incomplete`, not `paused`: a paused job is still dispatch-eligible
          and `enqueue` answers `already-active` for one, which would leave an
          explicit request unable to cut the new allowance that clears this. */
@@ -543,9 +588,7 @@ export class PersonResearchQueue {
         `This Profile's research allowance is spent — ` +
         [
           spentCalls ? `${job.calls} of ${profileCalls} model calls` : null,
-          spentTime
-            ? `${seconds(job.elapsedMilliseconds ?? 0)} of its ${seconds(profileMilliseconds)} research time`
-            : null,
+          spentTime ? `${spentSeconds} of its ${seconds(profileMilliseconds)} research time` : null,
         ]
           .filter((part) => part !== null)
           .join(" and ") +
@@ -708,7 +751,14 @@ export class PersonResearchQueue {
         job.nextAt = new Date(Date.parse(this.now()) + 3600000).toISOString();
       }
     } finally {
-      job.elapsedMilliseconds = (job.elapsedMilliseconds ?? 0) + Date.now() - started;
+      /* The allowance is enforced, not just reported (UX audit F9): a slice
+         that overshot its backstop bills up to the allowance, so the stored
+         accumulator can never exceed what the Profile was entitled to spend
+         and the spent report can never read as an overdraw. */
+      job.elapsedMilliseconds = Math.min(
+        (job.elapsedMilliseconds ?? 0) + Date.now() - started,
+        this.state.settings.profileMilliseconds,
+      );
       delete job.startedAt;
       this.running.delete(job.profileId);
       job.updatedAt = this.now();

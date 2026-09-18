@@ -102,10 +102,25 @@ async function renderOnce(
   let collectedBytes = 0;
   const pending = new Set<Promise<void>>();
   const resourceWaiters: (() => void)[] = [];
+  /* One close, ever. The deadline timer used to fire-and-forget its own
+     browser.close() while the finally block ran a second one: concurrent
+     closes race in-flight CDP messages against disposed sessions, and
+     playwright-core answers a late transport message on a torn-down session
+     with a thrown assertion from its own callback — outside every promise
+     chain here, so it used to escape as an unhandled rejection that killed
+     the whole process (UX audit F1). Closing is now idempotent and owned by
+     one path; the timer only aborts and requests the close. */
+  let closeRequested = false;
+  let closed: Promise<void> | undefined;
+  const closeBrowser = () => {
+    if (!browser || closeRequested) return;
+    closeRequested = true;
+    closed = browser.close().catch(() => undefined);
+  };
   const timer = setTimeout(() => {
     failure = renderingTimeout();
     controller.abort();
-    void browser?.close().catch(() => undefined);
+    closeBrowser();
   }, BROWSER_NAVIGATION_TIMEOUT_MS);
   try {
     browser = await chromium.launch({
@@ -205,7 +220,8 @@ async function renderOnce(
   } finally {
     clearTimeout(timer);
     controller.abort();
-    await browser?.close();
+    closeBrowser();
+    await closed;
     await Promise.allSettled(pending);
   }
 }

@@ -81,20 +81,27 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
    *
    * `preview` writes nothing. The proposal it returns is a suggestion, never a
    * confirmation — /accept is what mints the Profile, and it re-runs the search
-   * rather than trusting evidence handed back by the browser.
+   * rather than trusting evidence handed back by the browser. An accept may
+   * carry the person's full name (UX audit F5): a profile-URL lookup alone
+   * mints "(unnamed)" and research attributes nothing to it, so the name a
+   * beginner always had is recorded — on the minted Profile, or as a
+   * correction when an existing identity is reused unnamed.
    */
   async function lookup(request: FastifyRequest, reply: FastifyReply, mode: "preview" | "accept") {
-    const body = request.body as { identifier?: unknown } | undefined;
+    const body = request.body as { identifier?: unknown; fullName?: unknown } | undefined;
     if (typeof body?.identifier !== "string") {
       reply.code(400);
       return { error: "invalid-identifier", message: "Send an identifier string to look up." };
     }
+    const fullName =
+      mode === "accept" && typeof body.fullName === "string" ? body.fullName.trim() : "";
     try {
       const signals = parsePersonIdentifier(body.identifier);
-      const profile =
+      let profile =
         mode === "accept"
           ? people.ensureIdentifier(body.identifier)
           : await ctx.resolver.preview(signals);
+      if (fullName && !profile.fullName) profile = people.correct(profile.id, { fullName });
       /* Accepting the lookup still succeeds while research is blocked
          (issue #418, T3); the decision rides along separately. */
       /* A person typing an identifier and pressing "Add and research" is

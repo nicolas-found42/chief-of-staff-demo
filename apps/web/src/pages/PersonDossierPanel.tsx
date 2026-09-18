@@ -2,6 +2,7 @@ import {
   PersonResearchReadinessSchema,
   personOverviewClaims,
   summarizePersonClaims,
+  type PersonSourceSummary,
 } from "@chief-of-staff-demo/shared";
 import { EvidenceDate } from "./EvidenceDate";
 import { PersonSourceInspector } from "./PersonSourceInspector";
@@ -36,6 +37,8 @@ interface DossierView {
 export interface DossierClient {
   read(id: string, revision?: number): Promise<DossierView>;
   source(id: string, sourceId: string): Promise<PersonSourceDocument>;
+  /** Bounded display facts (title, site, capture date) for the current retained sources. */
+  sources(id: string): Promise<{ sources: PersonSourceSummary[] }>;
   history(id: string): Promise<PersonRelationshipRecord[]>;
   analysis(id: string): Promise<PersonDossierAnalysis | null>;
   research(id: string): Promise<unknown>;
@@ -70,6 +73,8 @@ const api: DossierClient = {
         },
   source: (id, sourceId) =>
     request(`/api/people/${encodeURIComponent(id)}/sources/${encodeURIComponent(sourceId)}`),
+  sources: (id) =>
+    request<{ sources: PersonSourceSummary[] }>(`/api/people/${encodeURIComponent(id)}/sources`),
   analysis: (id) => request(`/api/people/${encodeURIComponent(id)}/dossier-analysis`),
   history: (id) => request(`/api/people/${encodeURIComponent(id)}/relationship-history`),
   research: (id) => request(`/api/people/${encodeURIComponent(id)}/research`, { method: "POST" }),
@@ -108,6 +113,89 @@ const tabs = {
   history: "Relationship history",
   sources: "Sources",
 };
+/* Human vocabulary for the storage tokens this panel renders (UX audit F10):
+   a token with no entry renders its own key rather than disappearing, and the
+   raw token stays in the DOM title for anyone diagnosing. */
+const CLAIM_STATUS_LABELS: Record<string, string> = {
+  supported: "Supported",
+  claimed: "Claimed",
+  contested: "Contested",
+  unknown: "Unknown",
+  stale: "Stale",
+  superseded: "Superseded",
+};
+const CLAIM_NATURE_LABELS: Record<string, string> = {
+  statement: "Statement",
+  interpretation: "Interpretation",
+};
+const SECTION_STATE_LABELS: Record<string, string> = {
+  unresearched: "Not yet researched",
+  incomplete: "Incomplete",
+  current: "Current",
+  unavailable: "Unavailable",
+};
+/* The codes a reader meets most; the long tail renders its own key. */
+const DIAGNOSTIC_CODE_LABELS: Record<string, string> = {
+  "discovery-refused": "Search refused",
+  "discovery-empty": "Search found no results",
+  "connectivity-failed": "Could not reach the site",
+  "dns-failed": "Site address could not be resolved",
+  "tls-failed": "Secure connection failed",
+  "request-timeout": "The site took too long to answer",
+  "transport-failed": "The network request failed",
+  "http-error": "The site answered with an error",
+  "rate-limited": "The site limited the request rate",
+  "login-required": "The page needs a sign-in",
+  "challenge-page": "The page asked for a human check",
+  "resource-unavailable": "No copy of this page was available",
+  "robots-excluded": "The site asks search engines to keep out",
+  "rendering-failed": "The page could not be rendered",
+  "unsupported-format": "The document format is unsupported",
+  "parser-failed": "The page could not be read",
+  "document-empty": "The document held no readable text",
+  "identity-unmatched": "Could not confirm this is the same person",
+  "ambiguous-attribution": "The evidence matched more than one person",
+  "off-subject-claim": "The passage was about someone else",
+  "invalid-result-shape": "The extraction answer was unusable",
+  "unknown-cause": "Reason not recorded",
+};
+
+const claimStatusLabel = (status: string): string => CLAIM_STATUS_LABELS[status] ?? status;
+const claimNatureLabel = (nature: string): string => CLAIM_NATURE_LABELS[nature] ?? nature;
+const sectionStateLabel = (state: string): string => SECTION_STATE_LABELS[state] ?? state;
+const diagnosticCodeLabel = (code: string): string => DIAGNOSTIC_CODE_LABELS[code] ?? code;
+
+/* Reading order within a section (UX audit F6): corroborated, uncontested
+   facts lead; contested, unknown and unresolved fragments follow. The sort is
+   stable, so the pipeline's own order carries within each tier. */
+function rankForDisplay(claims: PersonClaim[]): PersonClaim[] {
+  const tier = (claim: PersonClaim) =>
+    claim.statement.startsWith("Unresolved source fragment:")
+      ? 2
+      : claim.status === "contested" || claim.status === "unknown"
+        ? 1
+        : 0;
+  const corroborations = (claim: PersonClaim) =>
+    new Set(claim.citations.map((citation) => citation.sourceId)).size;
+  return claims
+    .map((claim, index) => ({ claim, index }))
+    .sort(
+      (a, b) =>
+        tier(a.claim) - tier(b.claim) ||
+        corroborations(b.claim) - corroborations(a.claim) ||
+        a.index - b.index,
+    )
+    .map((entry) => entry.claim);
+}
+
+/** A citation's readable label (UX audit F6): the source's title or site, not
+    a raw retained fragment. The quote itself stays in the opened inspector. */
+function citationLabel(summary: PersonSourceSummary | undefined, fallback: string): string {
+  const title = summary?.title.trim();
+  if (title) return title.length > 90 ? `${title.slice(0, 90)}…` : title;
+  if (summary?.domain) return summary.domain;
+  return fallback;
+}
 /**
  * Copy for the pipeline-level readiness states (issue #418, T3/T9, spec §7).
  * `initializing` and `setup-required` read distinctly on purpose: a
@@ -294,6 +382,8 @@ export function PersonDossierPanel({
   const [currentSources, setCurrentSources] = useState<{ profileId: string; ids: string[] } | null>(
     null,
   );
+  /** Display facts for the retained sources, keyed by source id in render. */
+  const [sourceFacts, setSourceFacts] = useState<PersonSourceSummary[]>([]);
   const [history, setHistory] = useState<PersonRelationshipRecord[]>([]);
   const editingSettings = useRef(false);
   const settingsEditRevision = useRef(0);
@@ -367,6 +457,11 @@ export function PersonDossierPanel({
       if (current.profile) onProfile?.(current.profile);
       setLatestRevision(current.dossier?.revision ?? 0);
       setCurrentSources({ profileId, ids: current.dossier?.sourceIds ?? [] });
+      /* Citation labels come from the bounded display facts; a failed read
+         degrades to the quote fallback rather than blocking the refresh. */
+      const facts = await client.sources(profileId).catch(() => ({ sources: [] }));
+      if (generation !== readGeneration.current) return;
+      setSourceFacts(facts.sources);
       const data = revision === undefined ? current : await client.read(profileId, revision);
       if (generation !== readGeneration.current) return;
       if (
@@ -569,29 +664,33 @@ export function PersonDossierPanel({
   const overviewClaims = personOverviewClaims(activeClaims);
   const displayed =
     tab === "overview"
-      ? overviewClaims.filter(
-          (c) =>
-            !c.statement.includes("Education — Institution unknown") &&
-            !c.statement.startsWith("Unresolved source fragment:"),
+      ? rankForDisplay(
+          overviewClaims.filter(
+            (c) =>
+              !c.statement.includes("Education — Institution unknown") &&
+              !c.statement.startsWith("Unresolved source fragment:"),
+          ),
         )
-      : activeClaims.filter((c) => c.section === tab);
+      : rankForDisplay(activeClaims.filter((c) => c.section === tab));
+  const summaryById = new Map(sourceFacts.map((facts) => [facts.id, facts]));
   const citations = (record: { claimIds: string[] }) =>
     record.claimIds.flatMap((id) => claims.find((c) => c.id === id)?.citations ?? []);
+  const quoteOf = (quote: string) => quote.trim().replace(/\s+/g, " ");
   const evidence = (record: { claimIds: string[] }) =>
-    citations(record).map((citation, index) => (
-      <button
-        type="button"
-        className="linklike dossier-citation"
-        key={`${citation.sourceId}-${index}`}
-        onClick={() => void inspect(citation.sourceId, citation.quote)}
-      >
-        Evidence {index + 1}: “
-        {citation.quote.trim().replace(/\s+/g, " ").length > 180
-          ? `${citation.quote.trim().replace(/\s+/g, " ").slice(0, 180)}…`
-          : citation.quote.trim().replace(/\s+/g, " ")}
-        ”
-      </button>
-    ));
+    citations(record).map((citation, index) => {
+      const quote = quoteOf(citation.quote);
+      return (
+        <button
+          type="button"
+          className="linklike dossier-citation"
+          key={`${citation.sourceId}-${index}`}
+          title={quote.length > 180 ? `${quote.slice(0, 180)}…` : quote}
+          onClick={() => void inspect(citation.sourceId, citation.quote)}
+        >
+          Evidence {index + 1}: {citationLabel(summaryById.get(citation.sourceId), quote)}
+        </button>
+      );
+    });
   /* A claim grounded in archived material is evidence about the capture date
      and nothing after it (#253). The reader sees the claim, not the retained
      source behind it, so the date is stated here rather than left to the
@@ -602,24 +701,25 @@ export function PersonDossierPanel({
     <article className="card" key={item.id} id={`claim-${item.id}`}>
       <p>{item.statement}</p>
       <p className="muted">
-        {item.status} · {item.nature} · {item.effectiveFrom ?? "Date unknown"}
+        {claimStatusLabel(item.status)} · {claimNatureLabel(item.nature)} ·{" "}
+        {item.effectiveFrom ?? "Date unknown"}
         {item.effectiveTo ? ` to ${item.effectiveTo}` : ""}
         {capturedAt(item) ? ` · archived capture ${capturedAt(item)}` : ""}
       </p>
-      {item.citations.map((citation, index) => (
-        <button
-          className="linklike dossier-citation"
-          type="button"
-          key={index}
-          onClick={() => void inspect(citation.sourceId, citation.quote)}
-        >
-          Source {index + 1}: “
-          {citation.quote.trim().replace(/\s+/g, " ").length > 180
-            ? `${citation.quote.trim().replace(/\s+/g, " ").slice(0, 180)}…`
-            : citation.quote.trim().replace(/\s+/g, " ")}
-          ”
-        </button>
-      ))}
+      {item.citations.map((citation, index) => {
+        const quote = quoteOf(citation.quote);
+        return (
+          <button
+            className="linklike dossier-citation"
+            type="button"
+            key={index}
+            title={quote.length > 180 ? `${quote.slice(0, 180)}…` : quote}
+            onClick={() => void inspect(citation.sourceId, citation.quote)}
+          >
+            Source {index + 1}: {citationLabel(summaryById.get(citation.sourceId), quote)}
+          </button>
+        );
+      })}
       {item.changeReason && <p>{item.changeReason}</p>}
     </article>
   );
@@ -802,7 +902,8 @@ export function PersonDossierPanel({
           </p>
           {(diagnosticsPage?.entries ?? view.research.diagnostics.sample).map((attempt, index) => (
             <p key={index}>
-              <strong>{attempt.code}</strong> · {attempt.stage} · {attempt.outcome}
+              <strong title={attempt.code}>{diagnosticCodeLabel(attempt.code)}</strong> ·{" "}
+              {attempt.stage} · {attempt.outcome}
               <br />
               {attempt.reason}
             </p>
@@ -957,7 +1058,8 @@ export function PersonDossierPanel({
                 : section.summary}
             </p>
             <p className="muted">
-              {section.state} · Last researched <EvidenceDate value={section.updatedAt} />
+              {sectionStateLabel(section.state)} · Last researched{" "}
+              <EvidenceDate value={section.updatedAt} />
             </p>
             {evidence(tab === "overview" ? { claimIds: displayed.map((c) => c.id) } : section)}
             {section.gaps.map((gap) => (
@@ -1141,7 +1243,10 @@ export function PersonDossierPanel({
               {(dossier?.sourceIds ?? []).map((sourceId, index) => (
                 <li key={sourceId}>
                   <button type="button" onClick={() => void inspect(sourceId, "")}>
-                    Inspect retained source {index + 1}
+                    {citationLabel(
+                      summaryById.get(sourceId),
+                      `Inspect retained source ${index + 1}`,
+                    )}
                   </button>
                 </li>
               ))}

@@ -218,6 +218,19 @@ const citation = z.object({
   quote: text,
   capturedAt: z.string().max(40).optional(),
 });
+/**
+ * The bounded display facts of one retained source (UX audit F6): what a
+ * reader needs to tell citations apart — a title, the site, the capture date
+ * — with none of the retained text. Titles may be empty (a bare capture);
+ * `domain` is null when the stored URL cannot be parsed.
+ */
+export const PersonSourceSummarySchema = z.object({
+  id,
+  title: z.string().max(500),
+  domain: z.string().max(200).nullable(),
+  capturedAt: z.string().max(40).nullable(),
+});
+export type PersonSourceSummary = z.infer<typeof PersonSourceSummarySchema>;
 export const PersonClaimSchema = z.object({
   id,
   section: PersonDossierSectionSchema,

@@ -102,6 +102,27 @@ export function registerPersonDossierApi(
       return { summary: deps.queue.summary(id), readiness: deps.queue.readiness() };
     },
   );
+  /* Bounded display facts for the Profile's retained sources (UX audit F6):
+     titles, sites and capture dates a reader tells citations apart with —
+     never the retained text, which stays behind the per-source route. */
+  app.get<{ Params: { profileId: string } }>(
+    "/api/people/:profileId/sources",
+    async (request, reply) => {
+      const id = request.params.profileId;
+      if (!deps.people.get(id)) return reply.code(404).send({ error: "profile-not-found" });
+      return { sources: deps.dossiers.sourceSummaries(deps.dossiers.get(id)?.sourceIds ?? []) };
+    },
+  );
+  /* An owner's explicit stop for this Profile's research (UX audit F7); the
+     queue answers false when there is nothing running or queued to stop. */
+  app.post<{ Params: { profileId: string } }>(
+    "/api/people/:profileId/research/cancel",
+    async (request, reply) => {
+      const id = request.params.profileId;
+      if (!deps.people.get(id)) return reply.code(404).send({ error: "profile-not-found" });
+      return { cancelled: deps.queue.cancel(id) };
+    },
+  );
   app.get<{ Params: { profileId: string }; Querystring: { cursor?: string } }>(
     "/api/people/:profileId/research/diagnostics",
     async (request, reply) => {

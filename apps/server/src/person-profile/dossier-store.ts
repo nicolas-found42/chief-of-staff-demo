@@ -21,6 +21,7 @@ import {
   type PersonDossier,
   type PersonDossierContent,
   type PersonSourceDocument,
+  type PersonSourceSummary,
 } from "@chief-of-staff-demo/shared";
 import {
   ExtractionPartCheckpointSchema,
@@ -199,6 +200,36 @@ export class PersonDossierStore {
       (dossier.sourceIds.includes(sourceId) ||
         dossier.claims.some((c) => c.citations.some((p) => p.sourceId === sourceId)));
     return attributed ? this.document(sourceId) : null;
+  }
+  /* Source ids are content hashes, so the display facts parsed for one id can
+     never go stale: each document is read at most once per store instance no
+     matter how many times the index route answers or how often a poll grows
+     the dossier (UX audit F6). */
+  private readonly displayFacts = new Map<
+    string,
+    { title: string; domain: string | null; capturedAt: string | null }
+  >();
+  /** Bounded display facts for the given retained sources, in the order given. */
+  sourceSummaries(sourceIds: string[]): PersonSourceSummary[] {
+    return sourceIds.map((sourceId) => {
+      let facts = this.displayFacts.get(sourceId);
+      if (!facts) {
+        const document = this.document(sourceId);
+        let domain: string | null = null;
+        try {
+          domain = new URL(document?.url ?? "").hostname.replace(/^www\./, "") || null;
+        } catch {
+          // A stored URL that cannot be parsed keeps a null domain.
+        }
+        facts = {
+          title: document ? document.title.slice(0, 500) : "",
+          domain,
+          capturedAt: document?.capturedAt ?? null,
+        };
+        this.displayFacts.set(sourceId, facts);
+      }
+      return { id: sourceId, ...facts };
+    });
   }
 
   publish(profileId: string, expectedRevision: number, input: PersonDossierContent): PersonDossier {

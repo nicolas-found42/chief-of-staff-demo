@@ -308,6 +308,9 @@ export function buildProfileSummary(input: {
     ...(job.currentOperationRevision !== undefined
       ? { currentOperationRevision: job.currentOperationRevision }
       : {}),
+    ...(job.currentOperationStartedAt
+      ? { currentOperationStartedAt: job.currentOperationStartedAt }
+      : {}),
     ...(job.operationRevision !== undefined ? { operationRevision: job.operationRevision } : {}),
     ...(decisive ? { stage: decisive.stage } : {}),
     detail: job.detail.slice(0, 300),

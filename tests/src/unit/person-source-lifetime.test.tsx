@@ -66,6 +66,7 @@ function client(): DossierClient {
       summary: null,
       readiness: { state: "ready", reason: "ready" },
     })),
+    sources: vi.fn(async () => ({ sources: [] })),
     diagnostics: vi.fn(async () => null),
   };
 }
