@@ -500,17 +500,25 @@ export function seedQueries(profile: PersonProfile): string[] {
 }
 ```
 
-When the search result returns, a regex parser in
-[`sources.ts`](../../apps/server/src/person-profile/sources.ts) or
-[`research.ts`](../../apps/server/src/person-profile/research.ts) unpacks the title:
+When the search result returns, the production flow unpacks the title **only behind two identity
+guards**, and the adopted signal is **in-memory steering only** — it can never become a durable
+identity on its own. In
+[`research-plan.ts`](../../apps/server/src/person-profile/research-plan.ts)
+(`extractIdentitySignalsFromSearchResult`):
 ```typescript
-const match = /^(.+?)\s*[-–—]\s*(.+?)\s*\|\s*LinkedIn/i.exec(result.title);
-if (match) {
-  const candidateName = match[1]?.trim();
-  const candidateRoleOrEmployer = match[2]?.trim();
-  // Immediately update profile.fullName to unlock full discovery!
-}
+/* Guard 1: the result's URL must canonicalize to the target profile's subject.
+   Guard 2: the parsed candidate name must match the target profile slug. */
+const targetSubject = linkedInProfileIdentity(targetProfileUrl);
+const resultSubject = linkedInProfileIdentity(result.url);
+if (!targetSubject || targetSubject !== resultSubject) return null;
+// ... parse "Name - Headline | LinkedIn" ...
+if (!matchCandidateNameToSlug(candidateName, targetSubject)) return null;
 ```
+and in [`research.ts`](../../apps/server/src/person-profile/research.ts) the accepted candidate is
+adopted onto the operation's cloned profile to generate fresh seed queries — with durable
+acceptance into the store reserved for `acceptResearchFacts`, which fires only after a substantive
+document read that itself names the person (ADR-0042, ADR-0097). A SERP headline alone never
+writes a claim, a source document, or a stored `fullName`.
 This enables full downstream discovery across all other providers without ever making a network
 request to `linkedin.com`.
 
