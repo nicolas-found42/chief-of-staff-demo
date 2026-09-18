@@ -12,6 +12,9 @@ import {
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
 import { canonicalSourceUrl } from "../source-adapters/source-identity.js";
+import { linkedInProfileIdentity } from "./linkedin-articles.js";
+import { matchCandidateNameToSlug } from "./resolver.js";
+import { socialUrl } from "./sources.js";
 import { classifySourceFamily } from "./research-readers.js";
 
 /** The dossier sections research plans to cover, in the dossier's own order. */
@@ -311,12 +314,82 @@ export function seedQueries(profile: PersonProfile): string[] {
     seeds.push(`"${name}" profile OR announcement OR appointment`);
     seeds.push(`"${name}" publication OR filing OR registry OR award`);
     for (const hint of profile.employerHints.slice(0, 2)) seeds.push(`"${name}" ${hint}`);
-  } else if (employer) {
-    seeds.push(employer);
+  } else {
+    // Identity bootstrap queries for profiles initialized without a known name (e.g. Issue #423)
+    const handles = Object.values(profile.handles).flat();
+    for (const url of profile.profileUrls.slice(0, 2)) {
+      const parsed = socialUrl(url);
+      const slug =
+        parsed?.platform === "linkedin" && parsed.handle
+          ? parsed.handle
+          : linkedInProfileIdentity(url);
+      if (slug) {
+        seeds.push(`site:linkedin.com/in/${slug}`);
+        seeds.push(`"linkedin.com/in/${slug}"`);
+        seeds.push(`"${slug}" (github OR blog OR "about me" OR cv)`);
+        for (const hint of profile.employerHints.slice(0, 2)) seeds.push(`"${slug}" ${hint}`);
+      } else {
+        seeds.push(`"${url}"`);
+      }
+    }
+    for (const handle of handles.slice(0, 2)) {
+      if (!seeds.some((s) => s.includes(handle))) {
+        seeds.push(`"${handle}" (github OR blog OR "about me" OR cv)`);
+      }
+    }
+    if (employer) {
+      seeds.push(employer);
+    }
   }
   return [...new Set(seeds.filter(Boolean))].slice(0, 8);
 }
 
+export interface CandidateIdentitySignal {
+  fullName: string;
+  employerHints: string[];
+}
+
+/**
+ * Extracts candidate identity signals (full name and role/employer) from a search
+ * result title, guarded by canonical profile URL matching and slug similarity.
+ *
+ * Search snippets/titles provide identity signals only (ADR-0042, ADR-0097) to unblock
+ * query generation; they are never retained as source documents or claims.
+ */
+export function extractIdentitySignalsFromSearchResult(
+  result: { url: string; title: string },
+  targetProfileUrl: string,
+): CandidateIdentitySignal | null {
+  const targetSubject = linkedInProfileIdentity(targetProfileUrl);
+  const resultSubject = linkedInProfileIdentity(result.url);
+  if (!targetSubject || targetSubject !== resultSubject) return null;
+
+  const cleanedTitle = result.title.replace(/\s*\|\s*LinkedIn\s*$/i, "").trim();
+  if (!cleanedTitle) return null;
+
+  /* Public search engines index LinkedIn profiles under the "<Name> - <Headline> | LinkedIn"
+     convention (using standard dash, en-dash, or em-dash). Splitting isolates the candidate
+     name from the professional headline and organization hints. */
+  const dashMatch = /^([^–—-]+?)\s*[-–—]\s*(.+)$/.exec(cleanedTitle);
+  const candidateName = (dashMatch ? dashMatch[1]?.trim() : cleanedTitle) ?? "";
+  const roleOrEmployer = dashMatch ? (dashMatch[2]?.trim() ?? null) : null;
+  if (!matchCandidateNameToSlug(candidateName, targetSubject)) return null;
+
+  const employerHints: string[] = [];
+  if (roleOrEmployer) {
+    employerHints.push(roleOrEmployer);
+    const subParts = roleOrEmployer.split(/\s+[-–—]\s+|\s+at\s+/i);
+    if (subParts.length > 1) {
+      const last = subParts.at(-1)?.trim();
+      if (last) employerHints.push(last);
+    }
+  }
+
+  return {
+    fullName: candidateName,
+    employerHints: [...new Set(employerHints)],
+  };
+}
 export interface SelectionContext {
   profile: PersonProfile;
   /** Hosts already read in this operation, for the independence term. */

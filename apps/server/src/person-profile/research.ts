@@ -62,6 +62,8 @@ import {
   deriveLeads,
   describeFamilyShortfall,
   planNextLeads,
+  type CandidateIdentitySignal,
+  extractIdentitySignalsFromSearchResult,
   seedQueries,
 } from "./research-plan.js";
 import {
@@ -534,6 +536,7 @@ export class PersonResearch {
               .pending()
               .filter((lead) => lead.kind === "query")
               .slice(0, 4);
+      const bootstrapCandidates: CandidateIdentitySignal[] = [];
       await Promise.all(
         queryLeads.map(async (lead) => {
           if (!budget.takeRequest()) {
@@ -581,6 +584,12 @@ export class PersonResearch {
                 origin: "discovery",
                 coverage: [],
               });
+              if (!profile.fullName) {
+                for (const profileUrl of profile.profileUrls) {
+                  const signal = extractIdentitySignalsFromSearchResult(result, profileUrl);
+                  if (signal) bootstrapCandidates.push(signal);
+                }
+              }
               if (added && result.entityType === "organization") {
                 leads.resolve(
                   added.id,
@@ -627,6 +636,30 @@ export class PersonResearch {
           }
         }),
       );
+      /* Identity Bootstrap (Issue #423): When direct social reading failed (e.g. HTTP 999 authwall),
+         discovery queries on the profile URL/slug return SERP titles that carry candidate identity signals.
+         The first candidate matching the canonical URL and slug similarity is adopted transiently
+         to unblock full name and employer queries in subsequent rounds. This adoption mutates only
+         the in-memory operation profile clone; durable acceptance into the store still requires a
+         substantive document read that directly names this person (ADR-0042, ADR-0097). */
+      if (!profile.fullName && bootstrapCandidates.length > 0) {
+        const adopted = bootstrapCandidates[0]!;
+        profile.fullName = adopted.fullName;
+        if (adopted.employerHints.length > 0 && !profile.currentEmployer) {
+          profile.employerHints = [
+            ...new Set([...profile.employerHints, ...adopted.employerHints]),
+          ];
+        }
+        const freshSeeds = (this.deps.seeds ?? seedQueries)(profile);
+        for (const seedQuery of freshSeeds) {
+          leads.add({
+            kind: "query",
+            target: seedQuery,
+            origin: "seed",
+            family: "general-discovery",
+          });
+        }
+      }
       if (!active()) break;
 
       /* 2. Selection. Registration order is not the rule any more: everything
@@ -1434,7 +1467,7 @@ export class PersonResearch {
           !privateDocument &&
           resolvedName &&
           read.text.includes(resolvedName) &&
-          !profile.fullName
+          (!profile.fullName || !factualUpdates.some((u) => u.field === "fullName"))
         ) {
           factualUpdates.push({
             field: "fullName",

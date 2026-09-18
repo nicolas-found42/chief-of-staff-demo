@@ -906,6 +906,156 @@ test("a profile URL-only dossier resolves the proper name from the page it serve
   expect(people.get(person.id)?.fullName).toBe("Jane Q Doe");
 });
 
+test("a profile URL-only dossier recovers via search engine title when the social read returns HTTP 999", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-linkedin-authwall-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ profileUrls: ["https://www.linkedin.com/in/joseceresc/"] });
+  const dossiers = new PersonDossierStore(root);
+  const searchCalls: { query: string; fullName: string | null }[] = [];
+  const plannerNames: (string | null)[] = [];
+  const blogHtml = `<!doctype html><html><head><title>CloudScale Engineering Blog</title></head>
+<body><main><article><h1>Platform Innovations</h1><p>Jose Ceres leads platform engineering at CloudScale in Madrid.</p></article></main></body></html>`;
+
+  const research = new PersonResearch({
+    people,
+    dossiers,
+    search: async (query, request) => {
+      searchCalls.push({ query, fullName: request?.fullName ?? null });
+      if (query.includes("joseceresc")) {
+        return [
+          {
+            url: "https://www.linkedin.com/in/joseceresc",
+            title: "Jose Ceres - Senior Platform Engineer - CloudScale | LinkedIn",
+            snippet: "View Jose Ceres on LinkedIn...",
+          },
+        ];
+      }
+      if (query.includes("Jose Ceres")) {
+        return [
+          {
+            url: "https://techblog.example.com/posts/jose-ceres-platform",
+            title: "Platform Innovations at CloudScale",
+            snippet: "Jose Ceres leads platform engineering at CloudScale...",
+          },
+        ];
+      }
+      return [];
+    },
+    fetch: async (url) => {
+      if (url.includes("linkedin.com")) {
+        return {
+          url,
+          status: 999,
+          contentType: "text/html; charset=utf-8",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: '<script>window.location.href = "/authwall";</script>',
+        };
+      }
+      if (url.includes("techblog.example.com")) {
+        return {
+          url,
+          status: 200,
+          contentType: "text/html; charset=utf-8",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: blogHtml,
+        };
+      }
+      return {
+        url,
+        status: 404,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: "",
+      };
+    },
+    complete: async () => ({
+      fullName: "Jose Ceres",
+      employer: "CloudScale",
+      sourceClass: "independent-account",
+      author: null,
+      publishedAt: null,
+      claims: [
+        {
+          id: "claim-blog-1",
+          section: "career",
+          statement: "Jose Ceres leads platform engineering at CloudScale in Madrid.",
+          fact: { field: "currentEmployer", value: "CloudScale" },
+          status: "supported",
+          nature: "statement",
+          matchConfidence: "high",
+          effectiveFrom: null,
+          effectiveTo: null,
+          citations: [
+            {
+              sourceId: "blog-src",
+              quote: "Jose Ceres leads platform engineering at CloudScale in Madrid.",
+            },
+          ],
+          supports: [],
+          supersedes: [],
+          changeReason: "Company engineering blog confirmation",
+        },
+      ],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+    plan: async (request) => {
+      plannerNames.push(PlanUserSchema.parse(JSON.parse(request.user)).person.name);
+      return {
+        queries: ["Jose Ceres CloudScale Madrid"],
+        urls: [],
+        targetCoverage: [],
+        remainingQuestions: [],
+      };
+    },
+  });
+
+  const outcome = await research.run(
+    person,
+    researchAllowance({ maxModelCalls: 8, maxMilliseconds: 20000 }),
+  );
+
+  // The direct LinkedIn URL lead was marked inaccessible due to HTTP 999
+  const linkedInLead = outcome.operation.leads.find(
+    (lead) => lead.kind === "url" && lead.target.includes("linkedin.com"),
+  );
+  expect(linkedInLead?.disposition).toBe("inaccessible");
+
+  // The SERP title bootstrapped the name, reaching the planner and later searches
+  expect(plannerNames).toContain("Jose Ceres");
+  expect(searchCalls.some((call) => call.fullName === "Jose Ceres")).toBe(true);
+  expect(outcome.operation.conclusion).toBe("completed");
+
+  // Research completed successfully with verified evidence from the open web blog
+  const dossier = dossiers.get(person.id)!;
+  expect(dossier.claims.length).toBeGreaterThan(0);
+  expect(dossier.claims[0]?.statement).toContain(
+    "Jose Ceres leads platform engineering at CloudScale",
+  );
+
+  // ADR-0042 & ADR-0097 verification: SERP titles were never retained as source documents or claims.
+  // The 2 retained sources are the blocked LinkedIn attempt (recording the diagnostic trail) and the blog.
+  expect(outcome.operation.sourcesRetained).toBe(2);
+  const citationSource = dossiers.source(person.id, dossier.claims[0].citations[0].sourceId);
+  expect(citationSource?.url).toBe("https://techblog.example.com/posts/jose-ceres-platform");
+  expect(dossier.claims.length).toBeGreaterThan(0);
+
+  // Profile's full name is durably confirmed and accepted by the substantive document
+  expect(people.get(person.id)?.fullName).toBe("Jose Ceres");
+});
+
 test("the profile's own URL is read before any search the operation runs", async () => {
   const root = mkdtempSync(join(tmpdir(), "research-linkedin-first-"));
   roots.push(root);
