@@ -111,8 +111,11 @@ or data aggregators or brokers)" (§ 8.2, <https://www.linkedin.com/legal/user-a
 
 ### 3.2 Keyless enrichment gaps this sweep scoped (the actionable "other means")
 
-1. **Wikidata P6634 slug → entity lookup is NOT implemented, despite the 2026-09-17 document
-   implying it was.** Correction to that document's Strategy-2 table: our adapter
+1. **Wikidata P6634 slug → entity lookup is NOT implemented.** Provenance: the 2026-09-02 stack
+   survey ([public-search-providers.md](public-search-providers.md)) had already classified this
+   route "THE FIX — adopt" (property live-verified; the slug lookup itself "not separately
+   exercised"); the 2026-09-17 reading-options document then overstated it as existing.
+   Correction to that document's Strategy-2 table: our adapter
    (`apps/server/src/source-adapters/providers/wikidata.ts`) is `wbsearchentities` name search
    only — it does not consume Property [P6634](https://www.wikidata.org/wiki/Property:P6634)
    (LinkedIn personal profile ID), P108 (employer), or P39 (position held), and runs no SPARQL. A
@@ -121,7 +124,8 @@ or data aggregators or brokers)" (§ 8.2, <https://www.linkedin.com/legal/user-a
    human items exist versus on the order of a billion LinkedIn profiles
    (<https://www.wikidata.org/wiki/Wikidata:Statistics>), and the notability bar means a
    "Richard Achee"-class professional very likely has no item — record absence as "no
-   notable-person record", never as negative evidence.
+   notable-person record", never as negative evidence. Live-checked 2026-09-18: none of the
+   three #423 slugs has a P6634 row (addendum § A.1).
 2. **Wayback CDX timeline dating of company pages.** Our provider implements only the
    availability API's closest-snapshot answer (`wayback.ts:44-48`, with the 25-75 s deadline
    override documented in its header); the CDX server's timestamp-range enumeration
@@ -188,3 +192,60 @@ third is an honest negative), so the practical residue of #423 is policy, not ac
   inherit the authwall — no LinkedIn-specific keyless bypass exists in their code.
 - All linkedin.com fetches this sweep: `robots.txt` (×2 agents, 2026-09-18),
   <https://www.linkedin.com/help/linkedin/answer/a518980>. Nothing else; no cookies, no logins.
+
+## Addendum: same-day keyless OSS sweep and live checks (2026-09-18, later)
+
+Run after this document merged, same patterns (awesome-lists corpus + GitHub code grep), plus
+bounded live checks. Upstream footprint: three SPARQL calls, six ORCID search calls (a jq
+syntax retry re-fetched the same three names; responses were captured to files and filtered
+locally), one provider-harness probe.
+
+### A. Live checks
+
+1. **P6634 rows for the three #423 slugs: none.** SPARQL `?p wdt:P6634 "<slug>"` against
+   `query.wikidata.org` returned zero bindings for `richardachee`, `joseceresc`, and
+   `shaye-james-b85087143` (2026-09-18). The § 3.2 item 1 notability caveat is now a measured
+   fact for the actual blocked dossiers: the P6634 bridge cannot unlock these three, whatever
+   it offers notable people generally.
+2. **ORCID expanded-search for the three names: no match.** `pub.orcid.org/v3.0/expanded-search/`
+   OR-expands the query tokens (43k-106k fuzzy rows per name); filtered locally for joint
+   given+family matches, zero for "Richard Achee", "Jose Ceresc", "Shaye James". Both keyless
+   identity bridges miss all three blocked people — the 2026-09-02 document's "one honest gap"
+   is exactly where #423 sits.
+3. **OpenAlex probe: throttled, not keyed.** One bounded call through the real provider
+   (`scripts/debug/provider-recovery-probe.mts openalex`, query "Richard Achee") answered 429
+   with Retry-After ≈ 16.9 h, and the provider recorded and honored the cooldown. A 429 is
+   rate-limiting, not the February-2026 key gate (that would be 403); keyless status stays
+   unverifiable from this IP today. No code defect; the OpenAlex side-finding probe is now done
+   and logged.
+
+### B. Keyless OSS options surfaced by the same patterns
+
+- **`inventaire/inventaire`** consumes `wdt:P6634` keyless with a human-slug validation regex
+  (`^[\p{Letter}0-9\-&_'’.]+$/u`,
+  [properties_values_constraints.ts:279](https://github.com/inventaire/inventaire/blob/main/server/controllers/entities/lib/properties/properties_values_constraints.ts))
+  — the concrete precedent to copy if the § 3.2 item 1 adapter is built.
+- **`duckdb-web-archive-cdx`**
+  ([midwork-finds-jobs/duckdb-web-archive](https://github.com/midwork-finds-jobs/duckdb-web-archive),
+  found via [iipc/awesome-web-archiving](https://github.com/iipc/awesome-web-archiving)) queries
+  the Internet Archive **and CommonCrawl** CDX APIs from SQL — a keyless precedent for the
+  § 3.2 item 2 CDX dating gap, and CommonCrawl indexes as a second archive source beyond
+  wayback.
+- **Username-enumeration tools** — [Maigret](https://github.com/soxoj/maigret) (3000+ sites,
+  with profile extraction) and [WhatsMyName](https://whatsmyname.app/) (500+ sites, OSS data
+  file) — are keyless and could feed candidate profile URLs into the Identity Bootstrap slug
+  stage. Classification: lead generation only. Site-existence heuristics are false-positive
+  prone, and a hit is a Research Lead needing verification, never a Person Claim source.
+- **[RecruitEm](https://recruitin.net/)** (X-ray query builder for LinkedIn/Xing via Google) is
+  the SERP-seed pattern the app already runs; no new capability.
+- Meta-lists worth indexing for future sweeps:
+  [iipc/awesome-web-archiving](https://github.com/iipc/awesome-web-archiving) (2,644 stars),
+  [olivierbinette/awesome-entity-resolution](https://github.com/olivierbinette/awesome-entity-resolution)
+  (218 stars),
+  [edoardottt/awesome-hacker-search-engines](https://github.com/edoardottt/awesome-hacker-search-engines)
+  (11,188 stars), `cipher387/osint_stuff_tool_collection` (8,840 stars).
+
+**Net:** no new adoptable search provider beyond the 2026-09-02 stack. What this pass adds:
+measured confirmation that neither keyless identity bridge reaches the three blocked people, a
+concrete OSS precedent for each of the two keyless enrichment gaps, and the username-lead tool
+class for the Identity Bootstrap stage.
