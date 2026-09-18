@@ -64,8 +64,8 @@ export function AllRunsPage() {
       <RunsList
         empty={
           <p className="muted">
-            No activity yet. Module runs and Person research appear here — see{" "}
-            <Link to="/">Home</Link> for the products.
+            No runs yet. Module runs and Person research appear here — see <Link to="/">Home</Link>{" "}
+            for the products.
           </p>
         }
       />
