@@ -36,9 +36,12 @@ const GAP_MS = 1_500;
 type ProbeOutcome = {
   provider: string;
   issue: number;
+  query: string;
   at: string;
   outcome: "ok" | "refused" | "error";
   elapsedMs: number;
+  /** Wait a successful response asked for before later calls (#422 contract). */
+  backoffMs?: number;
   results?: { count: number; firstTitle?: string; firstUrl?: string };
   refusal?: { reason: string; message: string; retryAfterMs?: number };
   error?: string;
@@ -79,18 +82,27 @@ for (const entry of selected) {
   const outcome: ProbeOutcome = {
     provider: entry.name,
     issue: entry.issue,
+    query: QUERY,
     at: new Date().toISOString(),
     outcome: "error",
     elapsedMs: 0,
   };
+  let backoffMs: number | undefined;
   try {
-    const results = await provider.search(QUERY, { fetch: publicHttpFetch, timeoutMs: TIMEOUT_MS });
+    const results = await provider.search(QUERY, {
+      fetch: publicHttpFetch,
+      timeoutMs: TIMEOUT_MS,
+      onBackoff: (milliseconds) => {
+        backoffMs = milliseconds;
+      },
+    });
     outcome.outcome = "ok";
     const first = results[0];
     outcome.results = {
       count: results.length,
       ...(first ? { firstTitle: first.title.slice(0, 120), firstUrl: first.url } : {}),
     };
+    if (backoffMs !== undefined) outcome.backoffMs = backoffMs;
   } catch (error) {
     if (error instanceof ProviderRefusedError) {
       outcome.outcome = "refused";
