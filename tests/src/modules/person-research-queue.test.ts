@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import type { PersonResearchReadiness } from "@chief-of-staff-demo/shared";
 import { PersonResearchQueue } from "../../../apps/server/src/person-profile/research-queue.js";
 import {
@@ -1237,9 +1237,51 @@ test("audit F2/F6: an automatic attempt on a spent allowance reports the exhaust
      never read as an overdraw like "138s of its 120s". */
   expect(job?.detail).toContain("120s of its 120s research time");
   expect(job?.detail).not.toContain("wall-clock");
+  /* The record backs the report (CODING_STANDARDS: a test asserts the
+     record): recovery billed none of the downtime, because the allowance had
+     nothing left, and the refusal itself bills nothing. */
+  expect(job?.elapsedMilliseconds).toBe(137831);
   /* Partial results and the retained traversal survive the honest refusal. */
   expect(job?.checkpoint?.operationId).toBe("op-bounded-2");
   expect(job?.sources).toBe(2);
+});
+
+test("audit F9: a dispatched slice bills at most the allowance, never its own overshoot", async () => {
+  vi.useFakeTimers({ now: 0 });
+  try {
+    const root = mkdtempSync(join(tmpdir(), "research-budget-clamp-"));
+    roots.push(root);
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const person = people.create({ primaryEmail: "clamp@example.com" });
+    /* A slice that is still in flight after the allowance is spent: the
+       accumulator must record the entitlement, not the overrun (the audit's
+       "1832s of its 900s"). */
+    const { promise: slowSearch, resolve: finishSearch } = Promise.withResolvers<never[]>();
+    const research = new PersonResearch({
+      dossiers: new PersonDossierStore(root),
+      search: () => slowSearch,
+      complete: async () => ({}),
+    });
+    const queue = new PersonResearchQueue({
+      workspaceDir: root,
+      people,
+      research,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+    });
+    queue.configure({ profileMilliseconds: 1000 });
+    queue.enqueue(person.id, "created");
+    const ticking = queue.tick();
+    await vi.advanceTimersByTimeAsync(2000);
+    finishSearch([]);
+    await ticking;
+    const job = queue.job(person.id);
+    expect(job?.elapsedMilliseconds).toBe(1000);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("audit F2: explicit research renews a restart-recovered queued operation before dispatch", async () => {

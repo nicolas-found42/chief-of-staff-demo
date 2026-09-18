@@ -11,6 +11,11 @@ import { peopleApi } from "../clients/people";
  * or creates-and-confirms it. Nothing is confirmed without the button press,
  * and the pinned reference carries the exact Profile revision.
  */
+/** An unnamed Profile cannot be a confirmed owner identity — the owner has no
+    name to check the confirmation against (UX audit F2) — so it is neither
+    offered nor auto-selected. */
+const isNamedProfile = (profile: PersonProfile): boolean => (profile.fullName ?? "").trim() !== "";
+
 export function OwnerOnboardingCard({
   googleConnectionState,
 }: {
@@ -31,7 +36,7 @@ export function OwnerOnboardingCard({
          the owner has no name to check the confirmation against — so it is
          neither offered nor auto-selected. An email match on an unnamed
          Profile therefore falls through to the honest create-one path below. */
-      const candidates = list.filter((profile) => (profile.fullName ?? "").trim() !== "");
+      const candidates = list.filter(isNamedProfile);
       setSelectedId((current) => {
         if (current && candidates.some((profile) => profile.id === current)) return current;
         const proposed = candidates.find(
@@ -67,7 +72,7 @@ export function OwnerOnboardingCard({
   /* The select offers only named Profiles; the confirmed summary below still
      resolves its name against the full list, so an older confirmation of a
      Profile that has since lost its name still shows what it was. */
-  const ownerCandidates = profiles.filter((profile) => (profile.fullName ?? "").trim() !== "");
+  const ownerCandidates = profiles.filter(isNamedProfile);
   const proposedProfile =
     ownerCandidates.find((profile) => profile.id === proposal?.matchedProfileId) ?? null;
 

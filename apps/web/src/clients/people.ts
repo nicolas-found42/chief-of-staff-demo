@@ -9,9 +9,6 @@ import type {
   PersonProfileMergeInput,
   PersonProfileProjection,
   PersonProfileProjectionPurpose,
-  PersonResearchAggregateStatus,
-  PersonResearchReadiness,
-  PersonSourceSummary,
   TranscriptRelevanceQuery,
   TranscriptRelevanceReviewItem,
   TranscriptSummary,
@@ -62,22 +59,6 @@ export const peopleApi = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identifier, ...(fullName ? { fullName } : {}) }),
     }),
-  /** The aggregate research projection plus the pipeline's current readiness. */
-  researchStatus: () =>
-    request<{ readiness?: PersonResearchReadiness } & PersonResearchAggregateStatus>(
-      "/api/people/research/status",
-    ),
-  /** An owner's explicit stop for this Profile's research (UX audit F7). */
-  cancelPersonResearch: (profileId: string) =>
-    request<{ cancelled: boolean }>(
-      `/api/people/${encodeURIComponent(profileId)}/research/cancel`,
-      { method: "POST" },
-    ),
-  /** Bounded display facts (title, site, capture date) for retained sources. */
-  sourceSummaries: (profileId: string) =>
-    request<{ sources: PersonSourceSummary[] }>(
-      `/api/people/${encodeURIComponent(profileId)}/sources`,
-    ),
   /** Re-run the public-web search from the identity the Profile already holds. */
   enrichPersonProfile: async (profileId: string) =>
     (

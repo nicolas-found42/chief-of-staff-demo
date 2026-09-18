@@ -171,6 +171,12 @@ const claimNatureLabel = (nature: string): string => CLAIM_NATURE_LABELS[nature]
 const sectionStateLabel = (state: string): string => SECTION_STATE_LABELS[state] ?? state;
 const diagnosticCodeLabel = (code: string): string => DIAGNOSTIC_CODE_LABELS[code] ?? code;
 
+/** The transport failed before the server could answer (client.ts rethrows a
+    fetch rejection as ApiError 0): the app itself is down, not an endpoint
+    (UX audit F1b). */
+const isUnreachable = (error: unknown): boolean =>
+  (error instanceof ApiError && error.status === 0) || error instanceof TypeError;
+
 /** Elapsed research time in mm:ss form (UX audit F7a), e.g. "2m 14s". */
 function elapsedLabel(milliseconds: number): string {
   const seconds = Math.max(0, Math.floor(milliseconds / 1000));
@@ -215,12 +221,13 @@ function rankForDisplay(claims: PersonClaim[]): PersonClaim[] {
 }
 
 /** A citation's readable label (UX audit F6): the source's title or site, not
-    a raw retained fragment. The quote itself stays in the opened inspector. */
+    a raw retained fragment. The quote itself stays in the opened inspector;
+    the fallback caps the quote like the fragment buttons always did. */
 function citationLabel(summary: PersonSourceSummary | undefined, fallback: string): string {
   const title = summary?.title.trim();
   if (title) return title.length > 90 ? `${title.slice(0, 90)}…` : title;
   if (summary?.domain) return summary.domain;
-  return fallback;
+  return fallback.length > 180 ? `${fallback.slice(0, 180)}…` : fallback;
 }
 /**
  * Copy for the pipeline-level readiness states (issue #418, T3/T9, spec §7).
@@ -537,8 +544,7 @@ export function PersonDossierPanel({
            audit F1b): the stale state on screen must say so instead of
            looking live. A request the server answered keeps its own
            readError path. */
-        if ((error instanceof ApiError && error.status === 0) || error instanceof TypeError)
-          setUnreachable(true);
+        if (isUnreachable(error)) setUnreachable(true);
         else {
           setUnreachable(false);
           setReadError(errorMessage(error));
@@ -590,8 +596,7 @@ export function PersonDossierPanel({
          (UX audit F1b): it means the app itself is down, so the last known
          state must stop reading as live. */
       if (generation !== readGeneration.current) return;
-      if ((error instanceof ApiError && error.status === 0) || error instanceof TypeError)
-        setUnreachable(true);
+      if (isUnreachable(error)) setUnreachable(true);
     }
   }, [profileId, client, refresh]);
   const invalidatePending = useCallback(() => {

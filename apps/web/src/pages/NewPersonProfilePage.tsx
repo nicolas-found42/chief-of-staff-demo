@@ -55,6 +55,17 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
     [client],
   );
 
+  /** UX audit F4: a same-name match holds the pending creation behind an
+      explicit confirmation instead of silently duplicating a person (and its
+      research); answers true when the creation is now held. */
+  const holdOnDuplicate = async (name: string, kind: "manual" | "lookup"): Promise<boolean> => {
+    const existing = await findExistingByName(name);
+    if (!existing) return false;
+    setDuplicate(existing);
+    setHeldCreation(kind);
+    return true;
+  };
+
   async function acceptLookup(event?: React.FormEvent) {
     event?.preventDefault();
     if (lookupBusy) return;
@@ -67,10 +78,7 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
     }
     setLookupBusy(true);
     setLookupError(null);
-    const existing = await findExistingByName(identifierFullName);
-    if (existing) {
-      setDuplicate(existing);
-      setHeldCreation("lookup");
+    if (await holdOnDuplicate(identifierFullName, "lookup")) {
       setLookupBusy(false);
       return;
     }
@@ -78,7 +86,6 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
   }
 
   async function acceptIdentifierLookup() {
-    setLookupBusy(true);
     try {
       /* The name is optional but load-bearing: without one the server cannot
          attribute what it reads, and the Profile stays "(unnamed)" after
@@ -104,10 +111,7 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
       return;
     }
     setBusy(true);
-    const existing = await findExistingByName(name);
-    if (existing) {
-      setDuplicate(existing);
-      setHeldCreation("manual");
+    if (await holdOnDuplicate(name, "manual")) {
       setBusy(false);
       return;
     }
@@ -115,7 +119,6 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
   }
 
   async function createProfile() {
-    setBusy(true);
     const name = fullName.trim();
     const email = primaryEmail.trim();
     try {
@@ -142,13 +145,19 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
     }
   }
 
-  /** Runs the creation the same-name warning held back (UX audit F4). */
+  /** Runs the creation the same-name warning held back (UX audit F4); the
+      worker assumes its busy flag is already set, like the submit paths. */
   async function createAnyway() {
     const action = heldCreation;
     setDuplicate(null);
     setHeldCreation(null);
-    if (action === "manual") await createProfile();
-    else if (action === "lookup") await acceptIdentifierLookup();
+    if (action === "manual") {
+      setBusy(true);
+      await createProfile();
+    } else if (action === "lookup") {
+      setLookupBusy(true);
+      await acceptIdentifierLookup();
+    }
   }
 
   return (
