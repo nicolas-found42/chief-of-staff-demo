@@ -23,6 +23,7 @@ type FakeRoute = {
   body: string;
   retryAfter?: string;
   reject?: string;
+  rejectName?: string;
 };
 
 const CHALLENGE = "<html><body>Please complete the following challenge</body></html>";
@@ -115,7 +116,11 @@ function makeFetch(routes: FakeRoute[] = []): {
     if (route === undefined) {
       return respond(url, 200, EMPTY_BODIES[hostOf(url)] ?? "");
     }
-    if (route.reject !== undefined) throw new Error(route.reject);
+    if (route.reject !== undefined) {
+      const error = new Error(route.reject);
+      if (route.rejectName !== undefined) error.name = route.rejectName;
+      throw error;
+    }
     return respond(url, route.status ?? 200, route.body, route.retryAfter);
   };
   return { fetch, calls, bodies };
@@ -479,6 +484,74 @@ describe("the PublicSearch composite", () => {
     advance(86_400_000);
     await expect(search("cap three")).resolves.toHaveLength(1);
     expect(ddgCalls()).toHaveLength(2);
+  });
+
+  it("records a transport abort as a refused provider with the abort detail, never an empty answer", async () => {
+    const { fetch } = makeFetch([
+      {
+        match: (url) => hostOf(url) === "api.mwmbl.org",
+        body: "",
+        reject: "This operation was aborted",
+        rejectName: "AbortError",
+      },
+      {
+        match: (url) => hostOf(url) === "en.wikipedia.org",
+        body: wikiBody([
+          {
+            title: "Grace Hopper",
+            snippet: "Naval officer and pioneer",
+            url: "https://en.wikipedia.org/wiki/Grace_Hopper",
+          },
+        ]),
+      },
+    ]);
+    const { events, diagnostics } = captureDiagnostics();
+    const search = createPublicSearch(fetch, undefined, {
+      diagnostics,
+      providerFilter: (name) => name === "mwmbl" || name === "wikipedia",
+    });
+
+    await expect(search("grace hopper")).resolves.toMatchObject([
+      {
+        title: "Grace Hopper",
+        url: "https://en.wikipedia.org/wiki/Grace_Hopper",
+        snippet: "Naval officer and pioneer",
+      },
+    ]);
+
+    // The aborted provider refuses with the abort detail preserved — it must
+    // never read as a clean empty answer with zero results.
+    const mwmblEvents = events.filter((event) => event.provider === "mwmbl");
+    expect(mwmblEvents).toHaveLength(1);
+    expect(mwmblEvents[0]?.outcome).toBe("refused");
+    expect(mwmblEvents[0]?.detail).toContain("This operation was aborted");
+  });
+
+  it("rejects an all-refused abort pass and re-dispatches the error-refused provider next query", async () => {
+    const { fetch, calls } = makeFetch([
+      {
+        match: (url) => hostOf(url) === "api.mwmbl.org",
+        body: "",
+        reject: "This operation was aborted",
+        rejectName: "AbortError",
+      },
+    ]);
+    const { now } = clock();
+    const search = createPublicSearch(fetch, undefined, {
+      now,
+      providerFilter: (name) => name === "mwmbl",
+    });
+    const mwmblCalls = () => calls.filter((url) => hostOf(url) === "api.mwmbl.org");
+
+    // Every provider refused, so the pass is a source limitation — never a successful "no footprint" answer.
+    const first = await search("abort one").catch((error: unknown) => error);
+    expect(first).toBeInstanceOf(PublicSearchUnavailableError);
+    expect(String((first as Error).message)).toMatch(/all 1 providers refused/);
+    expect(mwmblCalls()).toHaveLength(1);
+
+    // An `error` refusal sets no cooldown, so the next query asks mwmbl again.
+    await expect(search("abort two")).rejects.toBeInstanceOf(PublicSearchUnavailableError);
+    expect(mwmblCalls()).toHaveLength(2);
   });
 
   it("emits one pinned-shape diagnostic event per provider per pass", async () => {
