@@ -12,6 +12,7 @@ import { join } from "node:path";
 import {
   summarizePersonClaims,
   personOverviewClaims,
+  PERSON_SOURCE_OUTBOUND_URL_CAP,
   PersonDossierContentSchema,
   PersonDossierSchema,
   PersonDossierSectionSchema,
@@ -59,6 +60,25 @@ export class PersonDossierStore {
   retainSource(
     input: Omit<PersonSourceDocument, "schemaVersion" | "id" | "hash">,
   ): PersonSourceDocument {
+    /* A recovered page can carry more outbound links than the stored format
+       allows (the LinkedIn authwall recovery rendered 251 on one page).
+       Bounding the list is a stored-format constraint, not an extraction
+       failure: dedupe, keep the first links, note the bound in provenance,
+       and let the operation retain the source instead of throwing away the
+       whole journey. Arrays within the cap stay verbatim so existing records
+       keep their identities. */
+    const overCap =
+      input.outboundUrls !== undefined &&
+      input.outboundUrls.length > PERSON_SOURCE_OUTBOUND_URL_CAP;
+    const outboundUrls = overCap
+      ? [...new Set(input.outboundUrls)].slice(0, PERSON_SOURCE_OUTBOUND_URL_CAP)
+      : input.outboundUrls;
+    const provenanceNote = overCap
+      ? `${input.provenanceNote ? `${input.provenanceNote} ` : ""}Outbound link list bounded to the stored ${PERSON_SOURCE_OUTBOUND_URL_CAP}-URL cap; ${input.outboundUrls?.length} captured.`.slice(
+          0,
+          1000,
+        )
+      : input.provenanceNote;
     const hash = createHash("sha256").update(input.text).digest("hex");
     const familyPath = this.path("person-source-families", `${hash}_${input.visibility}`);
     const family = (this.read(familyPath) as { family: string } | null)?.family ?? input.family;
@@ -82,14 +102,16 @@ export class PersonDossierStore {
           input.rights,
           input.anchors,
           input.namedIndividuals,
-          input.provenanceNote,
-          input.outboundUrls,
+          provenanceNote,
+          outboundUrls,
           input.acquisition,
         ]),
       )
       .digest("hex");
     const source = PersonSourceDocumentSchema.parse({
       ...input,
+      outboundUrls,
+      provenanceNote,
       family,
       hash,
       id,

@@ -700,7 +700,8 @@ export class PersonResearchQueue {
               3600000,
         ).toISOString();
       }
-    } catch {
+    } catch (error) {
+      console.error("[person-research] operation threw:", error);
       if (this.state.jobs.includes(job)) {
         job.state = "unavailable";
         job.detail = "Research failed; completed evidence is retained.";

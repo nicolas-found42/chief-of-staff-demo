@@ -557,6 +557,44 @@ test("a source opens immediately and closing it prevents a late response reopeni
   }
 });
 
+test("a source page with more outbound URLs than the stored cap retains a bounded record", () => {
+  const directory = mkdtempSync(join(tmpdir(), "dossier-source-ui-"));
+  const store = new PersonDossierStore(directory);
+  const outboundUrls = [
+    ...Array.from({ length: 250 }, (_, i) => `https://example.com/link/${i}`),
+    "https://example.com/link/0",
+  ];
+  const input = {
+    url: "https://www.linkedin.com/in/joseceresc/",
+    title: "Profile page",
+    author: null,
+    publishedAt: null,
+    retrievedAt: "2026-09-18",
+    text: "Readable profile text.",
+    family: "professional-network",
+    sourceClass: "primary-artifact" as const,
+    visibility: "public" as const,
+    completeness: "full" as const,
+    extractionCoverage: "full" as const,
+    access: "retrieved" as const,
+    acquisition: "browser-render",
+    outboundUrls,
+    provenanceNote: "Rendered from the live page.",
+  };
+  try {
+    const document = store.retainSource(input);
+    expect(document.outboundUrls).toHaveLength(200);
+    expect(document.outboundUrls?.[0]).toBe("https://example.com/link/0");
+    expect(document.provenanceNote).toContain("Rendered from the live page.");
+    expect(document.provenanceNote).toContain("251");
+    // Identical input normalizes identically, so re-retaining stays one record.
+    const again = store.retainSource(input);
+    expect(again.id).toBe(document.id);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("audit F13: an old stored summary gains punctuation on read without changing the dossier", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dossier-old-prose-"));
   const store = new PersonDossierStore(directory);
