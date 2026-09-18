@@ -308,7 +308,18 @@ export class PersonResearch {
     },
   ) {}
 
-  async run(profile: PersonProfile, allowance: ResearchAllowance): Promise<ResearchOutcome> {
+  async run(inputProfile: PersonProfile, allowance: ResearchAllowance): Promise<ResearchOutcome> {
+    /* Clone the incoming operation profile at method entry so transient
+       in-memory steering mutations (such as Identity Bootstrap for URL-only
+       profiles) cannot mutate the caller-owned object. Durable profile
+       updates occur exclusively through acceptResearchFacts(). */
+    const profile: PersonProfile = {
+      ...inputProfile,
+      employerHints: [...inputProfile.employerHints],
+      profileUrls: [...inputProfile.profileUrls],
+      emails: [...inputProfile.emails],
+      handles: { ...inputProfile.handles },
+    };
     const models: { complete: CompleteJson; plan?: CompleteJson; identity?: string } =
       this.deps.operationModels?.() ?? {
         complete: this.deps.complete,
@@ -644,7 +655,36 @@ export class PersonResearch {
          the in-memory operation profile clone; durable acceptance into the store still requires a
          substantive document read that directly names this person (ADR-0042, ADR-0097). */
       if (!profile.fullName && bootstrapCandidates.length > 0) {
-        const adopted = bootstrapCandidates[0]!;
+        // Deterministic candidate selection: rank candidates stably independent of concurrent query completion order.
+        const frequency = new Map<string, { candidate: CandidateIdentitySignal; count: number }>();
+        for (const candidate of bootstrapCandidates) {
+          const key = candidate.fullName.trim();
+          const existing = frequency.get(key);
+          if (existing) {
+            existing.count++;
+            for (const hint of candidate.employerHints) {
+              if (!existing.candidate.employerHints.includes(hint)) {
+                existing.candidate.employerHints.push(hint);
+              }
+            }
+          } else {
+            frequency.set(key, {
+              candidate: {
+                fullName: key,
+                employerHints: [...candidate.employerHints],
+              },
+              count: 1,
+            });
+          }
+        }
+        const ranked = [...frequency.values()].sort((a, b) => {
+          if (b.count !== a.count) return b.count - a.count;
+          if (a.candidate.fullName.length !== b.candidate.fullName.length) {
+            return a.candidate.fullName.length - b.candidate.fullName.length;
+          }
+          return a.candidate.fullName.localeCompare(b.candidate.fullName);
+        });
+        const adopted = ranked[0]!.candidate;
         profile.fullName = adopted.fullName;
         if (adopted.employerHints.length > 0 && !profile.currentEmployer) {
           profile.employerHints = [

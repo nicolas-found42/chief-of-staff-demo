@@ -155,7 +155,7 @@ export function matchCandidateNameToSlug(candidateName: string, slug: string): b
 
   const compactName = tokens.join("");
   if (compactSlug === compactName) return true;
-  if (compactSlug.startsWith(tokens[0]! + (tokens[1] ?? ""))) return true;
+  if (tokens.length >= 2 && compactSlug.startsWith(tokens[0]! + tokens[1]!)) return true;
 
   if (tokens.length >= 3) {
     // Contractions such as first + second + initial of third (e.g. jose + ceres + c)
@@ -164,10 +164,7 @@ export function matchCandidateNameToSlug(candidateName: string, slug: string): b
   }
 
   const distance = jaroWinklerDistance(compactSlug, compactName);
-  if (
-    distance >= 0.85 &&
-    (compactSlug.startsWith(tokens[0]!) || compactName.startsWith(tokens[0]!))
-  ) {
+  if (tokens.length >= 2 && distance >= 0.85 && compactSlug.startsWith(tokens[0]!)) {
     return true;
   }
 

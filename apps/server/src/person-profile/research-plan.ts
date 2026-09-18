@@ -378,7 +378,7 @@ export function extractIdentitySignalsFromSearchResult(
   /* Public search engines index LinkedIn profiles under the "<Name> - <Headline> | LinkedIn"
      convention (using standard dash, en-dash, or em-dash). Splitting isolates the candidate
      name from the professional headline and organization hints. */
-  const dashMatch = /^([^–—-]+?)\s*[-–—]\s*(.+)$/.exec(cleanedTitle);
+  const dashMatch = /^(.+?)\s+[-–—]\s+(.+)$/.exec(cleanedTitle);
   const candidateName = (dashMatch ? dashMatch[1]?.trim() : cleanedTitle) ?? "";
   const roleOrEmployer = dashMatch ? (dashMatch[2]?.trim() ?? null) : null;
   if (!matchCandidateNameToSlug(candidateName, targetSubject)) return null;

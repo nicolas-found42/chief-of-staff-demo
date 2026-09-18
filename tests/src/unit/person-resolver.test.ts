@@ -26,6 +26,14 @@ describe("matchCandidateNameToSlug", () => {
     expect(matchCandidateNameToSlug("James Shaye", "shaye-james-b85087143")).toBe(false);
   });
 
+  it("rejects a bare first name that cannot establish a two-token identity", () => {
+    expect(matchCandidateNameToSlug("Jose", "joseceresc")).toBe(false);
+  });
+
+  it("rejects different people whose names are merely similar", () => {
+    expect(matchCandidateNameToSlug("Jane Smith", "joan-smith")).toBe(false);
+  });
+
   it("handles empty or degenerate inputs safely", () => {
     expect(matchCandidateNameToSlug("", "joseceresc")).toBe(false);
     expect(matchCandidateNameToSlug("Jose Ceres", "")).toBe(false);

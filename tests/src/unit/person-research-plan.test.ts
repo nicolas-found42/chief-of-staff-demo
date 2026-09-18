@@ -68,6 +68,17 @@ describe("extractIdentitySignalsFromSearchResult", () => {
     });
   });
 
+  it("preserves hyphens inside candidate names when splitting the headline", () => {
+    const hyphenated = {
+      url: "https://www.linkedin.com/in/annemariesmith",
+      title: "Anne-Marie Smith - CEO | LinkedIn",
+    };
+    expect(extractIdentitySignalsFromSearchResult(hyphenated, hyphenated.url)).toEqual({
+      fullName: "Anne-Marie Smith",
+      employerHints: ["CEO"],
+    });
+  });
+
   it("handles en-dash and em-dash separators and 'at' company phrasing", () => {
     const resultEnDash = {
       url: "https://www.linkedin.com/in/joseceresc/",

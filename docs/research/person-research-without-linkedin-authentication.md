@@ -448,7 +448,7 @@ It is important to be precise about where the code gap is and is not:
   `profile.currentEmployer`, it emits `[]` when only a profile URL was provided, leaving the
   operation with no queries to run once the direct URL read is gated.
 ```typescript
-// CURRENT DEFECTIVE CODE IN research-plan.ts
+// HISTORICAL PRE-REMEDIATION CODE IN research-plan.ts (PRIOR TO ISSUE #423)
 export function seedQueries(profile: PersonProfile): string[] {
   const name = profile.fullName?.trim();
   const employer = profile.currentEmployer?.trim();
@@ -470,7 +470,7 @@ When `profile.fullName` is null, `seedQueries()` must inspect `profile.profileUr
 LinkedIn/social handles, generating search queries specifically designed to resolve the person's
 identity:
 ```typescript
-// REMEDIATED PATTERN FOR research-plan.ts
+// IMPLEMENTED REMEDIATION IN research-plan.ts (RESOLVES ISSUE #423)
 export function seedQueries(profile: PersonProfile): string[] {
   const name = profile.fullName?.trim();
   const employer = profile.currentEmployer?.trim();
