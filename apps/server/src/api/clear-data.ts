@@ -54,6 +54,7 @@ export interface ClearDataRouteDeps {
   startModules: (options: { seedV1Watchlist: boolean }) => Promise<void>;
   /** Resolves when every in-flight intake, wake-up and enqueued Run has settled. */
   drain: () => Promise<void>;
+  onCleared?: () => void;
   /** Test seam: the Sheets row-delete, as the YouTube host takes a client seam. */
   clearRows?: (auth: GoogleAuth, spreadsheetId: string) => Promise<ClearedTab[]>;
 }
@@ -150,6 +151,7 @@ export function registerClearDataApi(app: FastifyInstance, deps: ClearDataRouteD
         reply.code(403).send({ error: "confirmation-mismatch" });
         return;
       }
+      deps.onCleared?.();
 
       /* The same, now-emptied Resonance Ledger stays the destination: the
        pointer is configuration, not generated data, and losing it would have

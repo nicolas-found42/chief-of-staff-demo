@@ -198,6 +198,7 @@ export interface PersonProfilesComposition {
   start(): void;
   stop(): void;
   drain(): Promise<void>;
+  reset(): void;
 }
 
 /**
@@ -431,5 +432,6 @@ export function composePersonProfiles(
     start: () => queue.start(),
     stop: () => queue.stop(),
     drain: () => queue.drain(),
+    reset: () => queue.reset(),
   };
 }

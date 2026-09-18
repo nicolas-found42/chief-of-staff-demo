@@ -428,6 +428,30 @@ export class PersonResearchQueue {
     this.stop();
     await this.pending;
   }
+  reset(): void {
+    this.loaded.clear();
+    this.running.clear();
+    this.explicitDispatches.clear();
+    this.removed.clear();
+    this.state = existsSync(this.file)
+      ? PersonResearchStatusSchema.parse(JSON.parse(readFileSync(this.file, "utf8")))
+      : {
+          schemaVersion: 1,
+          settings: PersonResearchSettingsSchema.parse({
+            paused: false,
+            concurrency: 1,
+            refreshHours: 168,
+          }),
+          day: this.now().slice(0, 10),
+          usedCalls: 0,
+          jobs: [],
+          history: [],
+        };
+    if (!this.state.history) {
+      this.state.history = this.seedHistoryFromJobs(this.state.jobs);
+    }
+    for (const job of this.state.jobs) this.loaded.add(job.profileId);
+  }
   async runNow(profileId: string): Promise<PersonResearchOperationOutcome | null> {
     const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
     if (
