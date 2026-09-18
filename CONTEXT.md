@@ -613,6 +613,12 @@ used to resolve evidence to one Person Profile. A signal is an input to matching
 records identify the same person.
 _Avoid_: Identity, lookup key, match (a match is a conclusion)
 
+**Identity Bootstrap**:
+The initial phase of a Person Research Operation when a Person Profile begins without a confirmed
+full name, dedicated to resolving public Identity Signals (such as a profile URL or social handle)
+into a corroborated name anchor before general evidence collection begins.
+_Avoid_: Name guessing, profile scraping, uncorroborated rename
+
 **Person Evidence**:
 A sourced claim, profile reference, publication, activity, or mention attributed to a Person Profile
 with its provenance and match confidence. Ambiguous evidence remains visible but cannot establish a
