@@ -375,7 +375,10 @@ information — and it is what the UI shows.
 
 Made 2026-09-18 ~07:45Z with the application's own production renderer — no session, no cookie,
 one request, the same `playwrightBrowserRenderer()` the reader calls, whose chromium executable is
-`/usr/local/bin/browser-network-sandbox` (`apps/server/src/source-adapters/browser.ts:113`):
+`/usr/local/bin/browser-network-sandbox` (`apps/server/src/source-adapters/browser.ts:113`). It was
+made **before the IP-wide blanket of §9 began (~08:15Z)**, when control slugs in the same window
+still served the full guest page — so the landing below is this subject's healthy-window answer,
+not a throttling artifact:
 
 ```json
 {
@@ -602,7 +605,7 @@ rate-shaped bot-management response, not a UA rule.
 | URL shapes | trailing slash, `?trk=public_profile`, `?locale=en_US`, `?original_referer=google`, `/en`, `?lipi=…`, `/pub/dir/Sheila/Warrick` | 999 on all seven |
 | Anonymous browser | real Chrome 153, fresh profile, no cookies, `navigator.webdriver=false`, headed, over CDP | stub → `/authwall` join form; no identity in the 75 KB page |
 | Other LinkedIn surfaces | jobs guest API, company guest pages, `/pub/dir`, robots | jobs/company work and carry no person data; person namespace refused |
-| Not yet probed (queued in the cool window) | `m.linkedin.com/in/<slug>`, `/public-profile/in/<slug>`, `/people-guest/people-search?keywords=…`, `/directory/people-sheila/`, plus the nonexistent-slug control in both the fetch mode and the production renderer | `/people/search/`, `/people-guest/` and `/public-profile/` appear in LinkedIn's own robots disallow lists and were never probed by any lane; the control settles whether a red row proves existence-plus-gating or nothing at all (§9.6) |
+| Not yet probed (queued in the cool window) | `m.linkedin.com/in/<slug>`, `/public-profile/in/<slug>`, `/people-guest/people-search?keywords=…`, `/directory/people-sheila/`, plus the nonexistent-slug control in the fetch mode and in a real headless-Chrome page load (the production renderer is a separate leg, present only when the app container runs — §9.6) | `/people/search/`, `/people-guest/` and `/public-profile/` appear in LinkedIn's own robots disallow lists and were never probed by any lane; the control settles whether a red row proves existence-plus-gating or nothing at all (§9.6) |
 | Archives | Wayback (replay, availability, CDX), archive.today, Arquivo.pt (CDX, timemap, textsearch), Common Crawl, GhostArchive | no capture in any of them; GhostArchive answers "Page 0 out of 0", and Common Crawl's 2026-34 index returns 404 for the slug **and for `billgates`** — LinkedIn names `CCBot` in robots, so no crawl holds any `/in/` page, which is why crawls were already dropped as a visibility proxy (§7). |
 | Keyless renderers/proxies | Microlink, Jina Reader, codetabs, allorigins, corsproxy, urlscan, Google cache | refused, empty, or retired |
 | Search indexes | Bing (`site:`, quoted URL, name), DuckDuckGo, Google, Startpage, Mojeek, Marginalia, SearXNG, Mwmbl, Wiby | **the index lane is void, not negative.** Bing's SERPs decode to filler for every one of these queries (barcode generators for the `/posts` query, SOC-2 pages for the name, calculator sites for the slug) — a degraded or substituted SERP backend on this machine, so "nothing indexed" is not established and is not used anywhere in this document as evidence of non-publicness. The app's own 22 discovery queries ran into the same wall (`document-empty | html-reader | https://www.google.com/search?q=Sheila+Warrick`). |
@@ -620,19 +623,25 @@ verdict:
 
 - **The nonexistent slug.** A bot-scored client can receive the same 999 stub for "this profile is
   not publicly served" and for "this vanity URL does not resolve". The battery therefore fetches
-  `/in/zzzzz-does-not-exist-9f3k` **in the same batch as the subject**, in the fetch mode and in the
-  production renderer. If the nonexistent slug returns the stub too, the subject's red row proves
+  `/in/zzzzz-does-not-exist-9f3k` **in the same batch as the subject**, in the same fetch mode and
+  in a real headless-Chrome page load. Those renderer legs are stock
+  `--headless=new --dump-dom` loads, not the application's production renderer;
+  `tooling/recovery-battery-v2.sh` adds one production-renderer render of each URL when the app
+  container is running and logs a SKIPPED row when it is not, because the detached battery cannot
+  require a container. If the nonexistent slug returns the stub too, the subject's red row proves
   neither state; if it 404s or renders a not-found guest page while the subject keeps 999/authwall,
   existence-plus-gating is established and the remedy changes accordingly.
 - **Subject URL namespaces never probed by any lane**: `m.linkedin.com/in/<slug>`,
   `/public-profile/in/<slug>`, `/people-guest/people-search?keywords=…`, `/directory/people-sheila/`
   and the subject without `www`.
 
-A detached watcher (`tooling/recovery-battery.sh`) enforces **silence-then-single-probe**: one
+A detached watcher (`tooling/recovery-battery-v2.sh`, v1 at
+`tooling/recovery-battery.sh`) enforces **silence-then-single-probe**: one
 validate request against a known-public slug, preceded by a silent window that doubles after every
 red reading (20 min, 40, 80, …), because a fixed 15-minute cadence kept the blanket hot for three
 hours. Only a validated green reading starts the battery — one request per shape, plus one real
-headless-Chrome page load for the subject and one for the control, no retries — and the run exits.
+headless-Chrome page load for the subject and one for the control (and, when the app container is
+running, one production-renderer render of each), no retries — and the run exits.
 Findings land in `.scratch/linkedin-anon-routes/raw/recovery-watch.log` and supersede this section.
 
 **Request ledger and posture.** Every LinkedIn-facing request this diagnosis made is counted:
