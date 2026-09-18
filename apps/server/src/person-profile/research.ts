@@ -62,6 +62,8 @@ import {
   deriveLeads,
   describeFamilyShortfall,
   planNextLeads,
+  type CandidateIdentitySignal,
+  extractIdentitySignalsFromSearchResult,
   seedQueries,
 } from "./research-plan.js";
 import {
@@ -306,7 +308,18 @@ export class PersonResearch {
     },
   ) {}
 
-  async run(profile: PersonProfile, allowance: ResearchAllowance): Promise<ResearchOutcome> {
+  async run(inputProfile: PersonProfile, allowance: ResearchAllowance): Promise<ResearchOutcome> {
+    /* Clone the incoming operation profile at method entry so transient
+       in-memory steering mutations (such as Identity Bootstrap for URL-only
+       profiles) cannot mutate the caller-owned object. Durable profile
+       updates occur exclusively through acceptResearchFacts(). */
+    const profile: PersonProfile = {
+      ...inputProfile,
+      employerHints: [...inputProfile.employerHints],
+      profileUrls: [...inputProfile.profileUrls],
+      emails: [...inputProfile.emails],
+      handles: { ...inputProfile.handles },
+    };
     const models: { complete: CompleteJson; plan?: CompleteJson; identity?: string } =
       this.deps.operationModels?.() ?? {
         complete: this.deps.complete,
@@ -320,6 +333,7 @@ export class PersonResearch {
     const startedAt = now();
     const started = Date.now();
     const coverage = buildCoveragePlan();
+    const initialFullName = profile.fullName;
     /* A deliberate request re-investigates the Profile's own seeds, so the
        checkpoint's visited list must not deduplicate them; every other lead
        keeps its earlier disposition. */
@@ -534,6 +548,7 @@ export class PersonResearch {
               .pending()
               .filter((lead) => lead.kind === "query")
               .slice(0, 4);
+      const bootstrapCandidates: CandidateIdentitySignal[] = [];
       await Promise.all(
         queryLeads.map(async (lead) => {
           if (!budget.takeRequest()) {
@@ -581,6 +596,12 @@ export class PersonResearch {
                 origin: "discovery",
                 coverage: [],
               });
+              if (!profile.fullName) {
+                for (const profileUrl of profile.profileUrls) {
+                  const signal = extractIdentitySignalsFromSearchResult(result, profileUrl);
+                  if (signal) bootstrapCandidates.push(signal);
+                }
+              }
               if (added && result.entityType === "organization") {
                 leads.resolve(
                   added.id,
@@ -627,6 +648,59 @@ export class PersonResearch {
           }
         }),
       );
+      /* Identity Bootstrap (Issue #423): When direct social reading failed (e.g. HTTP 999 authwall),
+         discovery queries on the profile URL/slug return SERP titles that carry candidate identity signals.
+         The first candidate matching the canonical URL and slug similarity is adopted transiently
+         to unblock full name and employer queries in subsequent rounds. This adoption mutates only
+         the in-memory operation profile clone; durable acceptance into the store still requires a
+         substantive document read that directly names this person (ADR-0042, ADR-0097). */
+      if (!profile.fullName && bootstrapCandidates.length > 0) {
+        // Deterministic candidate selection: rank candidates stably independent of concurrent query completion order.
+        const frequency = new Map<string, { candidate: CandidateIdentitySignal; count: number }>();
+        for (const candidate of bootstrapCandidates) {
+          const key = candidate.fullName.trim();
+          const existing = frequency.get(key);
+          if (existing) {
+            existing.count++;
+            for (const hint of candidate.employerHints) {
+              if (!existing.candidate.employerHints.includes(hint)) {
+                existing.candidate.employerHints.push(hint);
+              }
+            }
+          } else {
+            frequency.set(key, {
+              candidate: {
+                fullName: key,
+                employerHints: [...candidate.employerHints],
+              },
+              count: 1,
+            });
+          }
+        }
+        const ranked = [...frequency.values()].sort((a, b) => {
+          if (b.count !== a.count) return b.count - a.count;
+          if (a.candidate.fullName.length !== b.candidate.fullName.length) {
+            return a.candidate.fullName.length - b.candidate.fullName.length;
+          }
+          return a.candidate.fullName.localeCompare(b.candidate.fullName);
+        });
+        const adopted = ranked[0]!.candidate;
+        profile.fullName = adopted.fullName;
+        if (adopted.employerHints.length > 0 && !profile.currentEmployer) {
+          profile.employerHints = [
+            ...new Set([...profile.employerHints, ...adopted.employerHints]),
+          ];
+        }
+        const freshSeeds = (this.deps.seeds ?? seedQueries)(profile);
+        for (const seedQuery of freshSeeds) {
+          leads.add({
+            kind: "query",
+            target: seedQuery,
+            origin: "seed",
+            family: "general-discovery",
+          });
+        }
+      }
       if (!active()) break;
 
       /* 2. Selection. Registration order is not the rule any more: everything
@@ -1434,7 +1508,8 @@ export class PersonResearch {
           !privateDocument &&
           resolvedName &&
           read.text.includes(resolvedName) &&
-          !profile.fullName
+          !initialFullName &&
+          !factualUpdates.some((u) => u.field === "fullName")
         ) {
           factualUpdates.push({
             field: "fullName",

@@ -85,6 +85,91 @@ function overlap(left: string[], right: string[]): string[] {
   const rightSet = new Set(right);
   return left.filter((value) => rightSet.has(value));
 }
+function jaroWinklerDistance(s1: string, s2: string): number {
+  if (s1 === s2) return 1.0;
+  if (!s1.length || !s2.length) return 0.0;
+
+  const matchDistance = Math.floor(Math.max(s1.length, s2.length) / 2) - 1;
+  const s1Matches = new Array(s1.length).fill(false);
+  const s2Matches = new Array(s2.length).fill(false);
+
+  let matches = 0;
+  for (let i = 0; i < s1.length; i++) {
+    const start = Math.max(0, i - matchDistance);
+    const end = Math.min(i + matchDistance + 1, s2.length);
+    for (let j = start; j < end; j++) {
+      if (s2Matches[j] || s1[i] !== s2[j]) continue;
+      s1Matches[i] = true;
+      s2Matches[j] = true;
+      matches++;
+      break;
+    }
+  }
+
+  if (matches === 0) return 0.0;
+
+  let transpositions = 0;
+  let k = 0;
+  for (let i = 0; i < s1.length; i++) {
+    if (!s1Matches[i]) continue;
+    while (!s2Matches[k]) k++;
+    if (s1[i] !== s2[k]) transpositions++;
+    k++;
+  }
+
+  const jaro =
+    (matches / s1.length + matches / s2.length + (matches - transpositions / 2) / matches) / 3;
+  let prefix = 0;
+  for (let i = 0; i < Math.min(4, s1.length, s2.length); i++) {
+    if (s1[i] === s2[i]) prefix++;
+    else break;
+  }
+
+  return jaro + prefix * 0.1 * (1 - jaro);
+}
+
+/**
+ * Verifies whether a candidate full name extracted from a search engine result title
+ * corresponds to the target profile URL slug (e.g. "Jose Ceres" or "Jose Ceres Escamilla"
+ * matching "joseceresc").
+ *
+ * Used during Identity Bootstrap when a profile URL's direct read is refused by an
+ * authentication wall (Issue #423). Without this verification, search results could
+ * adopt arbitrary names that do not match the operator-specified profile address.
+ */
+export function matchCandidateNameToSlug(candidateName: string, slug: string): boolean {
+  const rawName = candidateName.trim().toLowerCase();
+  const rawSlug = slug.trim().toLowerCase();
+  if (!rawName || !rawSlug) return false;
+
+  const tokens = rawName
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return false;
+
+  // Strip common LinkedIn random hex/numeric suffix (e.g. -b85087143 or -123456)
+  const cleanSlug = rawSlug.replace(/-[0-9a-f]{6,}$/i, "").replace(/-[0-9]+$/i, "");
+  const compactSlug = cleanSlug.replace(/[^a-z0-9]/g, "");
+  if (!compactSlug) return false;
+
+  const compactName = tokens.join("");
+  if (compactSlug === compactName) return true;
+  if (tokens.length >= 2 && compactSlug.startsWith(tokens[0]! + tokens[1]!)) return true;
+
+  if (tokens.length >= 3) {
+    // Contractions such as first + second + initial of third (e.g. jose + ceres + c)
+    const firstSecondThirdInitial = tokens[0]! + tokens[1]! + tokens[2]![0];
+    if (compactSlug.startsWith(firstSecondThirdInitial)) return true;
+  }
+
+  const distance = jaroWinklerDistance(compactSlug, compactName);
+  if (tokens.length >= 2 && distance >= 0.85 && compactSlug.startsWith(tokens[0]!)) {
+    return true;
+  }
+
+  return false;
+}
 
 export function matchPersonEvidence(
   requested: PersonIdentitySignals,
@@ -107,7 +192,6 @@ export function matchPersonEvidence(
   matchedSignals.push(...nameMatches.map((value) => `fullName:${value}`));
   const employerMatches = overlap(input.employerHints, candidate.employerHints);
   matchedSignals.push(...employerMatches.map((value) => `employer:${value}`));
-
   const contradictoryEmail =
     input.emails.length > 0 && candidate.emails.length > 0 && emailMatches.length === 0;
   const contradictoryHandle = Object.entries(input.handles).some(([platform, values]) => {
