@@ -304,11 +304,14 @@ export function buildProfileSummary(input: {
     calls: job.calls,
     sources: job.sources,
     ...(operation ? { claimsPublished: operation.claimsPublished } : {}),
-    ...(job.currentOperationId ? { currentOperationId: job.currentOperationId } : {}),
-    ...(job.currentOperationRevision !== undefined
-      ? { currentOperationRevision: job.currentOperationRevision }
+    /* The in-flight markers describe an operation in flight (the schema's
+       contract): a settled job keeps its record fields for the run ledger,
+       but the summary reports the started-at only while research is live
+       (CodeRabbit, PR #458). */
+    ...(job.state === "researching" && job.currentOperationId
+      ? { currentOperationId: job.currentOperationId }
       : {}),
-    ...(job.currentOperationStartedAt
+    ...(job.state === "researching" && job.currentOperationStartedAt
       ? { currentOperationStartedAt: job.currentOperationStartedAt }
       : {}),
     ...(job.operationRevision !== undefined ? { operationRevision: job.operationRevision } : {}),

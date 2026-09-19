@@ -769,6 +769,40 @@ test("audit F13: the revision selector lists the newest 50 revisions and names t
   }
 });
 
+test("audit F13: Show all expands the selector to every recorded revision", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(PersonDossierPanel, { profileId: "maya", client: revisionClient() }),
+      ),
+    );
+    const expand = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Show all 120 revisions"),
+    )!;
+    await act(async () => {
+      expand.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="Dossier revision"]')!;
+    const options = [...select.options];
+    expect(options.filter((option) => option.textContent.startsWith("Revision "))).toHaveLength(
+      120,
+    );
+    expect(options.some((option) => option.textContent === "Revision 1")).toBe(true);
+    expect(options.some((option) => option.textContent.includes("older revisions"))).toBe(false);
+    expect(
+      [...container.querySelectorAll("button")].some((button) =>
+        button.textContent.includes("Show all"),
+      ),
+    ).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
 test("audit F13: a selected revision older than the window stays in the selector", async () => {
   window.history.replaceState(null, "", "/?dossierRevision=5");
   const container = document.createElement("div");

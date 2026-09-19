@@ -66,6 +66,14 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
     return true;
   };
 
+  /* The confirmation names the identity it was shown for (CodeRabbit, PR
+     #458): editing any identity field invalidates it, so "Create anyway" can
+     only ever create the person the user actually confirmed. */
+  const releaseHeldCreation = () => {
+    setDuplicate(null);
+    setHeldCreation(null);
+  };
+
   async function acceptLookup(event?: React.FormEvent) {
     event?.preventDefault();
     if (lookupBusy) return;
@@ -210,6 +218,7 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
                 /* A refusal about what was typed is stale the moment it
                    changes (UX audit F13). */
                 setLookupError(null);
+                releaseHeldCreation();
               }}
             />
           </div>
@@ -223,7 +232,10 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
               id="profile-identifier-name"
               value={identifierFullName}
               autoComplete="off"
-              onChange={(event) => setIdentifierFullName(event.target.value)}
+              onChange={(event) => {
+                setIdentifierFullName(event.target.value);
+                releaseHeldCreation();
+              }}
             />
           </div>
           <div className="field-row">
@@ -276,7 +288,10 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
               id="profile-full-name"
               value={fullName}
               autoComplete="off"
-              onChange={(event) => setFullName(event.target.value)}
+              onChange={(event) => {
+                setFullName(event.target.value);
+                releaseHeldCreation();
+              }}
             />
           </div>
           <div className="field-row">
@@ -286,7 +301,10 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
               type="email"
               value={primaryEmail}
               autoComplete="off"
-              onChange={(event) => setPrimaryEmail(event.target.value)}
+              onChange={(event) => {
+                setPrimaryEmail(event.target.value);
+                releaseHeldCreation();
+              }}
             />
           </div>
           <h2>Known facts</h2>

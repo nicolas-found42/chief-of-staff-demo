@@ -1,4 +1,5 @@
 import {
+  PERSON_OVERVIEW_IDENTITY_FIELDS,
   PersonResearchReadinessSchema,
   personOverviewClaims,
   summarizePersonClaims,
@@ -221,6 +222,17 @@ function rankForDisplay(claims: PersonClaim[]): PersonClaim[] {
     .map((entry) => entry.claim);
 }
 
+/** The Overview's reading order (UX audit F6): identity claims keep the
+    front the selector gave them — re-ranking behind them must not unseat
+    the person's name, role and employer — while everything behind them
+    still ranks by corroboration. */
+function overviewReadingOrder(claims: PersonClaim[]): PersonClaim[] {
+  const identity = claims.filter((claim) =>
+    PERSON_OVERVIEW_IDENTITY_FIELDS.some((field) => field === claim.fact?.field),
+  );
+  return [...identity, ...rankForDisplay(claims.filter((claim) => !identity.includes(claim)))];
+}
+
 /** A captured date in the same readable form EvidenceDate renders, or null
     when the capture time is unknown or not anchored to a day. */
 function capturedDateLabel(value: string | null | undefined): string | null {
@@ -246,7 +258,7 @@ function citationLabel(summary: PersonSourceSummary | undefined, fallback: strin
   const parts: string[] = [];
   const title = summary?.title.trim();
   if (title) parts.push(title.length > 70 ? `${title.slice(0, 70)}…` : title);
-  else if (summary?.domain) parts.push(summary.domain);
+  if (summary?.domain) parts.push(summary.domain);
   const captured = capturedDateLabel(summary?.capturedAt);
   if (captured) parts.push(captured);
   if (parts.length) return parts.join(" — ");
@@ -785,7 +797,7 @@ export function PersonDossierPanel({
   const overviewClaims = personOverviewClaims(activeClaims);
   const displayed =
     tab === "overview"
-      ? rankForDisplay(
+      ? overviewReadingOrder(
           overviewClaims.filter(
             (c) =>
               !c.statement.includes("Education — Institution unknown") &&
@@ -950,7 +962,7 @@ export function PersonDossierPanel({
         )}
         <button
           type="button"
-          disabled={startingResearch}
+          disabled={startingResearch || unreachable}
           onClick={() => {
             setStartingResearch(true);
             void act(() => client.research(profileId)).finally(() => setStartingResearch(false));
@@ -958,13 +970,14 @@ export function PersonDossierPanel({
         >
           {startingResearch ? "Starting research…" : "Prioritise research"}
         </button>{" "}
-        {(view?.research?.state === "queued" || view?.research?.state === "researching") && (
-          <>
-            <button type="button" onClick={() => void act(() => client.cancel(profileId))}>
-              Stop research
-            </button>{" "}
-          </>
-        )}
+        {!unreachable &&
+          (view?.research?.state === "queued" || view?.research?.state === "researching") && (
+            <>
+              <button type="button" onClick={() => void act(() => client.cancel(profileId))}>
+                Stop research
+              </button>{" "}
+            </>
+          )}
         {!unreachable &&
           (view?.research?.state === "queued" || view?.research?.state === "researching") && (
             <p className="muted">

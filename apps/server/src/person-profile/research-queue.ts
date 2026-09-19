@@ -745,7 +745,11 @@ export class PersonResearchQueue {
       }
     } catch (error) {
       console.error("[person-research] operation threw:", error);
-      if (this.state.jobs.includes(job)) {
+      /* A late rejection must not overwrite a cancellation (CodeRabbit, PR
+         #458): cancel() already cleared the operation and set the interrupted
+         state; only the operation that still owns the job may report its
+         failure. A superseded operation falls through to finally. */
+      if (job.currentOperationId === operationId && this.state.jobs.includes(job)) {
         job.state = "unavailable";
         job.detail = "Research failed; completed evidence is retained.";
         job.nextAt = new Date(Date.parse(this.now()) + 3600000).toISOString();

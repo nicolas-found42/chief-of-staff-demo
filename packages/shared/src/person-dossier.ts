@@ -576,6 +576,10 @@ export interface PersonConnectionStep {
 const OVERVIEW_IDENTITY_FIELDS = ["fullName", "role", "currentEmployer"] as const;
 const OVERVIEW_CAP = 6;
 
+/** The claim facts that name the person (UX audit F6): the Overview leads
+    with these wherever the panel needs the identity block alone. */
+export const PERSON_OVERVIEW_IDENTITY_FIELDS = OVERVIEW_IDENTITY_FIELDS;
+
 export function personOverviewClaims(claims: PersonClaim[]): PersonClaim[] {
   const incomplete = claims.filter((claim) =>
     claim.statement.includes("Education — Institution unknown"),
@@ -584,9 +588,11 @@ export function personOverviewClaims(claims: PersonClaim[]): PersonClaim[] {
     claim.statement.startsWith("Unresolved source fragment:"),
   );
   const rest = claims.filter((claim) => !incomplete.includes(claim) && !unresolved.includes(claim));
+  /* Identity claims themselves respect the cap: a profile saturated with
+     identity facts must not balloon the summary past six claims. */
   const identity = OVERVIEW_IDENTITY_FIELDS.flatMap((field) =>
     rest.filter((claim) => claim.fact?.field === field),
-  );
+  ).slice(0, OVERVIEW_CAP);
   return [
     ...identity,
     ...rest.filter((claim) => !identity.includes(claim)).slice(0, OVERVIEW_CAP - identity.length),

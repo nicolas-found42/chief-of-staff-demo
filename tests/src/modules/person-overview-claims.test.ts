@@ -64,6 +64,23 @@ describe("personOverviewClaims", () => {
     expect(overview.slice(0, 2).map((c) => c.id)).toEqual(["role", "employer"]);
   });
 
+  test("caps identity claims themselves when they alone exceed the summary", () => {
+    const claims = [
+      ...Array.from({ length: 7 }, (_, index) =>
+        claim({
+          id: `role-${index}`,
+          statement: `Role fact ${index}.`,
+          fact: { field: "role", value: `Role ${index}` },
+        }),
+      ),
+      claim({ id: "trivia", statement: "A later discovery." }),
+    ];
+    const overview = personOverviewClaims(claims);
+    expect(overview).toHaveLength(6);
+    expect(overview.every((c) => c.id.startsWith("role-"))).toBe(true);
+    expect(overview.map((c) => c.id)).not.toContain("trivia");
+  });
+
   test("keeps incomplete education and unresolved fragments at the tail", () => {
     const claims = [
       claim({

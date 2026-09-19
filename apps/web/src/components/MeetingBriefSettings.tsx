@@ -498,7 +498,7 @@ export function MeetingBriefSettings({
           )}
         </div>
         <div className="card" role="group" aria-labelledby="group-relay-summary">
-          <h3 id="group-relay-summary">Calendar Relay (opaque)</h3>
+          <h3 id="group-relay-summary">Calendar Relay status</h3>
           <p className="muted">
             Relay stores no Calendar credentials or event data. Relay health:{" "}
             {relayStatus?.relayHealth ?? "loading"}
