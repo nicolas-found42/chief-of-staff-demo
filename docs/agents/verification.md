@@ -189,3 +189,28 @@ docker compose down
 
 The response must be `{"ok":true}`. Always bring the Compose project down, including after a
 failed health check.
+
+### Isolated runs reuse the canonical images
+
+An isolated stack — an acceptance journey, an audit — varies the Compose project name, the
+loopback ports and the Workspace mount. It does not invent an image name: its Compose file keeps
+the `image: chief-of-staff-demo-app` / `chief-of-staff-demo-relay` names that `docker-compose.yml`
+pins and takes the stack up with `--no-build`, so the run reuses the image the normal loop built
+and builds nothing of its own. A run-specific tag isolates nothing the project name did not, and
+it leaves a multi-gigabyte image behind that reads as a second application — #423's
+`issue-423-journeys:local` did exactly that. Bring the isolated project down with
+`docker compose -p <name> down --rmi local`: the v5.5.1 pruner removes images carrying that
+project's Compose labels — a run-specific tag included, where `docker image prune -f` cannot
+reach while the tag exists — and pulled images (searxng, valkey) carry no project label and
+survive ([the hygiene note](../research/docker-image-hygiene-conventions-2026-09-18.md)). If the
+run did rebuild the canonical names, they carry its labels too and `local` takes them; the next
+normal `up --build` rebuilds them with the cache warm. `docker image ls` should then
+show the four canonical images and nothing else, and `docker compose ls -a` no leftover project.
+On this machine's containerd image store a rebuild with unchanged content drops its superseded
+index outright — two identical `docker compose build app` runs left `docker image ls -a` showing
+only the four tagged images (hygiene note §1.6) — so there is normally nothing for
+`docker image prune -f` to clear; it remains the safe tool when a dangling image does turn up
+(classic store, manual `docker build`). Do not reach for `-a`, and clear the build cache only
+deliberately — it is what keeps a rebuild near 30 seconds. Unused
+anonymous volumes (kilobytes, from ad-hoc `docker run` and `compose run`) go with
+`docker volume prune -f`.
