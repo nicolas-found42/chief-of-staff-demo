@@ -67,10 +67,9 @@ describe("providerSaveWarning", () => {
     );
   });
 
-  it("warns for a changed provider with no key at all", () => {
+  it("warns with the generic no-key message when the provider changes and none is stored", () => {
     expect(providerSaveWarning("openai", "", false, true)).toBe(
-      "The stored API key belongs to the previous provider — saving now removes it, and " +
-        "research and extraction will not run for this provider until its own key is added.",
+      "No API key set — research and extraction will not run until one is added.",
     );
   });
 

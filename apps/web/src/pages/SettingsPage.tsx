@@ -86,6 +86,8 @@ export function providerSaveWarning(
 ): string | null {
   if (provider === "mock" || provider === "ollama") return null;
   if (apiKey.trim() !== "") return null;
+  if (!keyStored)
+    return "No API key set — research and extraction will not run until one is added.";
   /* A stored key authenticates its own provider only (CodeRabbit, PR #458):
      switching providers with a blank field must not read as settled — the
      save removes the stale key rather than authenticating the new provider
@@ -95,8 +97,6 @@ export function providerSaveWarning(
       "The stored API key belongs to the previous provider — saving now removes it, and " +
       "research and extraction will not run for this provider until its own key is added."
     );
-  if (!keyStored)
-    return "No API key set — research and extraction will not run until one is added.";
   return null;
 }
 
@@ -297,7 +297,7 @@ export function SettingsPage() {
       };
       if (form.apiKey !== "") {
         update.apiKey = form.apiKey;
-      } else if (providerChanged && providerNeedsKey) {
+      } else if (providerChanged && providerNeedsKey && payload.config.apiKey.set) {
         /* A blank field otherwise keeps whatever is stored (an absent field
            keeps secrets by contract), and a stored key authenticates its own
            provider only: switching with no new key removes it rather than
