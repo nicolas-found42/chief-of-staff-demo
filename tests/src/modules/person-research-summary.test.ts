@@ -40,15 +40,14 @@ test("the per-profile summary exposes when the in-flight operation began (UX aud
     buildProfileSummary({ job, readiness: READY }),
   );
   expect(summary.currentOperationStartedAt).toBe("2026-09-15T00:04:00.000Z");
-  /* Absent while no operation is in flight, so the reader never ticks a
-     stale clock. */
+  /* Absent while no operation is in flight, even though a settled record
+     keeps its ledger fields: the fixture leaves both markers populated and
+     the settled state alone must omit them. */
   const settled = PersonResearchProfileSummarySchema.parse(
-    buildProfileSummary({
-      job: { ...job, state: "queued", currentOperationStartedAt: undefined },
-      readiness: READY,
-    }),
+    buildProfileSummary({ job: { ...job, state: "queued" }, readiness: READY }),
   );
   expect(settled.currentOperationStartedAt).toBeUndefined();
+  expect(settled.currentOperationId).toBeUndefined();
 });
 
 let sequence = 0;

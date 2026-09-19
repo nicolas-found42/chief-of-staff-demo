@@ -1246,6 +1246,49 @@ test("audit F2/F6: an automatic attempt on a spent allowance reports the exhaust
   expect(job?.sources).toBe(2);
 });
 
+test("audit F1b: a rejection arriving after an owner's cancel keeps the stopped state", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-cancel-race-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "cancel-race@example.com" });
+  /* The slice is in flight when the owner stops research; the operation it
+     was running then rejects. That late rejection must not overwrite the
+     owner-stop state: only the operation that still owns the job may report
+     a failure. */
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => {
+      entered.resolve();
+      await release.promise;
+      return [];
+    },
+    complete: async () => {
+      throw new Error("Late failure after the owner stopped research");
+    },
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+  queue.enqueue(person.id, "created");
+  const ticking = queue.tick();
+  await entered.promise;
+  expect(queue.cancel(person.id)).toBe(true);
+  release.resolve();
+  await ticking;
+  const job = queue.job(person.id);
+  expect(job?.state).toBe("interrupted");
+  expect(job?.detail).toContain("stopped by an owner");
+  expect(job?.state).not.toBe("unavailable");
+});
+
 test("audit F9: a dispatched slice bills at most the allowance, never its own overshoot", async () => {
   vi.useFakeTimers({ now: 0 });
   try {

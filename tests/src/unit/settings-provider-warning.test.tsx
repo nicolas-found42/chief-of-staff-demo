@@ -56,8 +56,22 @@ describe("providerSaveWarning", () => {
     expect(providerSaveWarning("openrouter", "sk-or-abc", false)).toBeNull();
   });
 
-  it("stays quiet when a key is stored and the field is left blank", () => {
-    expect(providerSaveWarning("openrouter", "", true)).toBeNull();
+  it("stays quiet when a key is stored for the same provider and the field is left blank", () => {
+    expect(providerSaveWarning("openrouter", "", true, false)).toBeNull();
+  });
+
+  it("warns when the provider changed onto a stored key, because that key is not its own", () => {
+    expect(providerSaveWarning("openai", "", true, true)).toBe(
+      "The stored API key belongs to the previous provider — saving now removes it, and " +
+        "research and extraction will not run for this provider until its own key is added.",
+    );
+  });
+
+  it("warns for a changed provider with no key at all", () => {
+    expect(providerSaveWarning("openai", "", false, true)).toBe(
+      "The stored API key belongs to the previous provider — saving now removes it, and " +
+        "research and extraction will not run for this provider until its own key is added.",
+    );
   });
 
   it("stays quiet for providers that need no key", () => {

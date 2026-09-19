@@ -82,10 +82,22 @@ export function providerSaveWarning(
   provider: ProviderId,
   apiKey: string,
   keyStored: boolean,
+  providerChanged = false,
 ): string | null {
   if (provider === "mock" || provider === "ollama") return null;
-  if (keyStored || apiKey.trim() !== "") return null;
-  return "No API key set — research and extraction will not run until one is added.";
+  if (apiKey.trim() !== "") return null;
+  /* A stored key authenticates its own provider only (CodeRabbit, PR #458):
+     switching providers with a blank field must not read as settled — the
+     save removes the stale key rather than authenticating the new provider
+     with the previous one's key. */
+  if (providerChanged)
+    return (
+      "The stored API key belongs to the previous provider — saving now removes it, and " +
+      "research and extraction will not run for this provider until its own key is added."
+    );
+  if (!keyStored)
+    return "No API key set — research and extraction will not run until one is added.";
+  return null;
 }
 
 interface FormState {
@@ -285,6 +297,12 @@ export function SettingsPage() {
       };
       if (form.apiKey !== "") {
         update.apiKey = form.apiKey;
+      } else if (providerChanged && providerNeedsKey) {
+        /* A blank field otherwise keeps whatever is stored (an absent field
+           keeps secrets by contract), and a stored key authenticates its own
+           provider only: switching with no new key removes it rather than
+           authenticating the new provider with the previous one's key. */
+        update.apiKey = "";
       }
       if (form.googleClientSecret !== "") {
         update.google = { clientId: form.googleClientId, clientSecret: form.googleClientSecret };
@@ -487,7 +505,13 @@ export function SettingsPage() {
   const googleSettled = googleStatus?.state === "connected";
   const providerNeedsKey = form.provider !== "mock" && form.provider !== "ollama";
   const providerSettled = !providerNeedsKey || payload.config.apiKey.set;
-  const saveWarning = providerSaveWarning(form.provider, form.apiKey, payload.config.apiKey.set);
+  const providerChanged = form.provider !== payload.config.provider;
+  const saveWarning = providerSaveWarning(
+    form.provider,
+    form.apiKey,
+    payload.config.apiKey.set,
+    providerChanged,
+  );
 
   const providerFields = (
     <>

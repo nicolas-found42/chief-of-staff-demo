@@ -1001,6 +1001,7 @@ export function PersonDossierPanel({
               </p>
               <button
                 type="button"
+                disabled={unreachable}
                 onClick={() =>
                   void act(() => client.configure({ paused: !settings.settings.paused }))
                 }
@@ -1019,6 +1020,7 @@ export function PersonDossierPanel({
                   <input
                     type="number"
                     min={1}
+                    disabled={unreachable}
                     value={settings.settings[key] ?? 720}
                     onChange={(event) => {
                       editingSettings.current = true;
@@ -1033,6 +1035,7 @@ export function PersonDossierPanel({
               ))}
               <button
                 type="button"
+                disabled={unreachable}
                 onClick={() =>
                   void act(
                     () =>
