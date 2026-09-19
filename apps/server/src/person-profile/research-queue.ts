@@ -40,6 +40,12 @@ export class PersonResearchQueue {
   private readonly file: string;
   private state: PersonResearchStatus;
   private running = new Set<string>();
+  /** Wall-clock ms when an owner's stop landed on an in-flight operation
+   * (CodeRabbit, PR #458); in-memory only. That operation's finally bills
+   * elapsed allowance up to this cutoff, never past it — a slow in-flight
+   * request that settles after the stop must not consume allowance the
+   * owner already cancelled. */
+  private cancelledAt = new Map<string, number>();
   /** Profiles this instance deliberately dropped; never re-adopted on merge. */
   private readonly removed = new Set<string>();
   /** Profiles the file already held when this instance loaded it. */
@@ -428,6 +434,12 @@ export class PersonResearchQueue {
     if (!job || (job.state !== "queued" && job.state !== "paused" && job.state !== "researching"))
       return false;
     const wasResearching = job.state === "researching";
+    /* Billing stops when the owner stops (CodeRabbit, PR #458): record the
+       stop's wall-clock time so the in-flight operation's finally bills only
+       the work done before it. Guarded on an operation actually running for
+       this instance — a researching job recovered from disk but not yet
+       dispatched has no in-flight operation to cap. */
+    if (wasResearching && this.running.has(profileId)) this.cancelledAt.set(profileId, Date.now());
     delete job.currentOperationId;
     delete job.startedAt;
     job.state = "interrupted";
@@ -471,6 +483,7 @@ export class PersonResearchQueue {
   reset(): void {
     this.loaded.clear();
     this.running.clear();
+    this.cancelledAt.clear();
     this.explicitDispatches.clear();
     this.removed.clear();
     this.state = existsSync(this.file)
@@ -759,8 +772,14 @@ export class PersonResearchQueue {
          that overshot its backstop bills up to the allowance, so the stored
          accumulator can never exceed what the Profile was entitled to spend
          and the spent report can never read as an overdraw. */
+      /* An owner's stop ends the billing clock too (CodeRabbit, PR #458):
+         a cancelled slice bills only the work that ran before the stop, so
+         a slow in-flight request that settles afterwards can never consume
+         allowance the owner already took away. */
+      const billedThrough = this.cancelledAt.get(job.profileId) ?? Date.now();
+      this.cancelledAt.delete(job.profileId);
       job.elapsedMilliseconds = Math.min(
-        (job.elapsedMilliseconds ?? 0) + Date.now() - started,
+        (job.elapsedMilliseconds ?? 0) + Math.max(0, billedThrough - started),
         this.state.settings.profileMilliseconds,
       );
       delete job.startedAt;

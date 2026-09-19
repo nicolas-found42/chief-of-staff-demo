@@ -1327,6 +1327,54 @@ test("audit F9: a dispatched slice bills at most the allowance, never its own ov
   }
 });
 
+test("audit F9: an owner's stop caps the in-flight slice's billing at the stop time", async () => {
+  vi.useFakeTimers({ now: 0 });
+  try {
+    const root = mkdtempSync(join(tmpdir(), "research-cancel-billing-"));
+    roots.push(root);
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const person = people.create({ primaryEmail: "cancel-billing@example.com" });
+    /* The owner stops research while a slice is still in flight, and the
+       slow request only settles afterwards. The stop ends the billing clock:
+       the slice must bill the work done before it, not the linger (CodeRabbit,
+       PR #458). */
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const research = new PersonResearch({
+      dossiers: new PersonDossierStore(root),
+      search: async () => {
+        entered.resolve();
+        await release.promise;
+        return [];
+      },
+      complete: async () => ({}),
+    });
+    const queue = new PersonResearchQueue({
+      workspaceDir: root,
+      people,
+      research,
+      readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+    });
+    queue.configure({ profileMilliseconds: 1000 });
+    queue.enqueue(person.id, "created");
+    const ticking = queue.tick();
+    await entered.promise;
+    await vi.advanceTimersByTimeAsync(400);
+    expect(queue.cancel(person.id)).toBe(true);
+    await vi.advanceTimersByTimeAsync(600);
+    release.resolve();
+    await ticking;
+    const job = queue.job(person.id);
+    expect(job?.state).toBe("interrupted");
+    expect(job?.elapsedMilliseconds).toBe(400);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("audit F2: explicit research renews a restart-recovered queued operation before dispatch", async () => {
   const root = mkdtempSync(join(tmpdir(), "research-recovered-budget-"));
   roots.push(root);

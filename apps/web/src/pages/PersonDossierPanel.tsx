@@ -243,10 +243,13 @@ function capturedDateLabel(value: string | null | undefined): string | null {
   const parsed = new Date(dateOnly ? `${value}T12:00:00Z` : value);
   if (!Number.isFinite(parsed.getTime())) return null;
   if (dateOnly && parsed.toISOString().slice(0, 10) !== value) return null;
+  /* Archived captures are UTC instants (CodeRabbit, PR #458): formatting in
+     the browser's zone could move a late-UTC capture to the previous day. */
   return new Intl.DateTimeFormat("en", {
     year: "numeric",
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   }).format(parsed);
 }
 
@@ -258,7 +261,9 @@ function citationLabel(summary: PersonSourceSummary | undefined, fallback: strin
   const parts: string[] = [];
   const title = summary?.title.trim();
   if (title) parts.push(title.length > 70 ? `${title.slice(0, 70)}…` : title);
-  if (summary?.domain) parts.push(summary.domain);
+  /* A source whose title is its own domain would render the value twice
+     (CodeRabbit, PR #458). */
+  if (summary?.domain && summary.domain !== title) parts.push(summary.domain);
   const captured = capturedDateLabel(summary?.capturedAt);
   if (captured) parts.push(captured);
   if (parts.length) return parts.join(" — ");

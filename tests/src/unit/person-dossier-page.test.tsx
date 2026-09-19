@@ -488,6 +488,80 @@ test("a claim grounded in an archived capture shows the capture date and its bou
   }
 });
 
+test("a citation dates its capture in UTC and never repeats a self-domain title", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "dossier-citation-label-"));
+  const store = new PersonDossierStore(directory);
+  const source = store.retainSource({
+    url: "https://example.com/biography",
+    title: "example.com",
+    author: null,
+    publishedAt: null,
+    retrievedAt: "2026-09-07",
+    capturedAt: "2024-05-23T23:30:00.000Z",
+    text: "A captured fact worth citing.",
+    family: "example.com",
+    sourceClass: "self-report",
+    visibility: "public",
+    completeness: "full",
+    extractionCoverage: "full",
+    access: "retrieved",
+    acquisition: "direct-read",
+  });
+  const dossier = store.publish("shafik", 0, {
+    sourceIds: [source.id],
+    claims: [
+      {
+        id: "fact",
+        section: "career",
+        statement: source.text,
+        fact: { field: "role", value: "A role" },
+        status: "supported",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: null,
+        effectiveTo: null,
+        citations: [{ sourceId: source.id, quote: source.text, capturedAt: source.capturedAt }],
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+      },
+    ],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  });
+  const client = makeClient();
+  client.read = async () => ({ dossier, research: null });
+  client.sources = async () => ({
+    sources: [
+      {
+        id: source.id,
+        title: "example.com",
+        domain: "example.com",
+        capturedAt: "2024-05-23T23:30:00.000Z",
+      },
+    ],
+  });
+  const container = window.document.createElement("div");
+  window.document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(createElement(PersonDossierPanel, { profileId: "shafik", client })),
+    );
+    /* The capture instant is 23:30Z: a browser east of UTC would render May 24
+       without the explicit UTC zone (CodeRabbit, PR #458). */
+    expect(container.textContent).toContain("Source 1: example.com — May 23, 2024");
+    /* A source whose title is its own domain renders that value once. */
+    expect(container.textContent).not.toContain("example.com — example.com");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("dossier tabs use a single tab stop and arrow keys move selection", async () => {
   const container = document.createElement("div");
   document.body.append(container);
