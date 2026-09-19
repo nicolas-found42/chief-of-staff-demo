@@ -11,6 +11,11 @@ import { peopleApi } from "../clients/people";
  * or creates-and-confirms it. Nothing is confirmed without the button press,
  * and the pinned reference carries the exact Profile revision.
  */
+/** An unnamed Profile cannot be a confirmed owner identity — the owner has no
+    name to check the confirmation against (UX audit F2) — so it is neither
+    offered nor auto-selected. */
+const isNamedProfile = (profile: PersonProfile): boolean => (profile.fullName ?? "").trim() !== "";
+
 export function OwnerOnboardingCard({
   googleConnectionState,
 }: {
@@ -27,9 +32,17 @@ export function OwnerOnboardingCard({
       const [next, list] = await Promise.all([onboardingApi.owner(), peopleApi.people()]);
       setStatus(next);
       setProfiles(list);
+      /* UX audit F2: an unnamed Profile cannot be a confirmed owner identity —
+         the owner has no name to check the confirmation against — so it is
+         neither offered nor auto-selected. An email match on an unnamed
+         Profile therefore falls through to the honest create-one path below. */
+      const candidates = list.filter(isNamedProfile);
       setSelectedId((current) => {
-        if (current && list.some((profile) => profile.id === current)) return current;
-        return next.proposal?.matchedProfileId ?? list[0]?.id ?? "";
+        if (current && candidates.some((profile) => profile.id === current)) return current;
+        const proposed = candidates.find(
+          (profile) => profile.id === next.proposal?.matchedProfileId,
+        );
+        return proposed?.id ?? candidates[0]?.id ?? "";
       });
     } catch (caught) {
       setError(errorMessage(caught));
@@ -56,6 +69,12 @@ export function OwnerOnboardingCard({
 
   const confirmed = status?.confirmed ?? null;
   const proposal = status?.proposal ?? null;
+  /* The select offers only named Profiles; the confirmed summary below still
+     resolves its name against the full list, so an older confirmation of a
+     Profile that has since lost its name still shows what it was. */
+  const ownerCandidates = profiles.filter(isNamedProfile);
+  const proposedProfile =
+    ownerCandidates.find((profile) => profile.id === proposal?.matchedProfileId) ?? null;
 
   return (
     <div className="card" role="group" aria-labelledby="group-owner-onboarding">
@@ -81,14 +100,14 @@ export function OwnerOnboardingCard({
             Connected as <strong>{proposal.googleEmail}</strong>. Confirm which Person Profile is
             the canonical owner identity — the proposal is a suggestion, never a confirmation.
           </p>
-          {proposal.matchedProfileId ? (
+          {proposedProfile ? (
             <p>
-              Proposed by the connected email:{" "}
-              <strong>
-                {profiles.find((p) => p.id === proposal.matchedProfileId)?.fullName ??
-                  proposal.matchedProfileId}
-              </strong>
-              .
+              Proposed by the connected email: <strong>{proposedProfile.fullName}</strong>.
+            </p>
+          ) : ownerCandidates.length === 0 ? (
+            <p>
+              No Person Profiles yet. <Link to="/people/new">Create one under Person Profiles</Link>{" "}
+              with your connected email, then confirm it here.
             </p>
           ) : (
             <p>
@@ -102,12 +121,14 @@ export function OwnerOnboardingCard({
             <select
               value={selectedId}
               onChange={(event) => setSelectedId(event.target.value)}
-              disabled={profiles.length === 0}
+              disabled={ownerCandidates.length === 0}
             >
-              {profiles.length === 0 ? <option value="">No Person Profiles yet</option> : null}
-              {profiles.map((profile) => (
+              {ownerCandidates.length === 0 ? (
+                <option value="">No Person Profiles yet</option>
+              ) : null}
+              {ownerCandidates.map((profile) => (
                 <option key={profile.id} value={profile.id}>
-                  {profile.fullName ?? "(unnamed)"}
+                  {profile.fullName}
                   {profile.primaryEmail ? ` — ${profile.primaryEmail}` : ""}
                 </option>
               ))}

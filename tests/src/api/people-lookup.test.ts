@@ -156,6 +156,36 @@ describe("POST /api/people/lookup/accept", () => {
     });
     expect(again.json<{ existing: boolean }>().existing).toBe(true);
   });
+
+  it("records the submitted full name on the accepted profile (UX audit F5)", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/people/lookup/accept",
+      payload: { identifier: "ada@example.com", fullName: "Ada Lovelace" },
+    });
+    expect(response.statusCode).toBe(200);
+    const { profile } = response.json<{ profile: { id: string } }>();
+    expect(store.get(profile.id)?.fullName).toBe("Ada Lovelace");
+  });
+
+  it("names a reused identity that was first accepted unnamed (UX audit F5)", async () => {
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/people/lookup/accept",
+      payload: { identifier: "ada@example.com" },
+    });
+    const unnamed = store.get(first.json<{ profile: { id: string } }>().profile.id);
+    expect(unnamed?.fullName ?? null).toBeNull();
+    const again = await app.inject({
+      method: "POST",
+      url: "/api/people/lookup/accept",
+      payload: { identifier: "ada@example.com", fullName: "Ada Lovelace" },
+    });
+    expect(again.statusCode).toBe(200);
+    const { profile } = again.json<{ profile: { id: string } }>();
+    expect(profile.id).toBe(unnamed?.id);
+    expect(store.get(profile.id)?.fullName).toBe("Ada Lovelace");
+  });
 });
 
 describe("POST /api/people/:profileId/enrich", () => {

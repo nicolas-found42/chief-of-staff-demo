@@ -17,6 +17,9 @@ const navigationError = () =>
 
 beforeEach(() => {
   vi.resetAllMocks();
+  /* The real Browser contract closes with a promise; the single-close owner
+     in the renderer awaits it. */
+  browser.close.mockResolvedValue(undefined);
   launcher.launch.mockResolvedValue(browser);
 });
 afterEach(() => vi.useRealTimers());

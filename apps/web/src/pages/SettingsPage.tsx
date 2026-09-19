@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   MODEL_PURPOSES,
@@ -63,6 +63,42 @@ const PROVIDER_KEY_URLS: Partial<Record<ProviderId, string>> = {
   openrouter: "https://openrouter.ai/keys",
   gemini: "https://aistudio.google.com/apikey",
 };
+
+/**
+ * The prerequisite a save cannot fix, said next to the save control (UX audit
+ * F3: a bare "Saved." with no key set reads as "setup complete", and the
+ * symptom — a research gate or an empty result — is far from its cause).
+ *
+ * `mock` and `ollama` need no key, and a stored key covers the field staying
+ * blank, which is exactly how the API-key field is meant to be left once a
+ * secret exists. Saving stays allowed either way — a partially configured
+ * Workspace is legitimate — so this returns the warning rather than blocking.
+ *
+ * Exported as a pure function so the unit spec can read the decision without
+ * mounting this page; nothing but the spec imports it.
+ */
+// oxlint-disable-next-line react/only-export-components
+export function providerSaveWarning(
+  provider: ProviderId,
+  apiKey: string,
+  keyStored: boolean,
+  providerChanged = false,
+): string | null {
+  if (provider === "mock" || provider === "ollama") return null;
+  if (apiKey.trim() !== "") return null;
+  if (!keyStored)
+    return "No API key set — research and extraction will not run until one is added.";
+  /* A stored key authenticates its own provider only (CodeRabbit, PR #458):
+     switching providers with a blank field must not read as settled — the
+     save removes the stale key rather than authenticating the new provider
+     with the previous one's key. */
+  if (providerChanged)
+    return (
+      "The stored API key belongs to the previous provider — saving now removes it, and " +
+      "research and extraction will not run for this provider until its own key is added."
+    );
+  return null;
+}
 
 interface FormState {
   provider: ProviderId;
@@ -154,6 +190,26 @@ export function SettingsPage() {
     }
   }, [payload, refreshGoogle]);
 
+  /* UX audit F13: the research gate links to /settings#group-provider, and this
+     page is long enough that the link otherwise lands on the top heading and
+     reads as broken. The card only exists once config has loaded, so the effect
+     waits for that rather than reading the DOM on the loading render — and runs
+     once, because `form` changes on every keystroke. */
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current || !form || !payload) return;
+    deepLinkHandled.current = true;
+    const id = window.location.hash.slice(1);
+    const target = id ? document.getElementById(id) : null;
+    if (!target) return;
+    // jsdom has no layout, so scrollIntoView is absent in tests (the same
+    // guard the panel uses).
+    if (typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "start" });
+    if (target.matches("a[href], button, input, select, textarea, [tabindex]")) {
+      target.focus({ preventScroll: true });
+    }
+  }, [form, payload]);
+
   /* Above the loading gate: hooks cannot sit behind an early return. */
   const loadIntake = useCallback(() => {
     void intakeApi
@@ -241,6 +297,12 @@ export function SettingsPage() {
       };
       if (form.apiKey !== "") {
         update.apiKey = form.apiKey;
+      } else if (providerChanged && providerNeedsKey && payload.config.apiKey.set) {
+        /* A blank field otherwise keeps whatever is stored (an absent field
+           keeps secrets by contract), and a stored key authenticates its own
+           provider only: switching with no new key removes it rather than
+           authenticating the new provider with the previous one's key. */
+        update.apiKey = "";
       }
       if (form.googleClientSecret !== "") {
         update.google = { clientId: form.googleClientId, clientSecret: form.googleClientSecret };
@@ -443,6 +505,13 @@ export function SettingsPage() {
   const googleSettled = googleStatus?.state === "connected";
   const providerNeedsKey = form.provider !== "mock" && form.provider !== "ollama";
   const providerSettled = !providerNeedsKey || payload.config.apiKey.set;
+  const providerChanged = form.provider !== payload.config.provider;
+  const saveWarning = providerSaveWarning(
+    form.provider,
+    form.apiKey,
+    payload.config.apiKey.set,
+    providerChanged,
+  );
 
   const providerFields = (
     <>
@@ -969,6 +1038,15 @@ export function SettingsPage() {
           </div>
         </section>
 
+        {/* UX audit F3: "Saved." with no key must not read as "setup complete".
+            The save stays allowed — a partially configured Workspace is
+            legitimate — but the missing prerequisite belongs beside the control
+            that just succeeded, not three surfaces away at first use. */}
+        {saveWarning ? (
+          <div className="banner banner-warn" role="status">
+            {saveWarning}
+          </div>
+        ) : null}
         <div className="field-row">
           <button type="submit" className="primary action-button" aria-disabled={saving}>
             {saving ? "Saving…" : "Save settings"}

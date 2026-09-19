@@ -20,6 +20,36 @@ import {
 
 const READY: PersonResearchReadiness = { state: "ready", reason: "ready" };
 
+test("the per-profile summary exposes when the in-flight operation began (UX audit F7)", () => {
+  const job: PersonResearchJob = {
+    profileId: "person-live",
+    state: "researching",
+    reasons: ["explicit"],
+    queuedAt: "2026-09-15T00:00:00.000Z",
+    updatedAt: "2026-09-15T00:04:00.000Z",
+    nextAt: "2026-09-15T01:00:00.000Z",
+    calls: 1,
+    sources: 2,
+    attempts: 1,
+    detail: "Researching.",
+    currentOperationId: "op-live",
+    currentOperationStartedAt: "2026-09-15T00:04:00.000Z",
+    operation: operation(),
+  };
+  const summary = PersonResearchProfileSummarySchema.parse(
+    buildProfileSummary({ job, readiness: READY }),
+  );
+  expect(summary.currentOperationStartedAt).toBe("2026-09-15T00:04:00.000Z");
+  /* Absent while no operation is in flight, even though a settled record
+     keeps its ledger fields: the fixture leaves both markers populated and
+     the settled state alone must omit them. */
+  const settled = PersonResearchProfileSummarySchema.parse(
+    buildProfileSummary({ job: { ...job, state: "queued" }, readiness: READY }),
+  );
+  expect(settled.currentOperationStartedAt).toBeUndefined();
+  expect(settled.currentOperationId).toBeUndefined();
+});
+
 let sequence = 0;
 function attempt(overrides: Partial<PersonResearchAttempt> = {}): PersonResearchAttempt {
   sequence += 1;

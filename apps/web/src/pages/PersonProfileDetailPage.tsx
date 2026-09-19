@@ -238,6 +238,14 @@ function DependentConfigurationDisclosure({
   );
 }
 
+/* A real run mints a revision per retained source version, so the history
+   reaches hundreds of indistinguishable entries; the newest are listed first
+   and an explicit "Show all" expands the rest — every recorded revision stays
+   one click away (UX audit F13; the page's own contract). */
+const REVISION_HISTORY_LIMIT = 30;
+
+/** The subtitle under the heading. The heading already names the person, so
+    this line carries role and employer only (UX audit F13). */
 function described(profile: PersonProfile): string {
   const role = profile.researchFacts?.role;
   const employer = profile.researchFacts?.currentEmployer;
@@ -247,9 +255,7 @@ function described(profile: PersonProfile): string {
     role.sourceIds.some((source) => employer.sourceIds.includes(source));
   const combinedRole =
     profile.currentEmployer && (role || employer) && !sharedPeriod ? null : profile.role;
-  return [profile.fullName, combinedRole, profile.currentEmployer]
-    .filter((value) => value !== null)
-    .join(" — ");
+  return [combinedRole, profile.currentEmployer].filter((value) => value !== null).join(" — ");
 }
 
 /**
@@ -290,6 +296,7 @@ function PersonProfileDetail({
   const [current, setCurrent] = useState<PersonProfile | null>(null);
   const [viewed, setViewed] = useState<PersonProfile | null>(null);
   const [revisions, setRevisions] = useState<number[]>([]);
+  const [showAllRevisions, setShowAllRevisions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const focusRef = usePageFocus<HTMLHeadingElement>();
 
@@ -688,6 +695,10 @@ function PersonProfileDetail({
 
   const profile = viewed ?? current;
   const isHistorical = viewed !== null && viewed.revision !== current.revision;
+  const recentRevisions = [...revisions].sort((a, b) => b - a);
+  const visibleRevisions = showAllRevisions
+    ? recentRevisions
+    : recentRevisions.slice(0, REVISION_HISTORY_LIMIT);
   const detachableEvidence = [...current.publications, ...current.mentions, ...current.evidence];
   const signals: string[] = [
     ...profile.emails,
@@ -1174,7 +1185,7 @@ function PersonProfileDetail({
         <div className="card">
           <h2>Revision history</h2>
           <ul>
-            {revisions.map((revision) => (
+            {visibleRevisions.map((revision) => (
               <li key={revision}>
                 {/* Every row opens the exact recorded revision, the current one
                   included: reading what was true then is always one click. */}
@@ -1189,6 +1200,11 @@ function PersonProfileDetail({
               </li>
             ))}
           </ul>
+          {recentRevisions.length > REVISION_HISTORY_LIMIT && !showAllRevisions && (
+            <button type="button" className="linklike" onClick={() => setShowAllRevisions(true)}>
+              Show all {recentRevisions.length} revisions
+            </button>
+          )}
         </div>
 
         <div className="card">

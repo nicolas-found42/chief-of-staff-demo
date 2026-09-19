@@ -218,6 +218,19 @@ const citation = z.object({
   quote: text,
   capturedAt: z.string().max(40).optional(),
 });
+/**
+ * The bounded display facts of one retained source (UX audit F6): what a
+ * reader needs to tell citations apart — a title, the site, the capture date
+ * — with none of the retained text. Titles may be empty (a bare capture);
+ * `domain` is null when the stored URL cannot be parsed.
+ */
+export const PersonSourceSummarySchema = z.object({
+  id,
+  title: z.string().max(500),
+  domain: z.string().max(200).nullable(),
+  capturedAt: z.string().max(40).nullable(),
+});
+export type PersonSourceSummary = z.infer<typeof PersonSourceSummarySchema>;
 export const PersonClaimSchema = z.object({
   id,
   section: PersonDossierSectionSchema,
@@ -552,7 +565,21 @@ export interface PersonConnectionStep {
   citations: { sourceId: string; quote: string }[];
 }
 
-/** Keep incomplete education in the coverage account, without displacing useful overview evidence. */
+/**
+ * The Overview's claim selection (UX audit F6): a beginner should meet the
+ * person's identity facts — their name, their role, their employer — before
+ * anything the pipeline happened to discover first, so identity facts lead
+ * and the rest keeps its pipeline order. Incomplete education and unresolved
+ * fragments stay at the tail, out of the summary cap, where the coverage
+ * account can still see them.
+ */
+const OVERVIEW_IDENTITY_FIELDS = ["fullName", "role", "currentEmployer"] as const;
+const OVERVIEW_CAP = 6;
+
+/** The claim facts that name the person (UX audit F6): the Overview leads
+    with these wherever the panel needs the identity block alone. */
+export const PERSON_OVERVIEW_IDENTITY_FIELDS = OVERVIEW_IDENTITY_FIELDS;
+
 export function personOverviewClaims(claims: PersonClaim[]): PersonClaim[] {
   const incomplete = claims.filter((claim) =>
     claim.statement.includes("Education — Institution unknown"),
@@ -560,10 +587,15 @@ export function personOverviewClaims(claims: PersonClaim[]): PersonClaim[] {
   const unresolved = claims.filter((claim) =>
     claim.statement.startsWith("Unresolved source fragment:"),
   );
+  const rest = claims.filter((claim) => !incomplete.includes(claim) && !unresolved.includes(claim));
+  /* Identity claims themselves respect the cap: a profile saturated with
+     identity facts must not balloon the summary past six claims. */
+  const identity = OVERVIEW_IDENTITY_FIELDS.flatMap((field) =>
+    rest.filter((claim) => claim.fact?.field === field),
+  ).slice(0, OVERVIEW_CAP);
   return [
-    ...claims
-      .filter((claim) => !incomplete.includes(claim) && !unresolved.includes(claim))
-      .slice(0, 6),
+    ...identity,
+    ...rest.filter((claim) => !identity.includes(claim)).slice(0, OVERVIEW_CAP - identity.length),
     ...incomplete,
     ...unresolved,
   ];

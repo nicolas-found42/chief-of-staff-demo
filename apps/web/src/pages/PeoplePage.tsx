@@ -7,6 +7,13 @@ import { peopleApi, type PeopleClient } from "../clients/people";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
+/* Seed data Content Research creates for its watch examples carries `.example`
+   addresses; marking it answers "whose data is this?" on a fresh workspace
+   (UX audit F12). */
+function isExampleProfile(profile: PersonProfile): boolean {
+  return profile.primaryEmail?.endsWith(".example") ?? false;
+}
+
 /**
  * The Person Profiles product area's landing surface (spec #117 IA): a
  * searchable list over active Profiles, with archived state one explicit
@@ -84,7 +91,7 @@ export function PeoplePage({ client = peopleApi }: { client?: PeopleClient }) {
           New profile
         </Link>
         <Link className="action-button" to="/people/review">
-          Review queue
+          Transcript review
         </Link>
       </div>
       <PersonDossierSearch profiles={profiles ?? []} />
@@ -118,6 +125,12 @@ export function PeoplePage({ client = peopleApi }: { client?: PeopleClient }) {
                     <Link to={`/people/${encodeURIComponent(profile.id)}`}>
                       {profile.fullName ?? "(unnamed)"}
                     </Link>
+                    {isExampleProfile(profile) && (
+                      <>
+                        {" "}
+                        <span className="status-badge status-skipped">Example</span>
+                      </>
+                    )}
                   </td>
                   <td role="cell" data-label="Email">
                     {profile.primaryEmail ?? "—"}
@@ -145,6 +158,11 @@ export function PeoplePage({ client = peopleApi }: { client?: PeopleClient }) {
             </tbody>
           </table>
         </div>
+      )}
+      {profiles?.some(isExampleProfile) && (
+        <p className="muted">
+          Example profiles ship with the workspace for Content Research; delete them anytime.
+        </p>
       )}
     </>
   );

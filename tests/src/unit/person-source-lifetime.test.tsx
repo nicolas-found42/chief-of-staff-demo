@@ -60,12 +60,14 @@ function client(): DossierClient {
     analysis: vi.fn(async () => null),
     source: vi.fn(),
     research: vi.fn(),
+    cancel: vi.fn(async () => ({ cancelled: true })),
     detach: vi.fn(),
     configure: vi.fn(),
     summary: vi.fn<DossierClient["summary"]>(async () => ({
       summary: null,
       readiness: { state: "ready", reason: "ready" },
     })),
+    sources: vi.fn(async () => ({ sources: [] })),
     diagnostics: vi.fn(async () => null),
   };
 }

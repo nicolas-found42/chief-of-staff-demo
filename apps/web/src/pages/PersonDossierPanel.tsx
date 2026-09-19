@@ -1,7 +1,9 @@
 import {
+  PERSON_OVERVIEW_IDENTITY_FIELDS,
   PersonResearchReadinessSchema,
   personOverviewClaims,
   summarizePersonClaims,
+  type PersonSourceSummary,
 } from "@chief-of-staff-demo/shared";
 import { EvidenceDate } from "./EvidenceDate";
 import { PersonSourceInspector } from "./PersonSourceInspector";
@@ -36,9 +38,13 @@ interface DossierView {
 export interface DossierClient {
   read(id: string, revision?: number): Promise<DossierView>;
   source(id: string, sourceId: string): Promise<PersonSourceDocument>;
+  /** Bounded display facts (title, site, capture date) for the current retained sources. */
+  sources(id: string): Promise<{ sources: PersonSourceSummary[] }>;
   history(id: string): Promise<PersonRelationshipRecord[]>;
   analysis(id: string): Promise<PersonDossierAnalysis | null>;
   research(id: string): Promise<unknown>;
+  /** Stops queued or in-flight research for one Profile; retained evidence stays (UX audit F7). */
+  cancel(id: string): Promise<{ cancelled: boolean }>;
   detach(id: string, sourceId: string): Promise<unknown>;
   settings: () => Promise<PersonResearchAggregateStatus & { readiness?: PersonResearchReadiness }>;
   configure(settings: Partial<PersonResearchSettings>): Promise<unknown>;
@@ -70,9 +76,15 @@ const api: DossierClient = {
         },
   source: (id, sourceId) =>
     request(`/api/people/${encodeURIComponent(id)}/sources/${encodeURIComponent(sourceId)}`),
+  sources: (id) =>
+    request<{ sources: PersonSourceSummary[] }>(`/api/people/${encodeURIComponent(id)}/sources`),
   analysis: (id) => request(`/api/people/${encodeURIComponent(id)}/dossier-analysis`),
   history: (id) => request(`/api/people/${encodeURIComponent(id)}/relationship-history`),
   research: (id) => request(`/api/people/${encodeURIComponent(id)}/research`, { method: "POST" }),
+  cancel: (id) =>
+    request<{ cancelled: boolean }>(`/api/people/${encodeURIComponent(id)}/research/cancel`, {
+      method: "POST",
+    }),
   detach: (id, sourceId) =>
     request(
       `/api/people/${encodeURIComponent(id)}/sources/${encodeURIComponent(sourceId)}/detach`,
@@ -108,6 +120,155 @@ const tabs = {
   history: "Relationship history",
   sources: "Sources",
 };
+/* Human vocabulary for the storage tokens this panel renders (UX audit F10):
+   a token with no entry renders its own key rather than disappearing, and the
+   raw token stays in the DOM title for anyone diagnosing. */
+const CLAIM_STATUS_LABELS: Record<string, string> = {
+  supported: "Supported",
+  claimed: "Claimed",
+  contested: "Contested",
+  unknown: "Unknown",
+  stale: "Stale",
+  superseded: "Superseded",
+};
+const CLAIM_NATURE_LABELS: Record<string, string> = {
+  statement: "Statement",
+  interpretation: "Interpretation",
+};
+const SECTION_STATE_LABELS: Record<string, string> = {
+  unresearched: "Not yet researched",
+  incomplete: "Incomplete",
+  current: "Current",
+  unavailable: "Unavailable",
+};
+/* The codes a reader meets most; the long tail renders its own key. */
+const DIAGNOSTIC_CODE_LABELS: Record<string, string> = {
+  "discovery-refused": "Search refused",
+  "discovery-empty": "Search found no results",
+  "connectivity-failed": "Could not reach the site",
+  "dns-failed": "Site address could not be resolved",
+  "tls-failed": "Secure connection failed",
+  "request-timeout": "The site took too long to answer",
+  "transport-failed": "The network request failed",
+  "http-error": "The site answered with an error",
+  "rate-limited": "The site limited the request rate",
+  "login-required": "The page needs a sign-in",
+  "challenge-page": "The page asked for a human check",
+  "resource-unavailable": "No copy of this page was available",
+  "robots-excluded": "The site asks search engines to keep out",
+  "rendering-failed": "The page could not be rendered",
+  "unsupported-format": "The document format is unsupported",
+  "parser-failed": "The page could not be read",
+  "document-empty": "The document held no readable text",
+  "identity-unmatched": "Could not confirm this is the same person",
+  "ambiguous-attribution": "The evidence matched more than one person",
+  "off-subject-claim": "The passage was about someone else",
+  "invalid-result-shape": "The extraction answer was unusable",
+  "unknown-cause": "Reason not recorded",
+};
+
+const claimStatusLabel = (status: string): string => CLAIM_STATUS_LABELS[status] ?? status;
+const claimNatureLabel = (nature: string): string => CLAIM_NATURE_LABELS[nature] ?? nature;
+const sectionStateLabel = (state: string): string => SECTION_STATE_LABELS[state] ?? state;
+const diagnosticCodeLabel = (code: string): string => DIAGNOSTIC_CODE_LABELS[code] ?? code;
+
+/** The transport failed before the server could answer (client.ts rethrows a
+    fetch rejection as ApiError 0): the app itself is down, not an endpoint
+    (UX audit F1b). */
+const isUnreachable = (error: unknown): boolean =>
+  (error instanceof ApiError && error.status === 0) || error instanceof TypeError;
+
+/** Elapsed research time in mm:ss form (UX audit F7a), e.g. "2m 14s". */
+function elapsedLabel(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return minutes ? `${minutes}m ${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
+}
+
+/** The revision selector's options (UX audit F13): a Profile with hundreds of
+    revisions otherwise offers indistinguishable "Revision N" options for its
+    whole history. The newest 50 stay listed until the reader asks for the
+    full history ("Show all"), and a revision older than that window is still
+    included when it is the one selected, so the select keeps showing the
+    truth rather than jumping to another revision's claims. */
+const REVISION_WINDOW = 50;
+function revisionOptions(latest: number, selected: number | undefined, all = false): number[] {
+  const oldestListed = all ? 1 : Math.max(1, latest - REVISION_WINDOW + 1);
+  const values = Array.from({ length: latest - oldestListed + 1 }, (_, index) => latest - index);
+  if (selected !== undefined && selected < oldestListed) values.push(selected);
+  return values;
+}
+
+/* Reading order within a section (UX audit F6): corroborated, uncontested
+   facts lead; contested, unknown and unresolved fragments follow. The sort is
+   stable, so the pipeline's own order carries within each tier. */
+function rankForDisplay(claims: PersonClaim[]): PersonClaim[] {
+  const tier = (claim: PersonClaim) =>
+    claim.statement.startsWith("Unresolved source fragment:")
+      ? 2
+      : claim.status === "contested" || claim.status === "unknown"
+        ? 1
+        : 0;
+  const corroborations = (claim: PersonClaim) =>
+    new Set(claim.citations.map((citation) => citation.sourceId)).size;
+  return claims
+    .map((claim, index) => ({ claim, index }))
+    .sort(
+      (a, b) =>
+        tier(a.claim) - tier(b.claim) ||
+        corroborations(b.claim) - corroborations(a.claim) ||
+        a.index - b.index,
+    )
+    .map((entry) => entry.claim);
+}
+
+/** The Overview's reading order (UX audit F6): identity claims keep the
+    front the selector gave them — re-ranking behind them must not unseat
+    the person's name, role and employer — while everything behind them
+    still ranks by corroboration. */
+function overviewReadingOrder(claims: PersonClaim[]): PersonClaim[] {
+  const identity = claims.filter((claim) =>
+    PERSON_OVERVIEW_IDENTITY_FIELDS.some((field) => field === claim.fact?.field),
+  );
+  return [...identity, ...rankForDisplay(claims.filter((claim) => !identity.includes(claim)))];
+}
+
+/** A captured date in the same readable form EvidenceDate renders, or null
+    when the capture time is unknown or not anchored to a day. */
+function capturedDateLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const hasZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
+  if (!dateOnly && !hasZone) return null;
+  const parsed = new Date(dateOnly ? `${value}T12:00:00Z` : value);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  if (dateOnly && parsed.toISOString().slice(0, 10) !== value) return null;
+  /* Archived captures are UTC instants (CodeRabbit, PR #458): formatting in
+     the browser's zone could move a late-UTC capture to the previous day. */
+  return new Intl.DateTimeFormat("en", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+/** A citation's readable label (UX audit F6): the source's name, its site and
+    the date it was captured — not a raw retained fragment. The quote itself
+    stays in the opened inspector; the fallback caps the quote like the
+    fragment buttons always did. */
+function citationLabel(summary: PersonSourceSummary | undefined, fallback: string): string {
+  const parts: string[] = [];
+  const title = summary?.title.trim();
+  if (title) parts.push(title.length > 70 ? `${title.slice(0, 70)}…` : title);
+  /* A source whose title is its own domain would render the value twice
+     (CodeRabbit, PR #458). */
+  if (summary?.domain && summary.domain !== title) parts.push(summary.domain);
+  const captured = capturedDateLabel(summary?.capturedAt);
+  if (captured) parts.push(captured);
+  if (parts.length) return parts.join(" — ");
+  return fallback.length > 180 ? `${fallback.slice(0, 180)}…` : fallback;
+}
 /**
  * Copy for the pipeline-level readiness states (issue #418, T3/T9, spec §7).
  * `initializing` and `setup-required` read distinctly on purpose: a
@@ -134,9 +295,14 @@ function readinessSurface(readiness: PersonResearchReadiness): { title: string; 
         detail: "No model provider is configured for automatic research yet.",
       };
     case "owner-not-confirmed":
+      /* The exact cure, not just the gate (UX audit F2): the connected email is
+         what the owner profile must carry, and naming it is the difference
+         between a beginner creating their own Profile and guessing. */
       return {
         title: "Research setup required",
-        detail: "An owner has not yet confirmed workspace setup for automatic research.",
+        detail: readiness.ownerEmail
+          ? `An owner has not yet confirmed workspace setup for automatic research. No Person Profile carries ${readiness.ownerEmail} yet. Create a Profile for yourself with that email under Person Profiles, then confirm it as the owner in Settings → Owner Profile.`
+          : "An owner has not yet confirmed workspace setup for automatic research.",
       };
     case "mock-provider-inactive":
       return {
@@ -198,8 +364,15 @@ function jobStateSurface(research: PersonResearchProfileSummary): {
         title: "Research paused at a safety limit",
         detail: decisive?.reason ?? research.detail,
       };
-    case "unavailable":
-      return { title: "Sources unavailable", detail: decisive?.reason ?? research.detail };
+    case "unavailable": {
+      /* A terminal conclusion with no way forward reads as a dead end (UX
+         audit F7d): the honest next step belongs in the same detail. */
+      const detail = decisive?.reason ?? research.detail;
+      return {
+        title: "Sources unavailable",
+        detail: `${detail}${/[.!?]$/.test(detail) ? "" : "."} Choose Prioritise research to try again.`,
+      };
+    }
     case "empty":
       /* Honest empty-answer copy (#417 F2, spec §7): a model that returned
          no usable answer is never rendered as "nothing was found", and a
@@ -294,6 +467,8 @@ export function PersonDossierPanel({
   const [currentSources, setCurrentSources] = useState<{ profileId: string; ids: string[] } | null>(
     null,
   );
+  /** Display facts for the retained sources, keyed by source id in render. */
+  const [sourceFacts, setSourceFacts] = useState<PersonSourceSummary[]>([]);
   const [history, setHistory] = useState<PersonRelationshipRecord[]>([]);
   const editingSettings = useRef(false);
   const settingsEditRevision = useRef(0);
@@ -305,6 +480,17 @@ export function PersonDossierPanel({
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyRetry, setHistoryRetry] = useState(0);
   const [actionError, setActionError] = useState("");
+  /**
+   * The app itself is not answering (UX audit F1b): a read that failed at the
+   * network level, as distinct from a request the server answered with an
+   * error. While set, the last known job state is never presented as live.
+   */
+  const [unreachable, setUnreachable] = useState(false);
+  const [showAllRevisions, setShowAllRevisions] = useState(false);
+  /** Immediate acknowledgment for Prioritise research (UX audit F8). */
+  const [startingResearch, setStartingResearch] = useState(false);
+  /** Elapsed milliseconds of the operation now researching (UX audit F7a). */
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null);
   const [correctionNotice, setCorrectionNotice] = useState("");
   /** Paged full attempt history, fetched only on explicit demand (issue #418, T9, spec §7). */
   const [diagnosticsPage, setDiagnosticsPage] = useState<PersonResearchDiagnosticsPage | null>(
@@ -378,13 +564,33 @@ export function PersonDossierPanel({
       }
       setView(data);
       lastProgress.current = progressOf(data.research);
+      /* Citation labels come from the bounded display facts; a failed read
+         degrades to the quote fallback rather than blocking the refresh. It
+         follows the view commit so the extra roundtrip never delays the
+         dossier update an interaction is waiting on — a delayed commit here
+         is what broke the source inspector's focus return (the dialog's
+         cleanup found its opener already detached). */
+      const facts = await client.sources(profileId).catch(() => ({ sources: [] }));
+      if (generation !== readGeneration.current) return;
+      setSourceFacts(facts.sources);
       const nextAnalysis =
         data.dossier && revision === undefined ? await client.analysis(profileId) : null;
       if (generation !== readGeneration.current) return;
       setAnalysis(nextAnalysis);
       setReadError("");
+      setUnreachable(false);
     } catch (error) {
-      if (generation === readGeneration.current) setReadError(errorMessage(error));
+      if (generation === readGeneration.current) {
+        /* A network-level failure means the app is not answering at all (UX
+           audit F1b): the stale state on screen must say so instead of
+           looking live. A request the server answered keeps its own
+           readError path. */
+        if (isUnreachable(error)) setUnreachable(true);
+        else {
+          setUnreachable(false);
+          setReadError(errorMessage(error));
+        }
+      }
     } finally {
       if (generation === readGeneration.current) reading.current = false;
     }
@@ -405,6 +611,8 @@ export function PersonDossierPanel({
     try {
       const envelope = await client.summary(profileId);
       if (generation !== readGeneration.current) return;
+      // The app answered: whatever it said, it is reachable again (#F1b).
+      setUnreachable(false);
       const summary = envelope.summary;
       /* No job yet: the envelope's own pipeline readiness is still fresh
          every cycle (#417 F1), so a blocked pipeline updates its surface
@@ -422,10 +630,14 @@ export function PersonDossierPanel({
           ? { ...current, research: summary, ...(summary ? { readiness: summary.readiness } : {}) }
           : current,
       );
-    } catch {
+    } catch (error) {
       /* A side-effect-free status poll failing does not overwrite the
          primary read error; the next full refresh reports a persistent
-         problem honestly instead. */
+         problem honestly instead. A network-level failure is the exception
+         (UX audit F1b): it means the app itself is down, so the last known
+         state must stop reading as live. */
+      if (generation !== readGeneration.current) return;
+      if (isUnreachable(error)) setUnreachable(true);
     }
   }, [profileId, client, refresh]);
   const invalidatePending = useCallback(() => {
@@ -435,6 +647,23 @@ export function PersonDossierPanel({
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
+  /* A live elapsed time is the one progress signal that cannot be stale (UX
+     audit F7a): counters freeze while the browser source renderer works, but
+     the clock still moves. One interval, restarted only when the operation
+     itself changes — a new operation's start resets the label. */
+  const researchingStartedAt =
+    view?.research?.state === "researching" ? view.research.currentOperationStartedAt : undefined;
+  useEffect(() => {
+    const started = researchingStartedAt ? Date.parse(researchingStartedAt) : Number.NaN;
+    if (Number.isNaN(started)) {
+      setElapsedMs(null);
+      return;
+    }
+    const tick = () => setElapsedMs(Math.max(0, Date.now() - started));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [researchingStartedAt]);
   useEffect(() => {
     // Never label the last revision's claims as the newly selected revision.
     setView(null);
@@ -552,6 +781,10 @@ export function PersonDossierPanel({
       : researchSurface(view?.research ?? null);
   const dossier = view?.dossier;
   const claims = dossier?.claims ?? [];
+  /* The clock belongs to the researching surface's own line (UX audit F7a),
+     where "no stage names" made waiting indistinguishable from working. */
+  const elapsed =
+    view?.research?.state === "researching" && elapsedMs !== null ? elapsedLabel(elapsedMs) : null;
   /* The whole-operation failure counts survive the display bound (#417 F9):
      `byCode` covers every attempt while `sample` may omit the kind entirely,
      so the aggregate renderer-failed count is read from there, never from
@@ -569,29 +802,33 @@ export function PersonDossierPanel({
   const overviewClaims = personOverviewClaims(activeClaims);
   const displayed =
     tab === "overview"
-      ? overviewClaims.filter(
-          (c) =>
-            !c.statement.includes("Education — Institution unknown") &&
-            !c.statement.startsWith("Unresolved source fragment:"),
+      ? overviewReadingOrder(
+          overviewClaims.filter(
+            (c) =>
+              !c.statement.includes("Education — Institution unknown") &&
+              !c.statement.startsWith("Unresolved source fragment:"),
+          ),
         )
-      : activeClaims.filter((c) => c.section === tab);
+      : rankForDisplay(activeClaims.filter((c) => c.section === tab));
+  const summaryById = new Map(sourceFacts.map((facts) => [facts.id, facts]));
   const citations = (record: { claimIds: string[] }) =>
     record.claimIds.flatMap((id) => claims.find((c) => c.id === id)?.citations ?? []);
+  const quoteOf = (quote: string) => quote.trim().replace(/\s+/g, " ");
   const evidence = (record: { claimIds: string[] }) =>
-    citations(record).map((citation, index) => (
-      <button
-        type="button"
-        className="linklike dossier-citation"
-        key={`${citation.sourceId}-${index}`}
-        onClick={() => void inspect(citation.sourceId, citation.quote)}
-      >
-        Evidence {index + 1}: “
-        {citation.quote.trim().replace(/\s+/g, " ").length > 180
-          ? `${citation.quote.trim().replace(/\s+/g, " ").slice(0, 180)}…`
-          : citation.quote.trim().replace(/\s+/g, " ")}
-        ”
-      </button>
-    ));
+    citations(record).map((citation, index) => {
+      const quote = quoteOf(citation.quote);
+      return (
+        <button
+          type="button"
+          className="linklike dossier-citation"
+          key={`${citation.sourceId}-${index}`}
+          title={quote.length > 180 ? `${quote.slice(0, 180)}…` : quote}
+          onClick={() => void inspect(citation.sourceId, citation.quote)}
+        >
+          Evidence {index + 1}: {citationLabel(summaryById.get(citation.sourceId), quote)}
+        </button>
+      );
+    });
   /* A claim grounded in archived material is evidence about the capture date
      and nothing after it (#253). The reader sees the claim, not the retained
      source behind it, so the date is stated here rather than left to the
@@ -602,24 +839,25 @@ export function PersonDossierPanel({
     <article className="card" key={item.id} id={`claim-${item.id}`}>
       <p>{item.statement}</p>
       <p className="muted">
-        {item.status} · {item.nature} · {item.effectiveFrom ?? "Date unknown"}
+        {claimStatusLabel(item.status)} · {claimNatureLabel(item.nature)} ·{" "}
+        {item.effectiveFrom ?? "Date unknown"}
         {item.effectiveTo ? ` to ${item.effectiveTo}` : ""}
         {capturedAt(item) ? ` · archived capture ${capturedAt(item)}` : ""}
       </p>
-      {item.citations.map((citation, index) => (
-        <button
-          className="linklike dossier-citation"
-          type="button"
-          key={index}
-          onClick={() => void inspect(citation.sourceId, citation.quote)}
-        >
-          Source {index + 1}: “
-          {citation.quote.trim().replace(/\s+/g, " ").length > 180
-            ? `${citation.quote.trim().replace(/\s+/g, " ").slice(0, 180)}…`
-            : citation.quote.trim().replace(/\s+/g, " ")}
-          ”
-        </button>
-      ))}
+      {item.citations.map((citation, index) => {
+        const quote = quoteOf(citation.quote);
+        return (
+          <button
+            className="linklike dossier-citation"
+            type="button"
+            key={index}
+            title={quote.length > 180 ? `${quote.slice(0, 180)}…` : quote}
+            onClick={() => void inspect(citation.sourceId, citation.quote)}
+          >
+            Source {index + 1}: {citationLabel(summaryById.get(citation.sourceId), quote)}
+          </button>
+        );
+      })}
       {item.changeReason && <p>{item.changeReason}</p>}
     </article>
   );
@@ -640,15 +878,23 @@ export function PersonDossierPanel({
             }}
           >
             <option value="current">Current</option>
-            {Array.from({ length: latestRevision }, (_, index) => index + 1)
-              .reverse()
-              .map((value) => (
-                <option key={value} value={value}>
-                  Revision {value}
-                </option>
-              ))}
+            {latestRevision > REVISION_WINDOW && !showAllRevisions && (
+              <option disabled>
+                …{latestRevision - REVISION_WINDOW} older revisions not listed
+              </option>
+            )}
+            {revisionOptions(latestRevision, revision, showAllRevisions).map((value) => (
+              <option key={value} value={value}>
+                Revision {value}
+              </option>
+            ))}
           </select>
         </label>
+      )}
+      {latestRevision > REVISION_WINDOW && !showAllRevisions && (
+        <button type="button" className="linklike" onClick={() => setShowAllRevisions(true)}>
+          Show all {latestRevision} revisions
+        </button>
       )}
       {revision !== undefined && (
         <p role="status">
@@ -657,21 +903,34 @@ export function PersonDossierPanel({
         </p>
       )}
       <div className="card">
+        {/* The app itself is down (UX audit F1b): a stale "Researching" line
+            must never keep reading as live, so the banner replaces the live
+            surface and the last known state is labeled stale. */}
+        {unreachable && (
+          <p role="alert" className="banner-error">
+            The app is not responding. Wait a moment and refresh; if it stays down, restart it with{" "}
+            <code>docker compose up -d</code>.
+          </p>
+        )}
         <p role="status">
           <strong>
-            {!view
-              ? readError
-                ? "Research status unavailable"
-                : "Loading dossier"
-              : surface
-                ? surface.title
-                : settings?.settings.paused
-                  ? "Workspace research paused"
-                  : revision !== undefined
-                    ? "Historical dossier"
-                    : "No research status available"}
+            {unreachable
+              ? "App not responding"
+              : !view
+                ? readError
+                  ? "Research status unavailable"
+                  : "Loading dossier"
+                : surface
+                  ? elapsed === null
+                    ? surface.title
+                    : `${surface.title} · ${elapsed}`
+                  : settings?.settings.paused
+                    ? "Workspace research paused"
+                    : revision !== undefined
+                      ? "Historical dossier"
+                      : "No research status available"}
           </strong>{" "}
-          {view && (
+          {view && !unreachable && (
             <>
               · {dossier?.sourceIds.length ?? 0} retained sources · {claims.length} retained claims
             </>
@@ -679,22 +938,57 @@ export function PersonDossierPanel({
         </p>
         <p className="muted">
           {!view
-            ? readError
-              ? "The dossier could not be loaded. Retrying automatically."
-              : "Loading retained evidence and research status."
-            : (surface?.detail ??
-              (settings?.settings.paused
-                ? "An owner paused automatic research for the workspace."
-                : "Only retained evidence appears in this dossier."))}
+            ? unreachable
+              ? "The dossier could not be loaded while the app was not responding. Retrying automatically."
+              : readError
+                ? "The dossier could not be loaded. Retrying automatically."
+                : "Loading retained evidence and research status."
+            : unreachable
+              ? `The last known state was ${surface?.title ?? "no research status"}. It is stale, not live.`
+              : (surface?.detail ??
+                (settings?.settings.paused
+                  ? "An owner paused automatic research for the workspace."
+                  : "Only retained evidence appears in this dossier."))}
         </p>
-        {surface?.nextAction && (
+        {!unreachable && surface?.nextAction && (
           <p>
             <a href={surface.nextAction.href}>{surface.nextAction.label}</a>
           </p>
         )}
-        <button type="button" onClick={() => void act(() => client.research(profileId))}>
-          Prioritise research
+        {/* An identifier alone can leave the Profile unnamed (UX audit F5):
+            nothing research finds can then be attributed to it, and the cure
+            lives in this Profile's own maintenance. */}
+        {view?.profile && view.profile.fullName === null && (
+          <p className="muted">
+            We could not tell who this Profile is about from the identifier alone. Add their full
+            name under "Correct facts" in Profile maintenance on this page, then choose Prioritise
+            research again.
+          </p>
+        )}
+        <button
+          type="button"
+          disabled={startingResearch || unreachable}
+          onClick={() => {
+            setStartingResearch(true);
+            void act(() => client.research(profileId)).finally(() => setStartingResearch(false));
+          }}
+        >
+          {startingResearch ? "Starting research…" : "Prioritise research"}
         </button>{" "}
+        {!unreachable &&
+          (view?.research?.state === "queued" || view?.research?.state === "researching") && (
+            <>
+              <button type="button" onClick={() => void act(() => client.cancel(profileId))}>
+                Stop research
+              </button>{" "}
+            </>
+          )}
+        {!unreachable &&
+          (view?.research?.state === "queued" || view?.research?.state === "researching") && (
+            <p className="muted">
+              You can leave this page — research continues and everything found so far is kept.
+            </p>
+          )}
         <details>
           <summary>Research settings</summary>
           {settings && (
@@ -712,6 +1006,7 @@ export function PersonDossierPanel({
               </p>
               <button
                 type="button"
+                disabled={unreachable}
                 onClick={() =>
                   void act(() => client.configure({ paused: !settings.settings.paused }))
                 }
@@ -730,6 +1025,7 @@ export function PersonDossierPanel({
                   <input
                     type="number"
                     min={1}
+                    disabled={unreachable}
                     value={settings.settings[key] ?? 720}
                     onChange={(event) => {
                       editingSettings.current = true;
@@ -744,6 +1040,7 @@ export function PersonDossierPanel({
               ))}
               <button
                 type="button"
+                disabled={unreachable}
                 onClick={() =>
                   void act(
                     () =>
@@ -802,7 +1099,8 @@ export function PersonDossierPanel({
           </p>
           {(diagnosticsPage?.entries ?? view.research.diagnostics.sample).map((attempt, index) => (
             <p key={index}>
-              <strong>{attempt.code}</strong> · {attempt.stage} · {attempt.outcome}
+              <strong title={attempt.code}>{diagnosticCodeLabel(attempt.code)}</strong> ·{" "}
+              {attempt.stage} · {attempt.outcome}
               <br />
               {attempt.reason}
             </p>
@@ -957,7 +1255,8 @@ export function PersonDossierPanel({
                 : section.summary}
             </p>
             <p className="muted">
-              {section.state} · Last researched <EvidenceDate value={section.updatedAt} />
+              {sectionStateLabel(section.state)} · Last researched{" "}
+              <EvidenceDate value={section.updatedAt} />
             </p>
             {evidence(tab === "overview" ? { claimIds: displayed.map((c) => c.id) } : section)}
             {section.gaps.map((gap) => (
@@ -1141,7 +1440,10 @@ export function PersonDossierPanel({
               {(dossier?.sourceIds ?? []).map((sourceId, index) => (
                 <li key={sourceId}>
                   <button type="button" onClick={() => void inspect(sourceId, "")}>
-                    Inspect retained source {index + 1}
+                    {citationLabel(
+                      summaryById.get(sourceId),
+                      `Inspect retained source ${index + 1}`,
+                    )}
                   </button>
                 </li>
               ))}
@@ -1152,8 +1454,10 @@ export function PersonDossierPanel({
           tab !== "history" && displayed.map(claim)
         )}
         {tab !== "history" && tab !== "sources" && !displayed.length && !section && (
+          /* Plain language instead of storage vocabulary (UX audit F10). */
           <p className="muted">
-            No supported account is available in this section yet. Missing evidence remains unknown.
+            Nothing is documented here yet. Research has not found evidence for this section;
+            missing evidence stays unknown rather than guessed.
           </p>
         )}
       </div>

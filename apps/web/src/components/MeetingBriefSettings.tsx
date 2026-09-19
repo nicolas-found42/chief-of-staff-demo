@@ -200,9 +200,13 @@ export function MeetingBriefSettings({
       <section className="settings-section" aria-labelledby="section-relay">
         <h2 id="section-relay">Calendar Relay</h2>
         <div className="card">
+          {/* UX audit F10: "Opaque calendar wake-up relay (ADR-0031)" put a
+              design decision's citation and secrecy framing in front of a
+              beginner. The relay's design is ADR-0031; the card says what it
+              does and what it stores. */}
           <p className="muted">
-            Opaque calendar wake-up relay (ADR-0031). Stores only installation, channel, message,
-            expiry and ack metadata.
+            Calendar wake-up relay. Stores only installation, channel, message, expiry and ack
+            metadata.
           </p>
           {relayStatus ? (
             <div className="field-grid">
@@ -494,7 +498,7 @@ export function MeetingBriefSettings({
           )}
         </div>
         <div className="card" role="group" aria-labelledby="group-relay-summary">
-          <h3 id="group-relay-summary">Calendar Relay (opaque)</h3>
+          <h3 id="group-relay-summary">Calendar Relay status</h3>
           <p className="muted">
             Relay stores no Calendar credentials or event data. Relay health:{" "}
             {relayStatus?.relayHealth ?? "loading"}

@@ -49,6 +49,7 @@ tests/fixtures/debrief-golden/
 # record they belong to; keep them local and cite them by path.
 /artifacts/person-profile-audit/
 /artifacts/person-profile-remediation/
+/artifacts/person-profile-ux-audit/
 
 # Session handover notes. Local planning artifacts, same reasoning as `.scratch/`.
 previous-session.md

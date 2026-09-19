@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { composeShell } from "./composition/shell.js";
+import { installProcessFaultGuards } from "./process-faults.js";
 
 /**
  * The entry point, and nothing more: read the deployment's environment, compose
@@ -12,6 +13,9 @@ import { composeShell } from "./composition/shell.js";
  * own — the boot sequence is `shell.start`, and the gate's in-process cutover
  * calls the same function.
  */
+/* First, before any work that can throw asynchronously: a renderer failure
+   must degrade to a failed read, never kill the app (UX audit F1). */
+installProcessFaultGuards();
 const port = Number(process.env.PORT ?? 4317);
 /* Loopback by default (ADR-0001). A container sets HOST=0.0.0.0 because the
    loopback interface inside a container is not reachable from the host; the

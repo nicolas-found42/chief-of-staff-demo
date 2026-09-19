@@ -53,11 +53,11 @@ export const peopleApi = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identifier }),
     }),
-  acceptPersonProfileLookup: (identifier: string) =>
+  acceptPersonProfileLookup: (identifier: string, fullName?: string) =>
     request<PersonProfileLookup>("/api/people/lookup/accept", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identifier }),
+      body: JSON.stringify({ identifier, ...(fullName ? { fullName } : {}) }),
     }),
   /** Re-run the public-web search from the identity the Profile already holds. */
   enrichPersonProfile: async (profileId: string) =>
