@@ -46,6 +46,10 @@ in sync with them.
 `docker compose down` stops it. `restart: "no"` is deliberate: the app does not come back on its
 own when Docker Desktop starts.
 
+**Cleaning up** — leftover images, anonymous volumes, build cache, and the rules an isolated
+Compose run must follow to leave no duplicate behind — is documented in
+[docs/agents/verification.md](docs/agents/verification.md) (container check).
+
 **[ONBOARDING.md](ONBOARDING.md) is the same path written for someone who has never used Docker
 or Google Cloud** — send that, not this file, to anyone setting the app up for the first time.
 
