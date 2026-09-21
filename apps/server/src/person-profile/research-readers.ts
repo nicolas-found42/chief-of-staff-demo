@@ -3224,7 +3224,12 @@ async function request(
     } catch (error) {
       lastError = error;
       const { code, reason } = classifyTransportError(error);
-      const retrying = attempt < 3;
+      /* A body past the collection cap throws the same way every time: the
+         retry would re-download up to the cap only to throw again (workspace
+         evidence 2026-09-19: over-cap podcast feeds spent all three attempts
+         on identical failures). One attempt, named cause, stopped. */
+      const oversized = code === "source-too-large";
+      const retrying = attempt < 3 && !oversized;
       const transportWaitMs = Math.min(4_000, 500 * 2 ** attempt);
       context.recorder.record({
         stage: "transport",
@@ -3239,7 +3244,14 @@ async function request(
         attemptOf: context.attemptOf,
         attempt,
         observed: { elapsedMilliseconds: Date.now() - startedAt },
-        ...(retrying ? {} : { recoveryStopped: "The retry budget for this request is spent." }),
+        ...(retrying
+          ? {}
+          : oversized
+            ? {
+                recoveryStopped:
+                  "The response exceeds the collection cap; the failure is deterministic.",
+              }
+            : { recoveryStopped: "The retry budget for this request is spent." }),
       });
       if (!retrying) return null;
       await sleep(transportWaitMs);

@@ -1,9 +1,12 @@
-/** Collection counts decoded response bytes (after HTTP decompression), not
- * Content-Length. Text retains the existing five-million UTF-16-unit contract;
- * its 15 MB plus BOM byte ceiling accommodates three-byte BMP UTF-8 characters.
- * A producer-owned chunk may exceed the budget; it is checked before copying
- * or decoding and is never added to retained output (REL-01). */
-const SOURCE_LIMIT = 5_000_000;
+/** One collection ceiling, in units: 5,000,000 characters for decoded text and
+ * 5,000,000 bytes for documents, counted after HTTP decompression — never from
+ * Content-Length. The text reader's byte-admission guard allows
+ * SOURCE_LIMIT * 3 + 3 bytes only as headroom for three-byte BMP UTF-8
+ * characters; for the predominantly ASCII bodies of feeds and HTML the
+ * practical ceiling is ~5 MB, which real podcast feeds (7-25 MB) routinely
+ * exceed. A producer-owned chunk may exceed the budget; it is checked before
+ * copying or decoding and is never added to retained output (REL-01). */
+export const SOURCE_LIMIT = 5_000_000;
 
 // Only the reader contract is shared by Node and browser Web Streams typings.
 interface SourceBody {
