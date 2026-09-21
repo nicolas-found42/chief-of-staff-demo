@@ -57,6 +57,13 @@ export const PersonResearchFailureCodeSchema = z.enum([
   "tls-failed",
   "request-timeout",
   "transport-failed",
+  /**
+   * The response body passed the collection cap before it could be read.
+   * Separate from `transport-failed` because nothing about the network is
+   * wrong: the source is simply larger than what a reader retains, so the
+   * failure is deterministic and never worth a retry.
+   */
+  "source-too-large",
   "http-error",
   "rate-limited",
   "quota-exhausted",

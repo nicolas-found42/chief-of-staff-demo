@@ -7,6 +7,7 @@ import type {
   PersonResearchStage,
 } from "@chief-of-staff-demo/shared";
 import { sanitizeDiagnosticContentType } from "../source-adapters/diagnostics.js";
+import { SOURCE_LIMIT } from "../source-adapters/source-body.js";
 import { sanitizeModelBoundaryDiagnostic } from "../llm/failure.js";
 
 /**
@@ -235,6 +236,16 @@ export function classifyTransportError(error: unknown): {
     return { code: "connectivity-failed", reason: "The connection could not be established." };
   if (joined.includes("abort") || joined.includes("timed out") || joined.includes("timeout"))
     return { code: "request-timeout", reason: "The request deadline expired." };
+  if (
+    joined.includes("err_source_body_limit") ||
+    joined.includes("source response exceeded the collection limit")
+  )
+    return {
+      code: "source-too-large",
+      reason: `The source response exceeded the ${SOURCE_LIMIT.toLocaleString(
+        "en-US",
+      )}-unit collection limit (characters of text or bytes of documents); the cap is deterministic, so no retry can help.`,
+    };
   return {
     code: "transport-failed",
     reason: "The transport rejected the request; the underlying cause was not observed.",

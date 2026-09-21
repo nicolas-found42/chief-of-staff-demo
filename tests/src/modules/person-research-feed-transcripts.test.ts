@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { SOURCE_ELIGIBILITY } from "../../../apps/server/src/source-adapters/eligibility.js";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, expect, test } from "vitest";
+import { sourceBodyLimitError } from "../../../apps/server/src/source-adapters/source-body.js";
 import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus.js";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
@@ -437,4 +438,33 @@ test("a publisher transcript grounds an authored spoken-evidence reference fact"
   expect(source.evidenceFamily).toBe("spoken-evidence");
   expect(source.provenanceNote).toContain("transcript");
   expect(source.provenanceNote).toContain(SHETTY_TRANSCRIPT_URL);
+});
+
+test("an oversized feed fails once as source-too-large and is not retried", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-feed-oversize");
+  let fetches = 0;
+  const result = await readPersonSource(
+    FEED_URL,
+    "",
+    ports(recorder, async () => {
+      fetches += 1;
+      throw sourceBodyLimitError();
+    }),
+  );
+
+  /* The cap is deterministic: retrying re-downloads to the same throw, so the
+     transport spends one request, not the retry budget (workspace evidence
+     2026-09-19: every over-cap feed burned three attempts). */
+  expect(fetches).toBe(1);
+  expect(result.access).toBe("failed");
+  const failures = recorder.failures();
+  expect(failures).toHaveLength(1);
+  expect(failures[0]).toMatchObject({
+    stage: "transport",
+    code: "source-too-large",
+    outcome: "failed",
+    recovery: "stopped",
+    cause: "observed",
+  });
+  expect(failures[0]?.reason).toContain("collection limit");
 });
