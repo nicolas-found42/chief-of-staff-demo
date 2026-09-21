@@ -13,17 +13,17 @@
     "@total-typescript/shoehorn": "^0.1.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
-    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/coverage-v8": "^5.0.1",
     "fastify": "^5.12.3",
     "googleapis": "^178.0.0",
     "jsdom": "^30.0.1",
     "jszip": "^3.10.1",
-    "oxc-parser": "^0.149.0",
+    "oxc-parser": "^0.150.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
     "undici": "^8.10.2",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.1",
     "zod": "^4.5.4"
   }
 }
