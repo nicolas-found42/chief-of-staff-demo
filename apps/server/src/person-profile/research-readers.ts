@@ -206,7 +206,9 @@ export class LinkedInRequestBudget {
     this.cooldown = options.cooldown ?? { until: 0, refusals: 0 };
   }
 
-  async take(): Promise<boolean> {
+  async run<T>(
+    navigate: () => Promise<T>,
+  ): Promise<{ allowed: true; value: T } | { allowed: false }> {
     let release!: () => void;
     const next = new Promise<void>((resolve) => {
       release = resolve;
@@ -215,13 +217,14 @@ export class LinkedInRequestBudget {
     this.cooldown.turn = next;
     await previous;
     try {
-      if (this.used >= this.maxRequests || this.now() < this.cooldown.until) return false;
+      if (this.used >= this.maxRequests || this.now() < this.cooldown.until)
+        return { allowed: false };
       const delay = Math.max(0, (this.cooldown.nextAt ?? 0) - this.now());
       if (delay) await this.wait(delay);
-      if (this.now() < this.cooldown.until) return false;
+      if (this.now() < this.cooldown.until) return { allowed: false };
       this.used++;
       this.cooldown.nextAt = this.now() + this.spacingMs;
-      return true;
+      return { allowed: true, value: await navigate() };
     } finally {
       release();
     }
@@ -1229,12 +1232,16 @@ async function tryRender(
   context: ReadContext,
 ): Promise<SourceReadResult | null> {
   if (!context.render) return null;
-  if (/(^|\.)linkedin\.com$/.test(hostOf(url) ?? "") && !(await context.linkedInBudget.take())) {
-    recordLinkedInBudgetDeferral(url, context);
-    return null;
-  }
   try {
-    const rendered = await context.render(url);
+    const linkedIn = /(^|\.)linkedin\.com$/.test(hostOf(url) ?? "");
+    const navigation = linkedIn
+      ? await context.linkedInBudget.run(() => context.render!(url))
+      : { allowed: true as const, value: await context.render(url) };
+    if (!navigation.allowed) {
+      recordLinkedInBudgetDeferral(url, context);
+      return null;
+    }
+    const rendered = navigation.value;
     const rejection = renderRejection(rendered, family);
     if (rejection) {
       context.recorder.record({
@@ -2544,11 +2551,14 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
   if (/bsky\.app|bsky\.social/.test(host)) return readBluesky(url, context);
   if (/x\.com|twitter\.com|linkedin\.com|instagram\.com|threads\.(net|com)/.test(host)) {
     const linkedIn = /(^|\.)linkedin\.com$/.test(host);
-    if (linkedIn && !(await context.linkedInBudget.take())) {
+    const navigation = linkedIn
+      ? await context.linkedInBudget.run(() => request(url, context, "social-reader", undefined, 1))
+      : { allowed: true as const, value: await request(url, context, "social-reader") };
+    if (!navigation.allowed) {
       recordLinkedInBudgetDeferral(url, context);
       return unavailable("public-social", "social-reader", "blocked", context.snippet, url);
     }
-    const response = await request(url, context, "social-reader", undefined, linkedIn ? 1 : 3);
+    const response = navigation.value;
     const challenge = response ? detectChallenge(response.body, response.contentType) : null;
     /* A public page that actually renders anonymously is still worth reading;
        only a wall is recorded as a wall. Both checks run on this response,
@@ -2649,18 +2659,25 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
       ownIdentity !== null &&
       (context.profileUrls ?? []).some((entry) => linkedInProfileIdentity(entry) === ownIdentity);
     let unresolved999: string | null = null;
-    if (linkedIn && response?.status === 999 && ownProfile && !challenge) {
+    if (linkedIn && response?.status === 999 && ownProfile) {
       const controlUrl = "https://www.linkedin.com/in/williamhgates";
-      const control = (await context.linkedInBudget.take())
-        ? await request(controlUrl, context, "social-reader", undefined, 1)
-        : null;
+      const controlNavigation = await context.linkedInBudget.run(() =>
+        request(controlUrl, context, "social-reader", undefined, 1),
+      );
+      const control = controlNavigation.allowed ? controlNavigation.value : null;
+      if (!controlNavigation.allowed) recordLinkedInBudgetDeferral(controlUrl, context);
+      const controlProfile = control && linkedInGuestProfile(control.body, control.url).text;
+      const knownControlContent =
+        /^(?:Headline|Summary|Experience): .{40,}$/m.test(controlProfile ?? "") &&
+        /\b(?:Microsoft|Gates Foundation)\b/i.test(controlProfile ?? "");
       const controlFailed =
         !control ||
         control.status >= 400 ||
         linkedInProfileIdentity(control.url) !== linkedInProfileIdentity(controlUrl) ||
         !!detectChallenge(control.body, control.contentType) ||
         !!detectSocialWallMarker(control.body) ||
-        !linkedInGuestProfile(control.body, control.url).text.includes("Public profile name:");
+        !/^Public profile name: (?:William|Bill) Gates$/m.test(controlProfile ?? "") ||
+        !knownControlContent;
       if (controlFailed) {
         const retryAt = context.linkedInBudget.holdAfterControlRefusal();
         unresolved999 = `LinkedIn returned 999 for the Profile and the known-good control was unavailable: not served to this client; cause unresolved. Silent until ${retryAt}.`;

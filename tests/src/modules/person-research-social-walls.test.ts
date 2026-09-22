@@ -358,7 +358,7 @@ test("a 200 carrying a bot-challenge shell is recorded as a challenge, never ret
 const authRedirect =
   '<script>window.onload = function() { window.location.href = "https://" + domain + "/authwall?trk=" + trk; };</script>';
 const controlUrl = "https://www.linkedin.com/in/williamhgates";
-const controlPage = `<html><body><article><h1>William Gates</h1><p>${paragraph.repeat(4)}</p></article></body></html>`;
+const controlPage = `<html><body><article><h1>William Gates</h1><section data-section="summary"><div class="core-section-container__content"><p>Microsoft co-founder and Gates Foundation chair, working on global health, education, and climate initiatives.</p></div></section></article></body></html>`;
 
 function readWalled(
   url: string,
@@ -367,6 +367,7 @@ function readWalled(
   render: (target: string) => { url: string; body: string; status?: number },
   controlStatus = 200,
   linkedInBudget = new LinkedInRequestBudget({ spacingMs: 0 }),
+  controlBody = controlPage,
 ) {
   const recorder = new ResearchAttemptRecorder(
     "social-walls",
@@ -391,7 +392,7 @@ function readWalled(
           etag: null,
           lastModified: null,
           retryAfter: null,
-          body: target === controlUrl && controlStatus === 200 ? controlPage : body,
+          body: target === controlUrl && controlStatus === 200 ? controlBody : body,
         };
       },
       render: async (target: string) => {
@@ -445,6 +446,36 @@ test("a 999 on both the Profile and known-good control leaves the cause unresolv
     }),
   );
   expect(recorder.failures().some((attempt) => attempt.code === "login-required")).toBe(false);
+});
+
+test("a 999 that contains a login marker still requires the control before a wall verdict", async () => {
+  const { recorder, fetches, result } = readWalled(
+    ownUrl,
+    "<html><body><h1>Sign in to continue</h1></body></html>",
+    999,
+    (target) => ({ url: target, body: publicProfilePage }),
+    999,
+  );
+  await result;
+  expect(fetches).toEqual([ownUrl, controlUrl]);
+  expect(recorder.failures().some((attempt) => attempt.code === "login-required")).toBe(false);
+});
+
+test("a generic 200 shell at the control URL does not validate a 999 wall", async () => {
+  const { recorder, renders, result } = readWalled(
+    ownUrl,
+    authRedirect,
+    999,
+    (target) => ({ url: target, body: publicProfilePage }),
+    200,
+    new LinkedInRequestBudget({ spacingMs: 0 }),
+    "<html><body><h1>Service is temporarily unavailable</h1></body></html>",
+  );
+  await result;
+  expect(renders).toEqual([]);
+  expect(recorder.failures()).toContainEqual(
+    expect.objectContaining({ reason: expect.stringContaining("cause unresolved") }),
+  );
 });
 
 test("the control and render share the LinkedIn request budget", async () => {
@@ -591,6 +622,55 @@ test("separate LinkedIn operations still space their requests to the same host",
   await second;
   expect(started).toEqual([0, 20_000]);
   expect(waits).toEqual([20_000]);
+});
+
+test("a slow LinkedIn fetch finishes before another operation starts its request", async () => {
+  let clock = 0;
+  let finishFirst!: () => void;
+  const firstPending = new Promise<void>((resolve) => {
+    finishFirst = resolve;
+  });
+  const started: string[] = [];
+  const cooldown = { until: 0, refusals: 0 };
+  const readOne = (url: string) =>
+    readPersonSource(
+      url,
+      "",
+      fromPartial<ReaderPorts>({
+        recorder: new ResearchAttemptRecorder("single-flight", () => new Date()),
+        timeoutMs: 1000,
+        linkedInBudget: new LinkedInRequestBudget({
+          maxRequests: 1,
+          spacingMs: 20_000,
+          cooldown,
+          now: () => clock,
+          wait: async (milliseconds) => {
+            clock += milliseconds;
+          },
+        }),
+        fetch: async (target: string) => {
+          started.push(target);
+          if (target === ownUrl) await firstPending;
+          return {
+            url: target,
+            status: 429,
+            contentType: "text/html",
+            etag: null,
+            lastModified: null,
+            retryAfter: null,
+            body: "rate limited",
+          };
+        },
+      }),
+    );
+  const first = readOne(ownUrl);
+  const second = readOne(authoredPostUrl);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(started).toEqual([ownUrl]);
+  finishFirst();
+  await Promise.all([first, second]);
+  expect(started).toEqual([ownUrl, authoredPostUrl]);
+  expect(clock).toBe(20_000);
 });
 
 test("a render that lands on the LinkedIn authwall is a wall, never a retained source", async () => {
