@@ -8,6 +8,22 @@ export function linkedInProfileIdentity(url: string): string | null {
   );
 }
 
+/** LinkedIn activity IDs carry Unix milliseconds in their upper bits. */
+export function linkedInActivityDate(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!/(^|\.)linkedin\.com$/i.test(parsed.hostname)) return null;
+  const id = /(?:activity-|urn:li:activity:)(\d{19})(?!\d)/i.exec(parsed.pathname)?.[1];
+  if (!id) return null;
+  const milliseconds = Number(BigInt(id) >> 22n);
+  const date = new Date(milliseconds);
+  return Number.isNaN(date.valueOf()) ? null : date.toISOString();
+}
+
 /** Only the public profile's attributed article section, never activity or suggestions. */
 export function linkedInProfileText(document: Document, url: string): string {
   if (!linkedInProfileIdentity(url)) return "";

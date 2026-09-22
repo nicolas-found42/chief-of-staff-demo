@@ -55,6 +55,7 @@ const cases = [
     expected: [
       "Post listed by Maya Okafor",
       "Text: A better way to share sensor data.",
+      "Date (decoded from activity ID): 2026-07-26T16:59:42.289Z",
       "URL: https://www.linkedin.com/posts/maya-okafor_sensor-data-activity-7487189920416108544-x",
     ],
     postCount: 1,

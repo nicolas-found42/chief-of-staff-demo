@@ -1,4 +1,8 @@
-import { linkedInProfileIdentity, linkedInProfileText } from "./linkedin-articles.js";
+import {
+  linkedInActivityDate,
+  linkedInProfileIdentity,
+  linkedInProfileText,
+} from "./linkedin-articles.js";
 import { linkedInGuestProfile } from "./linkedin-guest-profile.js";
 import { createHash } from "node:crypto";
 import { load } from "cheerio";
@@ -1038,6 +1042,12 @@ async function readHtml(
        heads the text extraction reads (spec: a profile URL abbreviates the
        name; the page it serves carries it, and later searches use it). */
     const pageTitle = document.title.trim() || meta("og:title") || null;
+    const declaredDate =
+      meta("article:published_time") ?? meta("datePublished") ?? meta("publish_date");
+    const decodedDate =
+      !declaredDate && !document.querySelector('script[type="application/ld+json"]')
+        ? linkedInActivityDate(response.url)
+        : null;
     const documentText = [
       pageTitle ? `Page title: ${pageTitle}` : "",
       guestProfile.text,
@@ -1059,8 +1069,7 @@ async function readHtml(
       family,
       route: "html-reader",
       upstreamIndex: hostOf(response.url),
-      publishedAt:
-        meta("article:published_time") ?? meta("datePublished") ?? meta("publish_date") ?? null,
+      publishedAt: declaredDate ?? decodedDate,
       author: meta("article:author") ?? meta("author") ?? null,
       anchors: [],
       provenanceNote:
@@ -1069,6 +1078,7 @@ async function readHtml(
           guestProfile.redactedTitles
             ? `${guestProfile.redactedTitles} experience title(s) were redacted in the anonymous profile and were not retained as content.`
             : null,
+          decodedDate ? "Publication date was decoded from the LinkedIn activity ID." : null,
         ]
           .filter(Boolean)
           .join(" ") || null,
