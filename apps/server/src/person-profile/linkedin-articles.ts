@@ -24,6 +24,46 @@ export function linkedInActivityDate(url: string): string | null {
   return Number.isNaN(date.valueOf()) ? null : date.toISOString();
 }
 
+/** Attribution stated by a public post or article page, never inferred from its URL. */
+export function linkedInDeclaredAuthor(
+  document: Document,
+  url: string,
+): { name: string | null; profileUrl: string; publishedAt: string | null } | null {
+  let page: URL;
+  try {
+    page = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!/(^|\.)linkedin\.com$/i.test(page.hostname) || !/^\/(?:posts|pulse)\//.test(page.pathname))
+    return null;
+  for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+    let data: unknown;
+    try {
+      data = JSON.parse(script.textContent);
+    } catch {
+      continue;
+    }
+    const entries = Array.isArray(data) ? data : [data];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as Record<string, unknown>;
+      if (record["@type"] !== "Article" && record["@type"] !== "SocialMediaPosting") continue;
+      const author = record.author;
+      if (!author || typeof author !== "object") continue;
+      const declared = author as Record<string, unknown>;
+      if (typeof declared.url !== "string" || !linkedInProfileIdentity(declared.url)) continue;
+      return {
+        name:
+          typeof declared.name === "string" && declared.name.trim() ? declared.name.trim() : null,
+        profileUrl: declared.url,
+        publishedAt: typeof record.datePublished === "string" ? record.datePublished : null,
+      };
+    }
+  }
+  return null;
+}
+
 /** Only the public profile's attributed article section, never activity or suggestions. */
 export function linkedInProfileText(document: Document, url: string): string {
   if (!linkedInProfileIdentity(url)) return "";

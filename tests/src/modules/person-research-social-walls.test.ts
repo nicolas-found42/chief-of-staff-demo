@@ -67,6 +67,7 @@ test("a LinkedIn 999 authentication redirect is a login restriction, not a gener
 const paragraph =
   "Maya Okafor has spent a decade leading coastal sensor deployments across West Africa, " +
   "publishing measurement methods that independent teams reuse in seasonal outbreak studies. ";
+const ownUrl = "https://www.linkedin.com/in/maya-okafor";
 
 /* A public profile page that renders anonymously: substantive profile content
    beside the usual sign-in chrome, mirroring the live LinkedIn probe. */
@@ -197,6 +198,98 @@ test("an invalid-length LinkedIn activity ID supplies no decoded date", async ()
   expect(outcome.provenanceNote).toBeNull();
 });
 
+const authoredPostUrl =
+  "https://www.linkedin.com/posts/maya-okafor_sensor-data-activity-7487189920416108544-x";
+const authoredPost = (profileUrl: string) => `<html><head><title>Sensor data</title>
+  <script type="application/ld+json">${JSON.stringify({
+    "@type": "SocialMediaPosting",
+    author: { name: "Maya Okafor", url: profileUrl },
+    datePublished: "2026-07-26T16:59:42.270Z",
+  })}</script></head><body><article><h1>Sensor data</h1><p>${paragraph.repeat(4)}</p></article></body></html>`;
+
+test("a logged-out post read retains its own JSON-LD author and declared date", async () => {
+  const { result } = read(authoredPostUrl, authoredPost(ownUrl));
+  const outcome = await result;
+  expect(outcome.access).toBe("retrieved");
+  expect(outcome.linkedInAuthor).toEqual({ name: "Maya Okafor", profileUrl: ownUrl });
+  expect(outcome.author).toBe("Maya Okafor");
+  expect(outcome.publishedAt).toBe("2026-07-26T16:59:42.270Z");
+});
+
+test("a logged-out LinkedIn article retains its declared author URL", async () => {
+  const articleUrl = "https://www.linkedin.com/pulse/coastal-data-maya-okafor";
+  const body = `<html><head><script type="application/ld+json">${JSON.stringify({
+    "@type": "Article",
+    author: { name: "Maya Okafor", url: ownUrl },
+    datePublished: "2026-07-25T12:00:00Z",
+  })}</script></head><body><article><h1>Coastal data</h1><p>${paragraph.repeat(4)}</p></article></body></html>`;
+  const { result } = read(articleUrl, body);
+  const outcome = await result;
+  expect(outcome.linkedInAuthor).toEqual({ name: "Maya Okafor", profileUrl: ownUrl });
+  expect(outcome.publishedAt).toBe("2026-07-25T12:00:00Z");
+});
+
+test.each([
+  { authorUrl: ownUrl, accepted: true },
+  { authorUrl: "https://www.linkedin.com/in/another-person", accepted: false },
+])(
+  "a post is anchored by its declared author URL, not its requested URL: $authorUrl",
+  async ({ authorUrl, accepted }) => {
+    const root = mkdtempSync(join(tmpdir(), "linkedin-author-anchor-"));
+    try {
+      const people = new WorkspacePersonProfiles({
+        store: new PersonProfileStore(root),
+        lifecycle: [],
+      });
+      const profile = people.create({ profileUrls: [ownUrl] });
+      const dossiers = new PersonDossierStore(root);
+      let extractions = 0;
+      const research = new PersonResearch({
+        people,
+        dossiers,
+        search: async () => [{ url: authoredPostUrl, title: "Sensor data", snippet: "" }],
+        fetch: async (url) => ({
+          url,
+          status: url === authoredPostUrl ? 200 : 999,
+          contentType: "text/html",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: url === authoredPostUrl ? authoredPost(authorUrl) : authRedirect,
+        }),
+        complete: async () => {
+          extractions++;
+          return {
+            fullName: null,
+            employer: null,
+            sourceClass: "self-report" as const,
+            author: null,
+            publishedAt: null,
+            claims: [],
+            works: [],
+            expertise: [],
+            connections: [],
+            sections: [],
+          };
+        },
+      });
+      const outcome = await research.run(
+        profile,
+        researchAllowance({ maxModelCalls: 2, maxMilliseconds: 10_000, quietRounds: 1 }),
+      );
+      expect(extractions > 0).toBe(accepted);
+      expect(
+        outcome.operation.attempts.some(
+          (attempt) => attempt.code === "identity-unmatched" && attempt.target === authoredPostUrl,
+        ),
+      ).toBe(!accepted);
+      if (accepted) expect(people.get(profile.id)?.fullName).toBe("Maya Okafor");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
 test.each([
   {
     network: "x",
@@ -257,7 +350,6 @@ test("a 200 carrying a bot-challenge shell is recorded as a challenge, never ret
 /* A Profile's own walled LinkedIn URL earns one bounded render (ADR-0100). */
 const authRedirect =
   '<script>window.onload = function() { window.location.href = "https://" + domain + "/authwall?trk=" + trk; };</script>';
-const ownUrl = "https://www.linkedin.com/in/maya-okafor";
 
 function readWalled(
   url: string,

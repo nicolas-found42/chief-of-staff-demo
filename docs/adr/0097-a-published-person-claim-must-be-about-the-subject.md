@@ -1,5 +1,9 @@
 # A published Person Claim must be about the subject, not only grounded in a document that names them
 
+**Amended by [ADR-0101](0101-a-linkedin-posts-declared-author-can-anchor-person-identity.md).**
+A LinkedIn post or article whose own JSON-LD `author.url` matches the Profile's
+URL is also anchored by a `signal`; a different declared author is rejected.
+
 Identity was decided per document and grounding per claim, and nothing asked
 the question between them: is *this* claim about *this* person. A document that
 mentions the subject once and otherwise describes a different named individual

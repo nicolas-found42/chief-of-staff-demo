@@ -1,4 +1,8 @@
-import { linkedInProfileName, retainLinkedInArticles } from "./linkedin-articles.js";
+import {
+  linkedInProfileIdentity,
+  linkedInProfileName,
+  retainLinkedInArticles,
+} from "./linkedin-articles.js";
 import {
   qualifyClaimEvidence,
   retainClaimContext,
@@ -1503,8 +1507,19 @@ export class PersonResearch {
                 source.attribution === "self-report" ? "self-report" : extracted.sourceClass,
               reason: claim.changeReason ?? "Matched source supplies the fact.",
             });
+        const declaredAuthorName =
+          read.linkedInAuthor &&
+          profile.profileUrls.some(
+            (url) =>
+              linkedInProfileIdentity(url) ===
+              linkedInProfileIdentity(read.linkedInAuthor!.profileUrl),
+          )
+            ? read.linkedInAuthor.name
+            : null;
         const resolvedName =
-          extracted.fullName ?? linkedInProfileName(source, profile.profileUrls, read.finalUrl);
+          extracted.fullName ??
+          linkedInProfileName(source, profile.profileUrls, read.finalUrl) ??
+          declaredAuthorName;
         if (
           !privateDocument &&
           resolvedName &&
@@ -1992,6 +2007,23 @@ export class PersonResearch {
   } {
     if (isPrivate)
       return { decision: "matched", reason: "A confirmed Workspace Transcript.", anchor: "signal" };
+    if (read.linkedInAuthor) {
+      const authorIdentity = linkedInProfileIdentity(read.linkedInAuthor.profileUrl);
+      const matched =
+        authorIdentity !== null &&
+        profile.profileUrls.some((entry) => linkedInProfileIdentity(entry) === authorIdentity);
+      return matched
+        ? {
+            decision: "matched",
+            reason: "The LinkedIn page declares the Profile's URL as its author.",
+            anchor: "signal",
+          }
+        : {
+            decision: "unmatched",
+            reason: "The LinkedIn page declares a different author URL.",
+            anchor: "name",
+          };
+    }
     const folded = read.text.toLowerCase();
     if (
       [...linked].some((entry) => canonicalSourceUrl(entry) === canonicalSourceUrl(url)) ||
