@@ -59,15 +59,18 @@ async function replay(
     people,
     dossiers,
     search: async () => [],
-    fetch: async () => ({
-      url: finalUrl,
-      status: 200,
-      contentType: "text/html",
-      etag: null,
-      lastModified: null,
-      retryAfter: null,
-      body: html ?? asHtml(text),
-    }),
+    fetch: async (target) => {
+      const ownPage = target.replace(/\/$/, "") === sourceUrl.replace(/\/$/, "");
+      return {
+        url: ownPage ? finalUrl : target,
+        status: ownPage ? 200 : 404,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: ownPage ? (html ?? asHtml(text)) : "",
+      };
+    },
     complete: async () => answer,
     ...(render ? { render } : {}),
   });
