@@ -179,7 +179,7 @@ function readWalled(
   url: string,
   body: string,
   status: number,
-  render: (target: string) => { url: string; body: string },
+  render: (target: string) => { url: string; body: string; status?: number },
 ) {
   const recorder = new ResearchAttemptRecorder(
     "social-walls",
@@ -204,7 +204,7 @@ function readWalled(
       }),
       render: async (target: string) => {
         renders.push(target);
-        return { ...render(target), status: 200, contentType: "text/html" };
+        return { status: 200, contentType: "text/html", ...render(target) };
       },
     }),
   );
@@ -235,8 +235,10 @@ test("a render that lands on the LinkedIn authwall is a wall, never a retained s
     `<h1>Join LinkedIn</h1><form><label>Email</label><input type="email">` +
     `<label>Password (6+ characters)</label><input type="password">` +
     `<p>${paragraph.repeat(4)}</p></form></main></body></html>`;
+  const authwall =
+    "https://www.linkedin.com/authwall?trk=bf&sessionRedirect=https%3A%2F%2Fwww.linkedin.com%2Fin%2Fmaya-okafor";
   const { recorder, renders, result } = readWalled(ownUrl, authRedirect, 999, () => ({
-    url: "https://www.linkedin.com/authwall?trk=bf&sessionRedirect=https%3A%2F%2Fwww.linkedin.com%2Fin%2Fmaya-okafor",
+    url: authwall,
     body: joinForm,
   }));
   const outcome = await result;
@@ -246,9 +248,48 @@ test("a render that lands on the LinkedIn authwall is a wall, never a retained s
   expect(recorder.failures()).toContainEqual(
     expect.objectContaining({ code: "login-required", stage: "access" }),
   );
-  expect(recorder.failures()).toContainEqual(
-    expect.objectContaining({ code: "rendering-failed", collector: "browser-renderer" }),
-  );
+  const failure = recorder.failures().find((attempt) => attempt.code === "rendering-failed");
+  expect(failure).toMatchObject({ collector: "browser-renderer" });
+  expect(failure?.reason).toMatch(/sign-in surface/);
+  expect(failure?.observed).toEqual({ status: 200, finalUrl: authwall, bytes: joinForm.length });
+});
+
+/* Each check that rejects a render names itself and records where the
+   browser landed, so the ledger says why a render contributed nothing. */
+test.each([
+  {
+    check: "HTTP status",
+    rendered: { url: ownUrl, body: publicProfilePage, status: 403 },
+    reason: /HTTP 403/,
+  },
+  {
+    check: "challenge",
+    rendered: {
+      url: ownUrl,
+      body:
+        `<!doctype html><html><head><title>Just a moment...</title></head><body>` +
+        `<p>Just a moment: checking your browser before you can continue.</p></body></html>`,
+    },
+    reason: /challenge-page/,
+  },
+  {
+    check: "social wall marker",
+    rendered: {
+      url: ownUrl,
+      body: publicProfilePage.replace("</body>", "<p>Log in to see more</p></body>"),
+    },
+    reason: /social wall marker "log in to see more"/,
+  },
+])("a render rejected by the $check check records its reason and landing", async (row) => {
+  const { recorder, result } = readWalled(ownUrl, authRedirect, 999, () => row.rendered);
+  expect((await result).access).toBe("blocked");
+  const failure = recorder.failures().find((attempt) => attempt.code === "rendering-failed");
+  expect(failure?.reason).toMatch(row.reason);
+  expect(failure?.observed).toEqual({
+    status: row.rendered.status ?? 200,
+    finalUrl: ownUrl,
+    bytes: row.rendered.body.length,
+  });
 });
 
 test("a render that lands on a different LinkedIn profile is not retained as the Profile's own", async () => {
