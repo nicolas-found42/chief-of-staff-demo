@@ -159,3 +159,108 @@ test("a 200 carrying a bot-challenge shell is recorded as a challenge, never ret
   expect(failure?.observed).toMatchObject({ status: 200 });
   expect(failure?.observed?.bodyHash).toMatch(/^[0-9a-f]{64}$/);
 });
+
+/* A Profile's own walled LinkedIn URL earns one bounded render (ADR-0100). */
+const authRedirect =
+  '<script>window.onload = function() { window.location.href = "https://" + domain + "/authwall?trk=" + trk; };</script>';
+const ownUrl = "https://www.linkedin.com/in/maya-okafor";
+
+function readWalled(
+  url: string,
+  body: string,
+  status: number,
+  render: (target: string) => { url: string; body: string },
+) {
+  const recorder = new ResearchAttemptRecorder(
+    "social-walls",
+    () => new Date("2026-09-22T12:00:00.000Z"),
+  );
+  const renders: string[] = [];
+  const result = readPersonSource(
+    url,
+    "search snippet",
+    fromPartial<ReaderPorts>({
+      recorder,
+      timeoutMs: 1000,
+      profileUrls: [ownUrl],
+      fetch: async (target: string) => ({
+        url: target,
+        status,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body,
+      }),
+      render: async (target: string) => {
+        renders.push(target);
+        return { ...render(target), status: 200, contentType: "text/html" };
+      },
+    }),
+  );
+  return { recorder, renders, result };
+}
+
+test("a walled read of the Profile's own LinkedIn URL is recovered by one bounded render of that profile", async () => {
+  const { recorder, renders, result } = readWalled(ownUrl, authRedirect, 999, (target) => ({
+    url: target,
+    body: publicProfilePage,
+  }));
+  const outcome = await result;
+  expect(renders).toEqual([ownUrl]);
+  expect(outcome.access).toBe("retrieved");
+  expect(outcome.route).toBe("browser-renderer");
+  expect(outcome.text).toContain("Sensor Lead at Coastal Observatory");
+  expect(recorder.all()).toContainEqual(
+    expect.objectContaining({ code: "login-required", recovery: "alternative-route" }),
+  );
+  expect(recorder.all()).toContainEqual(
+    expect.objectContaining({ code: "retrieval-recovered", collector: "browser-renderer" }),
+  );
+});
+
+test("a render that lands on the LinkedIn authwall is a wall, never a retained source", async () => {
+  const joinForm =
+    `<!doctype html><html><head><title>LinkedIn</title></head><body><main>` +
+    `<h1>Join LinkedIn</h1><form><label>Email</label><input type="email">` +
+    `<label>Password (6+ characters)</label><input type="password">` +
+    `<p>${paragraph.repeat(4)}</p></form></main></body></html>`;
+  const { recorder, renders, result } = readWalled(ownUrl, authRedirect, 999, () => ({
+    url: "https://www.linkedin.com/authwall?trk=bf&sessionRedirect=https%3A%2F%2Fwww.linkedin.com%2Fin%2Fmaya-okafor",
+    body: joinForm,
+  }));
+  const outcome = await result;
+  expect(renders).toEqual([ownUrl]);
+  expect(outcome.access).toBe("blocked");
+  expect(outcome.text).toBe("search snippet");
+  expect(recorder.failures()).toContainEqual(
+    expect.objectContaining({ code: "login-required", stage: "access" }),
+  );
+  expect(recorder.failures()).toContainEqual(
+    expect.objectContaining({ code: "rendering-failed", collector: "browser-renderer" }),
+  );
+});
+
+test("a walled LinkedIn URL that is not one of the Profile's own earns no render", async () => {
+  const { renders, result } = readWalled(
+    "https://www.linkedin.com/in/someone-else",
+    authRedirect,
+    999,
+    (target) => ({ url: target, body: publicProfilePage }),
+  );
+  expect((await result).access).toBe("blocked");
+  expect(renders).toEqual([]);
+});
+
+test("a bot challenge on the Profile's own LinkedIn URL is never retried in a browser", async () => {
+  const challenge =
+    `<!doctype html><html><head><title>Just a moment...</title></head><body>` +
+    `<p>Just a moment: checking your browser before you can continue.</p></body></html>`;
+  const { recorder, renders, result } = readWalled(ownUrl, challenge, 200, (target) => ({
+    url: target,
+    body: publicProfilePage,
+  }));
+  expect((await result).access).toBe("blocked");
+  expect(renders).toEqual([]);
+  expect(recorder.failures()).toContainEqual(expect.objectContaining({ code: "challenge-page" }));
+});

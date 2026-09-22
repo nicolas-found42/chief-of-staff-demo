@@ -484,7 +484,7 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     cost: "sign-in",
     status: "excluded",
     exclusion:
-      "No keyless anonymous read exists. Research records a login-required failure for a LinkedIn URL rather than importing a session or using a paid proxy.",
+      "Not a discovery provider. An anonymous page read succeeds only per client, per slug and per moment, so research reads a LinkedIn URL directly, records a login-required failure for a wall, and gives only the Profile's own walled URL one bounded render (ADR-0100); it never imports a session or uses a paid proxy.",
   },
   {
     route: "crossref",
