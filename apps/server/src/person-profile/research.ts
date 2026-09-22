@@ -1590,10 +1590,58 @@ export class PersonResearch {
             );
         }
 
+        /* A verified guest profile offers more LinkedIn work than this host's
+           anonymous budget should follow. Read two listed posts and one article;
+           the reader's labelled cards are the source of these URLs. */
+        const ownLinkedInProfile = profile.profileUrls.some(
+          (url) =>
+            linkedInProfileIdentity(url) !== null &&
+            linkedInProfileIdentity(url) === linkedInProfileIdentity(read.finalUrl),
+        );
+        if (!privateDocument && ownLinkedInProfile) {
+          const linkedOnPage = (url: string) =>
+            read.outboundUrls.some((outbound) => outbound.split(/[?#]/, 1)[0] === url);
+          const posts = [
+            ...read.text.matchAll(
+              /^Post listed by [^\n]+\nText: [^\n]+(?:\nDate \(decoded from activity ID\): [^\n]+)?\nURL: (https?:\/\/[^\s]+)$/gm,
+            ),
+          ]
+            .map((match) => match[1]!)
+            .filter(
+              (url) =>
+                linkedOnPage(url) && /^https:\/\/(?:www\.)?linkedin\.com\/posts\//i.test(url),
+            )
+            .slice(0, 2);
+          const articles = [
+            ...read.text.matchAll(
+              /^Article listed by [^\n]+\nTitle: [^\n]+\nDate: [^\n]+\nURL: (https?:\/\/[^\s]+)$/gm,
+            ),
+          ]
+            .map((match) => match[1]!)
+            .filter(
+              (url) =>
+                linkedOnPage(url) && /^https:\/\/(?:www\.)?linkedin\.com\/pulse\//i.test(url),
+            )
+            .slice(0, 1);
+          for (const url of [...posts, ...articles]) {
+            linked.add(url);
+            const added = leads.add({ kind: "url", target: url, origin: "document-link" });
+            if (added) leadContext.set(added.id, { title: url, snippet: "", rank: 0 });
+          }
+        }
+
         /* Work this source attributed to the person, reached through its own
            page, is anchored evidence rather than a search result. */
         for (const work of privateDocument ? [] : content.works)
-          if (work.url && read.outboundUrls.includes(work.url) && work.contribution) {
+          if (
+            work.url &&
+            read.outboundUrls.includes(work.url) &&
+            work.contribution &&
+            !(
+              ownLinkedInProfile &&
+              /^https:\/\/(?:www\.)?linkedin\.com\/(?:posts|pulse)\//i.test(work.url)
+            )
+          ) {
             linked.add(work.url);
             const added = leads.add({ kind: "url", target: work.url, origin: "document-link" });
             if (added) leadContext.set(added.id, { title: work.title, snippet: "", rank: 0 });

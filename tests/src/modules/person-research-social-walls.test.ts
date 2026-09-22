@@ -297,6 +297,87 @@ test.each([
   },
 );
 
+test("a matched guest profile follows two listed posts and one article through anonymous reads", async () => {
+  const root = mkdtempSync(join(tmpdir(), "linkedin-listed-works-"));
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const profile = people.create({ profileUrls: [ownUrl] });
+    const dossiers = new PersonDossierStore(root);
+    const posts = [1, 2, 3].map(
+      (number) =>
+        `https://www.linkedin.com/posts/maya-okafor_sensor-${number}-activity-7487189920416108544-x`,
+    );
+    const articles = [1, 2].map(
+      (number) => `https://www.linkedin.com/pulse/coastal-sensors-${number}-maya-okafor`,
+    );
+    const profilePage = `<html><body><article><h1>Maya Okafor</h1><p>${paragraph.repeat(4)}</p>
+      <section data-section="posts">${posts
+        .map(
+          (url, index) =>
+            `<div class="base-card"><div class="see-more-text">Sensor finding ${index + 1}</div><a href="${url}?trk=public_profile">Post</a></div>`,
+        )
+        .join("")}</section>
+      <section data-section="articles"><h2>Articles by Maya Okafor</h2>${articles
+        .map(
+          (url, index) =>
+            `<div class="main-article-card"><h3>Coastal sensors ${index + 1}</h3><a href="${url}?trk=public_profile">Article</a><span class="base-main-card__metadata-item">Jul 26, 2026</span></div>`,
+        )
+        .join("")}</section></article></body></html>`;
+    const fetched: string[] = [];
+    const research = new PersonResearch({
+      people,
+      dossiers,
+      linkedInBudget: new LinkedInRequestBudget({ maxRequests: 4, spacingMs: 0 }),
+      seeds: () => [],
+      search: async () => [],
+      fetch: async (url) => {
+        fetched.push(url);
+        return {
+          url,
+          status: 200,
+          contentType: "text/html",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body:
+            url === ownUrl
+              ? profilePage
+              : `<html><head><script type="application/ld+json">${JSON.stringify({
+                  "@type": url.includes("/pulse/") ? "Article" : "SocialMediaPosting",
+                  author: { name: "Maya Okafor", url: ownUrl },
+                })}</script></head><body><article><h1>Sensor finding</h1><p>${paragraph.repeat(4)}</p></article></body></html>`,
+        };
+      },
+      complete: async () => ({
+        fullName: null,
+        employer: null,
+        sourceClass: "self-report" as const,
+        author: null,
+        publishedAt: null,
+        claims: [],
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      }),
+    });
+    await research.run(
+      profile,
+      researchAllowance({ maxModelCalls: 10, maxMilliseconds: 10_000, quietRounds: 1 }),
+    );
+    expect(fetched).toEqual([ownUrl, posts[0], posts[1], articles[0]]);
+    const sources = dossiers
+      .get(profile.id)!
+      .sourceIds.map((sourceId) => dossiers.source(profile.id, sourceId)!.url);
+    expect(sources).toEqual(expect.arrayContaining([ownUrl, posts[0], posts[1], articles[0]]));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test.each([
   {
     network: "x",
