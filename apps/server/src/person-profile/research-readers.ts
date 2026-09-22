@@ -208,6 +208,7 @@ export class LinkedInRequestBudget {
 
   async run<T>(
     navigate: () => Promise<T>,
+    deadline?: number,
   ): Promise<{ allowed: true; value: T } | { allowed: false }> {
     let release!: () => void;
     const next = new Promise<void>((resolve) => {
@@ -221,13 +222,18 @@ export class LinkedInRequestBudget {
         return { allowed: false };
       const delay = Math.max(0, (this.cooldown.nextAt ?? 0) - this.now());
       if (delay) await this.wait(delay);
-      if (this.now() < this.cooldown.until) return { allowed: false };
+      if (this.now() < this.cooldown.until || (deadline !== undefined && this.now() >= deadline))
+        return { allowed: false };
       this.used++;
       this.cooldown.nextAt = this.now() + this.spacingMs;
       return { allowed: true, value: await navigate() };
     } finally {
       release();
     }
+  }
+
+  currentTime(): number {
+    return this.now();
   }
 
   holdAfterControlRefusal(): string {
@@ -2661,8 +2667,10 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
     let unresolved999: string | null = null;
     if (linkedIn && response?.status === 999 && ownProfile) {
       const controlUrl = "https://www.linkedin.com/in/williamhgates";
-      const controlNavigation = await context.linkedInBudget.run(() =>
-        request(controlUrl, context, "social-reader", undefined, 1),
+      const controlDeadline = context.linkedInBudget.currentTime() + 60_000;
+      const controlNavigation = await context.linkedInBudget.run(
+        () => request(controlUrl, context, "social-reader", undefined, 1),
+        controlDeadline,
       );
       const control = controlNavigation.allowed ? controlNavigation.value : null;
       if (!controlNavigation.allowed) recordLinkedInBudgetDeferral(controlUrl, context);
@@ -2672,6 +2680,7 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
         /\b(?:Microsoft|Gates Foundation)\b/i.test(controlProfile ?? "");
       const controlFailed =
         !control ||
+        context.linkedInBudget.currentTime() >= controlDeadline ||
         control.status >= 400 ||
         linkedInProfileIdentity(control.url) !== linkedInProfileIdentity(controlUrl) ||
         !!detectChallenge(control.body, control.contentType) ||

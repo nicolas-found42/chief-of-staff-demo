@@ -478,6 +478,31 @@ test("a generic 200 shell at the control URL does not validate a 999 wall", asyn
   );
 });
 
+test("a control delayed beyond the 999's minute does not authorize a wall verdict", async () => {
+  let clock = 0;
+  const budget = new LinkedInRequestBudget({
+    spacingMs: 60_000,
+    now: () => clock,
+    wait: async (milliseconds) => {
+      clock += milliseconds;
+    },
+  });
+  const { fetches, renders, recorder, result } = readWalled(
+    ownUrl,
+    authRedirect,
+    999,
+    (target) => ({ url: target, body: publicProfilePage }),
+    200,
+    budget,
+  );
+  await result;
+  expect(fetches).toEqual([ownUrl]);
+  expect(renders).toEqual([]);
+  expect(recorder.failures()).toContainEqual(
+    expect.objectContaining({ reason: expect.stringContaining("cause unresolved") }),
+  );
+});
+
 test("the control and render share the LinkedIn request budget", async () => {
   const budget = new LinkedInRequestBudget({ maxRequests: 2, spacingMs: 0 });
   const { fetches, renders, recorder, result } = readWalled(
