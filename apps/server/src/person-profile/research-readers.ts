@@ -24,7 +24,7 @@ import {
   type PublicHttpResponse,
   type PublicHttpBytesResponse,
 } from "../source-adapters/http.js";
-import type { BrowserRenderer } from "../source-adapters/browser.js";
+import type { BrowserRenderer, BrowserRenderResult } from "../source-adapters/browser.js";
 import {
   classifyHttpStatus,
   classifyTransportError,
@@ -1087,6 +1087,17 @@ function linkedInSignInSurface(url: string): boolean {
   }
 }
 
+/** Names the check that makes a render unusable as a public document, if any. */
+function renderRejection(rendered: BrowserRenderResult, family: PersonSourceFamily): string | null {
+  if (rendered.status >= 400) return `the render returned HTTP ${rendered.status}`;
+  if (linkedInSignInSurface(rendered.url)) return "the render landed on a LinkedIn sign-in surface";
+  const challenge = detectChallenge(rendered.body, rendered.contentType);
+  if (challenge) return `the render was a challenge (${challenge})`;
+  const marker = family === "public-social" ? detectSocialWallMarker(rendered.body) : null;
+  if (marker) return `the render carried the social wall marker "${marker}"`;
+  return null;
+}
+
 async function tryRender(
   url: string,
   family: PersonSourceFamily,
@@ -1095,13 +1106,26 @@ async function tryRender(
   if (!context.render) return null;
   try {
     const rendered = await context.render(url);
-    if (
-      rendered.status >= 400 ||
-      linkedInSignInSurface(rendered.url) ||
-      detectChallenge(rendered.body, rendered.contentType) ||
-      (family === "public-social" && detectSocialWallMarker(rendered.body))
-    )
-      throw new Error("The anonymous browser did not return an accessible public document.");
+    const rejection = renderRejection(rendered, family);
+    if (rejection) {
+      context.recorder.record({
+        stage: "rendering",
+        code: "rendering-failed",
+        outcome: "failed",
+        recovery: "stopped",
+        cause: "observed",
+        target: url,
+        targetKind: "url",
+        collector: "browser-renderer",
+        reason: `The anonymous browser route was rejected: ${rejection}.`,
+        attemptOf: context.attemptOf,
+        observed: { status: rendered.status, finalUrl: rendered.url, bytes: rendered.body.length },
+        recoveryStopped: "No further retrieval route applies to this URL.",
+        impact: "A client-rendered page contributed nothing to the dossier.",
+        remediation: "Run the URL through the browser route manually to see what it renders.",
+      });
+      return null;
+    }
     const dom = new JSDOM(rendered.body, { url: rendered.url });
     try {
       const articleMetadata = linkedInProfileText(dom.window.document, rendered.url);
