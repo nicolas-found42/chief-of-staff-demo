@@ -325,6 +325,7 @@ export function seedQueries(profile: PersonProfile): string[] {
           : linkedInProfileIdentity(url);
       if (slug) {
         seeds.push(`site:linkedin.com/in/${slug}`);
+        seeds.push(`site:linkedin.com/posts/${slug}_`);
         seeds.push(`"linkedin.com/in/${slug}"`);
         seeds.push(`"${slug}" (github OR blog OR "about me" OR cv)`);
         for (const hint of profile.employerHints.slice(0, 2)) seeds.push(`"${slug}" ${hint}`);

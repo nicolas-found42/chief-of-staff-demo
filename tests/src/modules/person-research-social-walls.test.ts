@@ -515,10 +515,14 @@ test("a research operation hands the reader the Profile's own URLs", async () =>
     });
     const profile = people.create({ profileUrls: [ownUrl] });
     const seen: (readonly string[] | undefined)[] = [];
+    const queries: string[] = [];
     const research = new PersonResearch({
       people,
       dossiers: new PersonDossierStore(root),
-      search: async () => [],
+      search: async (query) => {
+        queries.push(query);
+        return [];
+      },
       readSource: async (url, snippet, readerPorts) => {
         seen.push(readerPorts.profileUrls);
         return readPersonSource(url, snippet, {
@@ -544,6 +548,7 @@ test("a research operation hands the reader the Profile's own URLs", async () =>
     );
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[0]).toEqual([ownUrl]);
+    expect(queries).toContain("site:linkedin.com/posts/maya-okafor_");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
