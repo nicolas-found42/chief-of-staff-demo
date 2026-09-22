@@ -92,6 +92,64 @@ test("an anonymously readable public profile page yields retained text with its 
   expect(recorder.all().some((attempt) => attempt.code === "challenge-page")).toBe(false);
 });
 
+test("a guest profile retains labelled experience, education, summary and listed posts without redacted titles", async () => {
+  const body = `<!doctype html><html><head><title>Maya Okafor | LinkedIn</title></head><body>
+    <main><article><h1 class="top-card-layout__title">Maya Okafor</h1>
+    <div class="top-card-layout__headline">Coastal sensor lead</div>
+    <div class="profile-info-subheader"><span>Freetown, Sierra Leone</span></div>
+    <section data-section="summary"><div class="core-section-container__content"><p>${paragraph.repeat(4)}</p></div></section>
+    <section data-section="experience"><ul>
+      <li class="experience-item"><h3 class="experience-item__title">Sensor Lead</h3>
+      <h4 class="experience-item__subtitle">Coastal Observatory</h4>
+      <span class="date-range">2020 - Present</span><span class="location">Freetown</span></li>
+      <li class="experience-item"><h3 class="experience-item__title blur">********</h3>
+      <h4 class="experience-item__subtitle">Hidden Institute</h4><span class="date-range">2018 - 2020</span></li>
+    </ul></section>
+    <section data-section="educationsDetails" class="education"><ul class="education__list">
+      <li class="education__list-item"><a href="/school/freetown-university"><img alt="School logo"></a>
+      <h3>Freetown University</h3><h4>MSc, Oceanography</h4>
+      <span class="date-range">2016 - 2018</span></li>
+    </ul></section>
+    <section data-section="posts"><div class="profile-activity-card"><div class="base-card">
+      <a class="base-card__full-link" href="/posts/maya-okafor_coastal-sensors-activity-7487189920416108544-x"><span class="sr-only">Maya shared this</span></a>
+      <div class="see-more-text">How coastal sensors help local teams.</div>
+      <a href="/posts/maya-okafor_coastal-sensors-activity-7487189920416108544-x">public_profile__posts</a>
+    </div></div></section>
+    </article></main></body></html>`;
+  const { result } = read(ownUrl, body);
+  const outcome = await result;
+  expect(outcome.access).toBe("retrieved");
+  expect(outcome.text).toContain("Headline: Coastal sensor lead");
+  expect(outcome.text).toContain(
+    "Experience: Sensor Lead | Coastal Observatory | 2020 - Present | Freetown",
+  );
+  expect(outcome.text).toContain(
+    "Education: Freetown University | MSc, Oceanography | 2016 - 2018",
+  );
+  expect(outcome.text).toContain("Summary: Maya Okafor has spent a decade");
+  expect(outcome.text).toContain("Post listed by Maya Okafor");
+  expect(outcome.text).toContain("Text: How coastal sensors help local teams.");
+  expect(outcome.text.match(/Post listed by Maya Okafor/g)).toHaveLength(1);
+  expect(outcome.text).toContain(
+    "https://www.linkedin.com/posts/maya-okafor_coastal-sensors-activity-7487189920416108544-x",
+  );
+  expect(outcome.provenanceNote).toContain("redacted");
+  expect(outcome.text).not.toContain("********");
+});
+
+test("a sparse guest profile retains structured fields when Readability finds no article", async () => {
+  const body = `<html><body><h1 class="top-card-layout__title">Maya Okafor</h1>
+    <section data-section="experience"><li class="experience-item">
+      <span class="experience-item__title">Sensor Lead</span>
+      <span class="experience-item__subtitle">Coastal Observatory</span>
+      <span class="date-range">2020 - Present</span>
+    </li></section></body></html>`;
+  const { result } = read(ownUrl, body);
+  const outcome = await result;
+  expect(outcome.access).toBe("retrieved");
+  expect(outcome.text).toContain("Experience: Sensor Lead | Coastal Observatory | 2020 - Present");
+});
+
 test("a 200 carrying a login shell produces a login-required failure with the observed response evidence", async () => {
   const body =
     `<html><head><title>Sign in</title></head>` +
