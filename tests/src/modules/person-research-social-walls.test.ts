@@ -1,10 +1,20 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { expect, test } from "vitest";
+import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
+import {
+  PersonResearch,
+  researchAllowance,
+} from "../../../apps/server/src/person-profile/research.js";
 import { ResearchAttemptRecorder } from "../../../apps/server/src/person-profile/research-diagnostics.js";
 import {
   readPersonSource,
   type ReaderPorts,
 } from "../../../apps/server/src/person-profile/research-readers.js";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
 
 /**
  * Anonymous reads of LinkedIn, Instagram, X and Threads pages (issue #256).
@@ -241,6 +251,20 @@ test("a render that lands on the LinkedIn authwall is a wall, never a retained s
   );
 });
 
+test("a render that lands on a different LinkedIn profile is not retained as the Profile's own", async () => {
+  const { recorder, renders, result } = readWalled(ownUrl, authRedirect, 999, () => ({
+    url: "https://www.linkedin.com/in/someone-else",
+    body: publicProfilePage,
+  }));
+  const outcome = await result;
+  expect(renders).toEqual([ownUrl]);
+  expect(outcome.access).toBe("blocked");
+  expect(outcome.text).toBe("search snippet");
+  expect(recorder.failures()).toContainEqual(
+    expect.objectContaining({ code: "identity-unmatched", collector: "browser-renderer" }),
+  );
+});
+
 test("a walled LinkedIn URL that is not one of the Profile's own earns no render", async () => {
   const { renders, result } = readWalled(
     "https://www.linkedin.com/in/someone-else",
@@ -263,4 +287,47 @@ test("a bot challenge on the Profile's own LinkedIn URL is never retried in a br
   expect((await result).access).toBe("blocked");
   expect(renders).toEqual([]);
   expect(recorder.failures()).toContainEqual(expect.objectContaining({ code: "challenge-page" }));
+});
+
+test("a research operation hands the reader the Profile's own URLs", async () => {
+  const root = mkdtempSync(join(tmpdir(), "social-walls-"));
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const profile = people.create({ profileUrls: [ownUrl] });
+    const seen: (readonly string[] | undefined)[] = [];
+    const research = new PersonResearch({
+      people,
+      dossiers: new PersonDossierStore(root),
+      search: async () => [],
+      readSource: async (url, snippet, readerPorts) => {
+        seen.push(readerPorts.profileUrls);
+        return readPersonSource(url, snippet, {
+          ...readerPorts,
+          fetch: async (target) => ({
+            url: target,
+            status: 999,
+            contentType: "text/html",
+            etag: null,
+            lastModified: null,
+            retryAfter: null,
+            body: authRedirect,
+          }),
+        });
+      },
+      complete: async () => {
+        throw new Error("No document reaches extraction.");
+      },
+    });
+    await research.run(
+      profile,
+      researchAllowance({ maxModelCalls: 1, maxMilliseconds: 5_000, quietRounds: 1 }),
+    );
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]).toEqual([ownUrl]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

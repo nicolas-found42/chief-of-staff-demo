@@ -2506,7 +2506,25 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
     });
     if (renderable) {
       const rendered = await tryRender(url, "public-social", context);
-      if (rendered) return rendered;
+      /* Identity is decided from the requested URL, so a render that landed
+         on another profile would pass as the Profile's own (ADR-0097). */
+      if (rendered && linkedInProfileIdentity(rendered.finalUrl) === identity) return rendered;
+      if (rendered)
+        context.recorder.record({
+          stage: "identity",
+          code: "identity-unmatched",
+          outcome: "failed",
+          recovery: "stopped",
+          cause: "observed",
+          target: url,
+          targetKind: "url",
+          collector: "browser-renderer",
+          reason: `The bounded anonymous render landed on ${rendered.finalUrl}, not on this Profile's LinkedIn URL.`,
+          attemptOf: context.attemptOf,
+          impact: "The rendered page was not retained as this Profile's own.",
+          remediation:
+            "Confirm the Profile's LinkedIn URL; a renamed profile needs its new URL added.",
+        });
     }
     return unavailable("public-social", "social-reader", "blocked", context.snippet, url);
   }

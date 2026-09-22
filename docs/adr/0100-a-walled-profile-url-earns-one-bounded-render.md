@@ -12,8 +12,8 @@ Path B), and this record states its scope.
 
 When the direct anonymous read of one of the Profile's own LinkedIn profile
 URLs is refused with a sign-in wall, the reader makes **one** bounded
-anonymous render of that URL. A render that lands on a sign-in surface is the
-wall it is.
+anonymous render of that URL. The render is kept only when it lands on the
+same `/in/<slug>` profile; anything else is the wall it is.
 
 - **Only the Profile's own URLs.** A LinkedIn URL reached through discovery
   never earns the render; its walled read stays recorded as `login-required`.
@@ -24,6 +24,10 @@ wall it is.
   The measured failure (2026-09-18, `sheilawarrick`) was a render that landed
   on `/authwall?…sessionRedirect=/in/<slug>` with a join form that no body
   marker caught, which would have been retained as the person's page.
+- **Only the same profile.** Identity is decided from the requested URL, so a
+  render that landed on another `/in/<slug>` would pass as the Profile's own
+  and skip ADR-0097's subject gate. It is recorded as `identity-unmatched`
+  instead; a renamed profile needs its new URL added to the Profile.
 - The walled direct read is still recorded, with `recovery: alternative-route`.
   A failed render adds `rendering-failed` and the source stays `blocked`.
 

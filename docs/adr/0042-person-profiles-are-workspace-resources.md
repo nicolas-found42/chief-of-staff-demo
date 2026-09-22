@@ -1,5 +1,9 @@
 # Person Profiles are reusable Workspace resources
 
+**Amended by [ADR-0100](0100-a-walled-profile-url-earns-one-bounded-render.md).** A Profile's own
+LinkedIn URL may also be read anonymously, with one bounded render when that read is walled; the
+exclusions below stand.
+
 Meeting Brief Generator's Guest Profile connection made a reusable person-identity concern both
 meeting-specific and dependent on an unnamed external endpoint. We will instead resolve a durable
 Person Profile from explicit Identity Signals and independently attributed Person Evidence gathered
