@@ -378,6 +378,65 @@ test("a matched guest profile follows two listed posts and one article through a
   }
 });
 
+test("a listed post redirected to another author is not attributed through its requested URL", async () => {
+  const root = mkdtempSync(join(tmpdir(), "linkedin-listed-redirect-"));
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const profile = people.create({ profileUrls: [ownUrl] });
+    const dossiers = new PersonDossierStore(root);
+    const post = authoredPostUrl;
+    const otherPost =
+      "https://www.linkedin.com/posts/other-person_unrelated-work-activity-7487189920416108544-x";
+    const research = new PersonResearch({
+      people,
+      dossiers,
+      linkedInBudget: new LinkedInRequestBudget({ spacingMs: 0 }),
+      seeds: () => [],
+      search: async () => [],
+      fetch: async (target) => ({
+        url: target === post ? otherPost : target,
+        status: 200,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body:
+          target === ownUrl
+            ? `<html><body><article><h1>Maya Okafor</h1><p>${paragraph.repeat(4)}</p><section data-section="posts"><div class="base-card"><div class="see-more-text">Sensor finding</div><a href="${post}">Post</a></div></section></article></body></html>`
+            : `<html><body><article><h1>Someone Else</h1><p>${"Someone Else wrote about unrelated work. ".repeat(12)}</p></article></body></html>`,
+      }),
+      complete: async () => ({
+        fullName: null,
+        employer: null,
+        sourceClass: "self-report" as const,
+        author: null,
+        publishedAt: null,
+        claims: [],
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      }),
+    });
+    const outcome = await research.run(
+      profile,
+      researchAllowance({ maxModelCalls: 4, maxMilliseconds: 10_000, quietRounds: 1 }),
+    );
+    expect(outcome.operation.attempts).toContainEqual(
+      expect.objectContaining({ code: "identity-unmatched", target: post }),
+    );
+    const sources = dossiers
+      .get(profile.id)!
+      .sourceIds.map((sourceId) => dossiers.source(profile.id, sourceId)!.url);
+    expect(sources).not.toContain(otherPost);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test.each([
   {
     network: "x",

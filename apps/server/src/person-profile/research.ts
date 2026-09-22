@@ -1624,7 +1624,6 @@ export class PersonResearch {
             )
             .slice(0, 1);
           for (const url of [...posts, ...articles]) {
-            linked.add(url);
             const added = leads.add({ kind: "url", target: url, origin: "document-link" });
             if (added) leadContext.set(added.id, { title: url, snippet: "", rank: 0 });
           }
