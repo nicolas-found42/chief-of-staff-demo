@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdtempSync,
@@ -148,7 +149,14 @@ export class TaskCutover {
     const temporary = mkdtempSync(join(tmpdir(), "cos-task-stage-"));
     try {
       const original = join(this.deps.workspaceDir, "tasks");
-      if (existsSync(original)) cpSync(original, join(temporary, "tasks"), { recursive: true });
+      if (existsSync(original)) {
+        const staged = join(temporary, "tasks");
+        cpSync(original, staged, { recursive: true });
+        /* Node 26's cpSync keeps the source directory's mode. A read-only
+           Workspace tasks directory must not make the staging copy one that
+           migration cannot write into or cleanup cannot empty. */
+        chmodSync(staged, 0o700);
+      }
       const store = new TaskStore(temporary);
       const existingTasks = store.readTasks().length;
       const existingActionItems = store.readActionItems().length;
