@@ -1,4 +1,5 @@
 import { linkedInProfileIdentity, linkedInProfileText } from "./linkedin-articles.js";
+import { linkedInGuestProfile } from "./linkedin-guest-profile.js";
 import { createHash } from "node:crypto";
 import { load } from "cheerio";
 import { JSDOM } from "jsdom";
@@ -867,13 +868,14 @@ async function readHtml(
   context: ReadContext,
 ): Promise<SourceReadResult> {
   const challenge = detectChallenge(response.body, response.contentType);
+  const guestProfile = linkedInGuestProfile(response.body, response.url);
   /* Fast gate before the expensive parse: pages the readability check itself
      rejects skip JSDOM construction, anchor harvest, and Readability, and take
      the same document-empty outcome the empty-text path below produces — with
      the gate verdict on the record so the A/B arm can replay body hashes and
      measure the false-negative rate instead of assuming it. */
   const gate = probablyReaderable(response.body);
-  if (!gate.readable) {
+  if (!gate.readable && (!guestProfile.text || challenge)) {
     context.recorder.record({
       stage: challenge ? "access" : "rendering",
       code: challenge ?? "document-empty",
@@ -984,9 +986,13 @@ async function readHtml(
         .querySelector(`meta[property="${name}"], meta[name="${name}"], meta[itemprop="${name}"]`)
         ?.getAttribute("content") ?? null;
     const articleMetadata = linkedInProfileText(document, response.url);
+    for (const title of document.querySelectorAll(
+      ".experience-item__title.blur, .experience-item__title.blurred",
+    ))
+      title.remove();
     const article = new Readability(document).parse();
     const text = article?.textContent?.trim() ?? "";
-    if (!text || challenge) {
+    if ((!text && !guestProfile.text) || challenge) {
       context.recorder.record({
         stage: challenge ? "access" : "rendering",
         code: challenge ?? "document-empty",
@@ -1032,7 +1038,12 @@ async function readHtml(
        heads the text extraction reads (spec: a profile URL abbreviates the
        name; the page it serves carries it, and later searches use it). */
     const pageTitle = document.title.trim() || meta("og:title") || null;
-    const documentText = [pageTitle ? `Page title: ${pageTitle}` : "", articleMetadata, text]
+    const documentText = [
+      pageTitle ? `Page title: ${pageTitle}` : "",
+      guestProfile.text,
+      articleMetadata,
+      text,
+    ]
       .filter(Boolean)
       .join("\n\n");
     return {
@@ -1052,7 +1063,15 @@ async function readHtml(
         meta("article:published_time") ?? meta("datePublished") ?? meta("publish_date") ?? null,
       author: meta("article:author") ?? meta("author") ?? null,
       anchors: [],
-      provenanceNote: articleCaptureNote(articleMetadata),
+      provenanceNote:
+        [
+          articleCaptureNote(articleMetadata),
+          guestProfile.redactedTitles
+            ? `${guestProfile.redactedTitles} experience title(s) were redacted in the anonymous profile and were not retained as content.`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ") || null,
       sourceVersion: null,
       rights: null,
       finalUrl: response.url,
@@ -1129,9 +1148,14 @@ async function tryRender(
     const dom = new JSDOM(rendered.body, { url: rendered.url });
     try {
       const articleMetadata = linkedInProfileText(dom.window.document, rendered.url);
+      const guestProfile = linkedInGuestProfile(rendered.body, rendered.url);
+      for (const title of dom.window.document.querySelectorAll(
+        ".experience-item__title.blur, .experience-item__title.blurred",
+      ))
+        title.remove();
       const article = new Readability(dom.window.document).parse();
       const body = article?.textContent?.trim() ?? "";
-      if (!body) return null;
+      if (!body && !guestProfile.text) return null;
       /* The same title prefix `readHtml` heads its text with, for the same
          reason: a slug-named profile URL is named only by the page's own
          <title>. Only the HTML route carried it, so whichever route ran
@@ -1147,7 +1171,12 @@ async function tryRender(
           ?.getAttribute("content")
           ?.trim() ||
         null;
-      const text = [pageTitle ? `Page title: ${pageTitle}` : "", articleMetadata, body]
+      const text = [
+        pageTitle ? `Page title: ${pageTitle}` : "",
+        guestProfile.text,
+        articleMetadata,
+        body,
+      ]
         .filter(Boolean)
         .join("\n\n");
       context.recorder.record({
@@ -1178,6 +1207,9 @@ async function tryRender(
         provenanceNote: [
           "Text came from a bounded anonymous render, not the raw response.",
           articleCaptureNote(articleMetadata),
+          guestProfile.redactedTitles
+            ? `${guestProfile.redactedTitles} experience title(s) were redacted in the anonymous profile and were not retained as content.`
+            : null,
         ]
           .filter(Boolean)
           .join(" "),
