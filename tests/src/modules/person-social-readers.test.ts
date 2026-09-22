@@ -2,6 +2,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
 import { ResearchAttemptRecorder } from "../../../apps/server/src/person-profile/research-diagnostics.js";
 import {
+  LinkedInRequestBudget,
   readPersonSource,
   type ReaderPorts,
 } from "../../../apps/server/src/person-profile/research-readers.js";
@@ -18,7 +19,12 @@ import {
  */
 
 const ports = (recorder: ResearchAttemptRecorder, fetch: ReaderPorts["fetch"]): ReaderPorts =>
-  fromPartial({ fetch, recorder, timeoutMs: 1000 });
+  fromPartial({
+    fetch,
+    recorder,
+    timeoutMs: 1000,
+    linkedInBudget: new LinkedInRequestBudget({ spacingMs: 0 }),
+  });
 
 const jsonResponse = (url: string, body: unknown) => ({
   url,
@@ -330,6 +336,7 @@ describe("linkedin html reader identity", () => {
           }),
           recorder,
           timeoutMs: 1000,
+          linkedInBudget: new LinkedInRequestBudget({ spacingMs: 0 }),
         }),
       );
       expect(rendered.route).toBe("browser-renderer");

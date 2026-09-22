@@ -11,6 +11,7 @@ import {
 } from "../../../apps/server/src/person-profile/research.js";
 import { ResearchAttemptRecorder } from "../../../apps/server/src/person-profile/research-diagnostics.js";
 import {
+  LinkedInRequestBudget,
   readPersonSource,
   type ReaderPorts,
 } from "../../../apps/server/src/person-profile/research-readers.js";
@@ -247,15 +248,21 @@ test.each([
       const research = new PersonResearch({
         people,
         dossiers,
+        linkedInBudget: new LinkedInRequestBudget({ spacingMs: 0 }),
         search: async () => [{ url: authoredPostUrl, title: "Sensor data", snippet: "" }],
         fetch: async (url) => ({
           url,
-          status: url === authoredPostUrl ? 200 : 999,
+          status: url === authoredPostUrl || url === controlUrl ? 200 : 999,
           contentType: "text/html",
           etag: null,
           lastModified: null,
           retryAfter: null,
-          body: url === authoredPostUrl ? authoredPost(authorUrl) : authRedirect,
+          body:
+            url === authoredPostUrl
+              ? authoredPost(authorUrl)
+              : url === controlUrl
+                ? controlPage
+                : authRedirect,
         }),
         complete: async () => {
           extractions++;
@@ -350,18 +357,24 @@ test("a 200 carrying a bot-challenge shell is recorded as a challenge, never ret
 /* A Profile's own walled LinkedIn URL earns one bounded render (ADR-0100). */
 const authRedirect =
   '<script>window.onload = function() { window.location.href = "https://" + domain + "/authwall?trk=" + trk; };</script>';
+const controlUrl = "https://www.linkedin.com/in/williamhgates";
+const controlPage = `<html><body><article><h1>William Gates</h1><section data-section="summary"><div class="core-section-container__content"><p>Microsoft co-founder and Gates Foundation chair, working on global health, education, and climate initiatives.</p></div></section></article></body></html>`;
 
 function readWalled(
   url: string,
   body: string,
   status: number,
   render: (target: string) => { url: string; body: string; status?: number },
+  controlStatus = 200,
+  linkedInBudget = new LinkedInRequestBudget({ spacingMs: 0 }),
+  controlBody = controlPage,
 ) {
   const recorder = new ResearchAttemptRecorder(
     "social-walls",
     () => new Date("2026-09-22T12:00:00.000Z"),
   );
   const renders: string[] = [];
+  const fetches: string[] = [];
   const result = readPersonSource(
     url,
     "search snippet",
@@ -369,30 +382,40 @@ function readWalled(
       recorder,
       timeoutMs: 1000,
       profileUrls: [ownUrl],
-      fetch: async (target: string) => ({
-        url: target,
-        status,
-        contentType: "text/html",
-        etag: null,
-        lastModified: null,
-        retryAfter: null,
-        body,
-      }),
+      linkedInBudget,
+      fetch: async (target: string) => {
+        fetches.push(target);
+        return {
+          url: target,
+          status: target === controlUrl ? controlStatus : status,
+          contentType: "text/html",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: target === controlUrl && controlStatus === 200 ? controlBody : body,
+        };
+      },
       render: async (target: string) => {
         renders.push(target);
         return { status: 200, contentType: "text/html", ...render(target) };
       },
     }),
   );
-  return { recorder, renders, result };
+  return { recorder, renders, fetches, result };
 }
 
 test("a walled read of the Profile's own LinkedIn URL is recovered by one bounded render of that profile", async () => {
-  const { recorder, renders, result } = readWalled(ownUrl, authRedirect, 999, (target) => ({
-    url: target,
-    body: publicProfilePage,
-  }));
+  const { recorder, renders, fetches, result } = readWalled(
+    ownUrl,
+    authRedirect,
+    999,
+    (target) => ({
+      url: target,
+      body: publicProfilePage,
+    }),
+  );
   const outcome = await result;
+  expect(fetches).toEqual([ownUrl, controlUrl]);
   expect(renders).toEqual([ownUrl]);
   expect(outcome.access).toBe("retrieved");
   expect(outcome.route).toBe("browser-renderer");
@@ -403,6 +426,276 @@ test("a walled read of the Profile's own LinkedIn URL is recovered by one bounde
   expect(recorder.all()).toContainEqual(
     expect.objectContaining({ code: "retrieval-recovered", collector: "browser-renderer" }),
   );
+});
+
+test("a 999 on both the Profile and known-good control leaves the cause unresolved and never renders", async () => {
+  const { recorder, renders, fetches, result } = readWalled(
+    ownUrl,
+    authRedirect,
+    999,
+    (target) => ({ url: target, body: publicProfilePage }),
+    999,
+  );
+  const outcome = await result;
+  expect(fetches).toEqual([ownUrl, controlUrl]);
+  expect(renders).toEqual([]);
+  expect(outcome.access).toBe("blocked");
+  expect(recorder.failures()).toContainEqual(
+    expect.objectContaining({
+      reason: expect.stringContaining("cause unresolved"),
+    }),
+  );
+  expect(recorder.failures().some((attempt) => attempt.code === "login-required")).toBe(false);
+});
+
+test("a 999 that contains a login marker still requires the control before a wall verdict", async () => {
+  const { recorder, fetches, result } = readWalled(
+    ownUrl,
+    "<html><body><h1>Sign in to continue</h1></body></html>",
+    999,
+    (target) => ({ url: target, body: publicProfilePage }),
+    999,
+  );
+  await result;
+  expect(fetches).toEqual([ownUrl, controlUrl]);
+  expect(recorder.failures().some((attempt) => attempt.code === "login-required")).toBe(false);
+});
+
+test("a generic 200 shell at the control URL does not validate a 999 wall", async () => {
+  const { recorder, renders, result } = readWalled(
+    ownUrl,
+    authRedirect,
+    999,
+    (target) => ({ url: target, body: publicProfilePage }),
+    200,
+    new LinkedInRequestBudget({ spacingMs: 0 }),
+    "<html><body><h1>Service is temporarily unavailable</h1></body></html>",
+  );
+  await result;
+  expect(renders).toEqual([]);
+  expect(recorder.failures()).toContainEqual(
+    expect.objectContaining({ reason: expect.stringContaining("cause unresolved") }),
+  );
+});
+
+test("a control delayed beyond the 999's minute does not authorize a wall verdict", async () => {
+  let clock = 0;
+  const budget = new LinkedInRequestBudget({
+    spacingMs: 60_000,
+    now: () => clock,
+    wait: async (milliseconds) => {
+      clock += milliseconds;
+    },
+  });
+  const { fetches, renders, recorder, result } = readWalled(
+    ownUrl,
+    authRedirect,
+    999,
+    (target) => ({ url: target, body: publicProfilePage }),
+    200,
+    budget,
+  );
+  await result;
+  expect(fetches).toEqual([ownUrl]);
+  expect(renders).toEqual([]);
+  expect(recorder.failures()).toContainEqual(
+    expect.objectContaining({ reason: expect.stringContaining("cause unresolved") }),
+  );
+});
+
+test("the control and render share the LinkedIn request budget", async () => {
+  const budget = new LinkedInRequestBudget({ maxRequests: 2, spacingMs: 0 });
+  const { fetches, renders, recorder, result } = readWalled(
+    ownUrl,
+    authRedirect,
+    999,
+    (target) => ({ url: target, body: publicProfilePage }),
+    200,
+    budget,
+  );
+  expect((await result).access).toBe("blocked");
+  expect(fetches).toEqual([ownUrl, controlUrl]);
+  expect(renders).toEqual([]);
+  expect(recorder.all()).toContainEqual(expect.objectContaining({ code: "selection-deferred" }));
+});
+
+test("a failed control enforces a silent window that doubles after the next refusal", async () => {
+  let clock = 0;
+  const cooldown = { until: 0, refusals: 0 };
+  const budget = () => new LinkedInRequestBudget({ spacingMs: 0, now: () => clock, cooldown });
+  const render = (target: string) => ({ url: target, body: publicProfilePage });
+  const first = readWalled(ownUrl, authRedirect, 999, render, 999, budget());
+  await first.result;
+  expect(cooldown.refusals).toBe(1);
+  expect(cooldown.until).toBe(15 * 60_000);
+  const deferred = readWalled(ownUrl, authRedirect, 999, render, 999, budget());
+  expect((await deferred.result).access).toBe("blocked");
+  expect(deferred.fetches).toEqual([]);
+  clock = cooldown.until;
+  const second = readWalled(ownUrl, authRedirect, 999, render, 999, budget());
+  await second.result;
+  expect(second.fetches).toEqual([ownUrl, controlUrl]);
+  expect(cooldown.refusals).toBe(2);
+  expect(cooldown.until).toBe(clock + 30 * 60_000);
+});
+
+test("LinkedIn reads share a spaced two-request budget with no automatic retry", async () => {
+  let clock = 0;
+  const waits: number[] = [];
+  const fetches: string[] = [];
+  const budget = new LinkedInRequestBudget({
+    maxRequests: 2,
+    spacingMs: 20_000,
+    now: () => clock,
+    wait: async (milliseconds) => {
+      waits.push(milliseconds);
+      clock += milliseconds;
+    },
+  });
+  const recorder = new ResearchAttemptRecorder(
+    "linkedin-budget",
+    () => new Date("2026-09-22T12:00:00Z"),
+  );
+  const url = authoredPostUrl;
+  const readOne = () =>
+    readPersonSource(
+      url,
+      "",
+      fromPartial<ReaderPorts>({
+        recorder,
+        timeoutMs: 1000,
+        linkedInBudget: budget,
+        fetch: async (target: string) => {
+          fetches.push(target);
+          return {
+            url: target,
+            status: 429,
+            contentType: "text/html",
+            etag: null,
+            lastModified: null,
+            retryAfter: null,
+            body: "rate limited",
+          };
+        },
+      }),
+    );
+  await readOne();
+  await readOne();
+  const deferred = await readOne();
+  expect(fetches).toEqual([url, url]);
+  expect(waits).toEqual([20_000]);
+  expect(deferred.access).toBe("blocked");
+  expect(recorder.all()).toContainEqual(
+    expect.objectContaining({
+      code: "selection-deferred",
+      reason: expect.stringContaining("LinkedIn request budget"),
+    }),
+  );
+});
+
+test("separate LinkedIn operations still space their requests to the same host", async () => {
+  let clock = 0;
+  const started: number[] = [];
+  const waits: number[] = [];
+  let releaseWait!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    releaseWait = resolve;
+  });
+  const cooldown = { until: 0, refusals: 0 };
+  const budget = () =>
+    new LinkedInRequestBudget({
+      maxRequests: 1,
+      spacingMs: 20_000,
+      cooldown,
+      now: () => clock,
+      wait: async (milliseconds) => {
+        waits.push(milliseconds);
+        await waiting;
+        clock += milliseconds;
+      },
+    });
+  const readOne = (linkedInBudget: LinkedInRequestBudget) =>
+    readPersonSource(
+      authoredPostUrl,
+      "",
+      fromPartial<ReaderPorts>({
+        recorder: new ResearchAttemptRecorder(
+          "shared-host",
+          () => new Date("2026-09-22T12:00:00Z"),
+        ),
+        timeoutMs: 1000,
+        linkedInBudget,
+        fetch: async (url: string) => {
+          started.push(clock);
+          return {
+            url,
+            status: 429,
+            contentType: "text/html",
+            etag: null,
+            lastModified: null,
+            retryAfter: null,
+            body: "rate limited",
+          };
+        },
+      }),
+    );
+  const first = readOne(budget());
+  const second = readOne(budget());
+  await first;
+  expect(started).toEqual([0]);
+  releaseWait();
+  await second;
+  expect(started).toEqual([0, 20_000]);
+  expect(waits).toEqual([20_000]);
+});
+
+test("a slow LinkedIn fetch finishes before another operation starts its request", async () => {
+  let clock = 0;
+  let finishFirst!: () => void;
+  const firstPending = new Promise<void>((resolve) => {
+    finishFirst = resolve;
+  });
+  const started: string[] = [];
+  const cooldown = { until: 0, refusals: 0 };
+  const readOne = (url: string) =>
+    readPersonSource(
+      url,
+      "",
+      fromPartial<ReaderPorts>({
+        recorder: new ResearchAttemptRecorder("single-flight", () => new Date()),
+        timeoutMs: 1000,
+        linkedInBudget: new LinkedInRequestBudget({
+          maxRequests: 1,
+          spacingMs: 20_000,
+          cooldown,
+          now: () => clock,
+          wait: async (milliseconds) => {
+            clock += milliseconds;
+          },
+        }),
+        fetch: async (target: string) => {
+          started.push(target);
+          if (target === ownUrl) await firstPending;
+          return {
+            url: target,
+            status: 429,
+            contentType: "text/html",
+            etag: null,
+            lastModified: null,
+            retryAfter: null,
+            body: "rate limited",
+          };
+        },
+      }),
+    );
+  const first = readOne(ownUrl);
+  const second = readOne(authoredPostUrl);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(started).toEqual([ownUrl]);
+  finishFirst();
+  await Promise.all([first, second]);
+  expect(started).toEqual([ownUrl, authoredPostUrl]);
+  expect(clock).toBe(20_000);
 });
 
 test("a render that lands on the LinkedIn authwall is a wall, never a retained source", async () => {
@@ -519,6 +812,7 @@ test("a research operation hands the reader the Profile's own URLs", async () =>
     const research = new PersonResearch({
       people,
       dossiers: new PersonDossierStore(root),
+      linkedInBudget: new LinkedInRequestBudget({ spacingMs: 0 }),
       search: async (query) => {
         queries.push(query);
         return [];

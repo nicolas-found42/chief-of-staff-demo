@@ -165,10 +165,97 @@ export interface ReaderPorts {
   profileRevision?: number;
   /** The Profile's own URLs: a walled one earns one bounded render (ADR-0100). */
   profileUrls?: readonly string[];
+  /** One small allowance shared by every LinkedIn read in the operation. */
+  linkedInBudget?: LinkedInRequestBudget;
   systemOcr?: () => Promise<OcrEngine | null>;
 }
 
+interface LinkedInCooldown {
+  until: number;
+  refusals: number;
+  nextAt?: number;
+  turn?: Promise<void>;
+}
+
+const sharedLinkedInCooldown: LinkedInCooldown = { until: 0, refusals: 0 };
+
+/** Serializes LinkedIn navigations, including a control read or render. */
+export class LinkedInRequestBudget {
+  private used = 0;
+  private readonly cooldown: LinkedInCooldown;
+  private readonly now: () => number;
+  private readonly wait: (milliseconds: number) => Promise<void>;
+  private readonly maxRequests: number;
+  private readonly spacingMs: number;
+
+  constructor(
+    options: {
+      maxRequests?: number;
+      spacingMs?: number;
+      now?: () => number;
+      wait?: (milliseconds: number) => Promise<void>;
+      cooldown?: LinkedInCooldown;
+    } = {},
+  ) {
+    this.maxRequests = options.maxRequests ?? 5;
+    this.spacingMs = options.spacingMs ?? 20_000;
+    this.now = options.now ?? (() => Date.now());
+    this.wait =
+      options.wait ??
+      ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+    this.cooldown = options.cooldown ?? { until: 0, refusals: 0 };
+  }
+
+  async run<T>(
+    navigate: () => Promise<T>,
+    deadline?: number,
+  ): Promise<{ allowed: true; value: T } | { allowed: false }> {
+    let release!: () => void;
+    const next = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const previous = this.cooldown.turn ?? Promise.resolve();
+    this.cooldown.turn = next;
+    await previous;
+    try {
+      if (this.used >= this.maxRequests || this.now() < this.cooldown.until)
+        return { allowed: false };
+      const delay = Math.max(0, (this.cooldown.nextAt ?? 0) - this.now());
+      if (delay) await this.wait(delay);
+      if (this.now() < this.cooldown.until || (deadline !== undefined && this.now() >= deadline))
+        return { allowed: false };
+      this.used++;
+      this.cooldown.nextAt = this.now() + this.spacingMs;
+      return { allowed: true, value: await navigate() };
+    } finally {
+      release();
+    }
+  }
+
+  currentTime(): number {
+    return this.now();
+  }
+
+  holdAfterControlRefusal(): string {
+    this.cooldown.refusals++;
+    const minutes = Math.min(180, 15 * 2 ** (this.cooldown.refusals - 1));
+    this.cooldown.until = this.now() + minutes * 60_000;
+    return new Date(this.cooldown.until).toISOString();
+  }
+
+  controlSucceeded(): void {
+    this.cooldown.refusals = 0;
+    this.cooldown.until = 0;
+  }
+}
+
+/** Host silence persists across operations in the running app process. */
+export function linkedInOperationBudget(): LinkedInRequestBudget {
+  return new LinkedInRequestBudget({ cooldown: sharedLinkedInCooldown });
+}
+
 interface ReadContext extends ReaderPorts {
+  linkedInBudget: LinkedInRequestBudget;
   attemptOf: string;
   snippet: string;
 }
@@ -264,7 +351,12 @@ export async function readPersonSource(
   snippet: string,
   ports: ReaderPorts,
 ): Promise<SourceReadResult> {
-  const context: ReadContext = { ...ports, attemptOf: ports.recorder.correlate(url), snippet };
+  const context: ReadContext = {
+    ...ports,
+    linkedInBudget: ports.linkedInBudget ?? new LinkedInRequestBudget(),
+    attemptOf: ports.recorder.correlate(url),
+    snippet,
+  };
   const family = classifySourceFamily(url);
   try {
     const capture = waybackCapture(url);
@@ -1147,7 +1239,15 @@ async function tryRender(
 ): Promise<SourceReadResult | null> {
   if (!context.render) return null;
   try {
-    const rendered = await context.render(url);
+    const linkedIn = /(^|\.)linkedin\.com$/.test(hostOf(url) ?? "");
+    const navigation = linkedIn
+      ? await context.linkedInBudget.run(() => context.render!(url))
+      : { allowed: true as const, value: await context.render(url) };
+    if (!navigation.allowed) {
+      recordLinkedInBudgetDeferral(url, context);
+      return null;
+    }
+    const rendered = navigation.value;
     const rejection = renderRejection(rendered, family);
     if (rejection) {
       context.recorder.record({
@@ -2426,6 +2526,22 @@ function clock(seconds: number): string {
 /* Public social evidence                                              */
 /* ------------------------------------------------------------------ */
 
+function recordLinkedInBudgetDeferral(url: string, context: ReadContext): void {
+  context.recorder.record({
+    stage: "selection",
+    code: "selection-deferred",
+    outcome: "skipped",
+    recovery: "none",
+    cause: "observed",
+    target: url,
+    targetKind: "url",
+    collector: "social-reader",
+    reason: "LinkedIn request budget or host silent window deferred this anonymous read.",
+    impact: "This page contributed no evidence in this operation.",
+    remediation: "Allow a later operation after the silent window; do not retry in this one.",
+  });
+}
+
 /**
  * Anonymous reads of public social evidence.
  *
@@ -2440,7 +2556,15 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
   const host = hostOf(url) ?? "";
   if (/bsky\.app|bsky\.social/.test(host)) return readBluesky(url, context);
   if (/x\.com|twitter\.com|linkedin\.com|instagram\.com|threads\.(net|com)/.test(host)) {
-    const response = await request(url, context, "social-reader");
+    const linkedIn = /(^|\.)linkedin\.com$/.test(host);
+    const navigation = linkedIn
+      ? await context.linkedInBudget.run(() => request(url, context, "social-reader", undefined, 1))
+      : { allowed: true as const, value: await request(url, context, "social-reader") };
+    if (!navigation.allowed) {
+      recordLinkedInBudgetDeferral(url, context);
+      return unavailable("public-social", "social-reader", "blocked", context.snippet, url);
+    }
+    const response = navigation.value;
     const challenge = response ? detectChallenge(response.body, response.contentType) : null;
     /* A public page that actually renders anonymously is still worth reading;
        only a wall is recorded as a wall. Both checks run on this response,
@@ -2536,10 +2660,44 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
       }
       return read;
     }
-    const wall = challenge ?? (wallMarker ? "login-required" : null);
+    const ownIdentity = linkedInProfileIdentity(url);
+    const ownProfile =
+      ownIdentity !== null &&
+      (context.profileUrls ?? []).some((entry) => linkedInProfileIdentity(entry) === ownIdentity);
+    let unresolved999: string | null = null;
+    if (linkedIn && response?.status === 999 && ownProfile) {
+      const controlUrl = "https://www.linkedin.com/in/williamhgates";
+      const controlDeadline = context.linkedInBudget.currentTime() + 60_000;
+      const controlNavigation = await context.linkedInBudget.run(
+        () => request(controlUrl, context, "social-reader", undefined, 1),
+        controlDeadline,
+      );
+      const control = controlNavigation.allowed ? controlNavigation.value : null;
+      if (!controlNavigation.allowed) recordLinkedInBudgetDeferral(controlUrl, context);
+      const controlProfile = control && linkedInGuestProfile(control.body, control.url).text;
+      const knownControlContent =
+        /^(?:Headline|Summary|Experience): .{40,}$/m.test(controlProfile ?? "") &&
+        /\b(?:Microsoft|Gates Foundation)\b/i.test(controlProfile ?? "");
+      const controlFailed =
+        !control ||
+        context.linkedInBudget.currentTime() >= controlDeadline ||
+        control.status >= 400 ||
+        linkedInProfileIdentity(control.url) !== linkedInProfileIdentity(controlUrl) ||
+        !!detectChallenge(control.body, control.contentType) ||
+        !!detectSocialWallMarker(control.body) ||
+        !/^Public profile name: (?:William|Bill) Gates$/m.test(controlProfile ?? "") ||
+        !knownControlContent;
+      if (controlFailed) {
+        const retryAt = context.linkedInBudget.holdAfterControlRefusal();
+        unresolved999 = `LinkedIn returned 999 for the Profile and the known-good control was unavailable: not served to this client; cause unresolved. Silent until ${retryAt}.`;
+      } else {
+        context.linkedInBudget.controlSucceeded();
+      }
+    }
+    const wall = unresolved999 ? null : (challenge ?? (wallMarker ? "login-required" : null));
     /* The Profile's own walled LinkedIn URL earns one bounded render; a bot
        challenge and a discovered URL never do (ADR-0100). */
-    const identity = linkedInProfileIdentity(url);
+    const identity = ownIdentity;
     const renderable =
       wall === "login-required" &&
       context.render !== undefined &&
@@ -2548,7 +2706,7 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
     context.recorder.record({
       stage: "access",
       code:
-        wall ??
+        (unresolved999 ? "http-error" : wall) ??
         (response
           ? classifyHttpStatus(response.status, response.body, response.contentType).code
           : "transport-failed"),
@@ -2558,9 +2716,11 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
       target: url,
       targetKind: "url",
       collector: "social-reader",
-      reason: wall
-        ? `${host} served a ${wall === "login-required" ? "sign-in" : "challenge"} page to an anonymous reader.${wallMarker ? ` Login-gating marker observed in this response: "${wallMarker}".` : ""}`
-        : `${host} did not return a readable anonymous response.`,
+      reason: unresolved999
+        ? unresolved999
+        : wall
+          ? `${host} served a ${wall === "login-required" ? "sign-in" : "challenge"} page to an anonymous reader.${wallMarker ? ` Login-gating marker observed in this response: "${wallMarker}".` : ""}`
+          : `${host} did not return a readable anonymous response.`,
       attemptOf: context.attemptOf,
       ...(response
         ? {
@@ -3286,9 +3446,10 @@ async function request(
   context: ReadContext,
   collector: CollectorName,
   accept?: string,
+  maxAttempts = 3,
 ): Promise<PublicHttpResponse | null> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const startedAt = Date.now();
     try {
       const response = await context.fetch(url, {
@@ -3318,7 +3479,7 @@ async function request(
         return response;
       }
       const temporary = response.status === 429 || [500, 502, 503, 504].includes(response.status);
-      if (!temporary || attempt === 3) return response;
+      if (!temporary || attempt === maxAttempts) return response;
       const requestedDelay = retryAfterMilliseconds(response.retryAfter, new Date());
       const delay = requestedDelay ?? Math.min(8_000, 500 * 2 ** attempt);
       const retrying = delay <= 60_000;
@@ -3362,7 +3523,7 @@ async function request(
          evidence 2026-09-19: over-cap podcast feeds spent all three attempts
          on identical failures). One attempt, named cause, stopped. */
       const oversized = code === "source-too-large";
-      const retrying = attempt < 3 && !oversized;
+      const retrying = attempt < maxAttempts && !oversized;
       const transportWaitMs = Math.min(4_000, 500 * 2 ** attempt);
       context.recorder.record({
         stage: "transport",
