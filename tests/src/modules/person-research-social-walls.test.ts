@@ -150,6 +150,21 @@ test("a sparse guest profile retains structured fields when Readability finds no
   expect(outcome.text).toContain("Experience: Sensor Lead | Coastal Observatory | 2020 - Present");
 });
 
+test.each([
+  "https://www.linkedin.com/posts/maya-okafor_sensor-data-activity-7487189920416108544-x",
+  "https://www.linkedin.com/feed/update/urn:li:activity:7487189920416108544",
+])(
+  "an anonymous LinkedIn post without JSON-LD dates its source from its activity ID: %s",
+  async (url) => {
+    const body = `<html><body><article><h1>Sensor data</h1><p>${paragraph.repeat(4)}</p></article></body></html>`;
+    const { result } = read(url, body);
+    const outcome = await result;
+    expect(outcome.access).toBe("retrieved");
+    expect(outcome.publishedAt).toBe("2026-07-26T16:59:42.289Z");
+    expect(outcome.provenanceNote).toContain("decoded from the LinkedIn activity ID");
+  },
+);
+
 test("a 200 carrying a login shell produces a login-required failure with the observed response evidence", async () => {
   const body =
     `<html><head><title>Sign in</title></head>` +
@@ -169,6 +184,17 @@ test("a 200 carrying a login shell produces a login-required failure with the ob
     bytes: body.length,
   });
   expect(failure?.observed?.bodyHash).toMatch(/^[0-9a-f]{64}$/);
+});
+
+test("an invalid-length LinkedIn activity ID supplies no decoded date", async () => {
+  const url =
+    "https://www.linkedin.com/posts/maya-okafor_sensor-data-activity-748718992041610854-x";
+  const body = `<html><body><article><h1>Sensor data</h1><p>${paragraph.repeat(4)}</p></article></body></html>`;
+  const { result } = read(url, body);
+  const outcome = await result;
+  expect(outcome.access).toBe("retrieved");
+  expect(outcome.publishedAt).toBeNull();
+  expect(outcome.provenanceNote).toBeNull();
 });
 
 test.each([

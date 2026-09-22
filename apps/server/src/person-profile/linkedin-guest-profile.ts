@@ -1,5 +1,5 @@
 import { load } from "cheerio";
-import { linkedInProfileIdentity } from "./linkedin-articles.js";
+import { linkedInActivityDate, linkedInProfileIdentity } from "./linkedin-articles.js";
 
 /* Selector set adapted from aadisriram/nodejs-linkedin-scraper at c0e2688
  * (src/parse/{top-card,experience,education,sections}.ts).
@@ -105,7 +105,10 @@ export function linkedInGuestProfile(
       target.hash = "";
       if (seenPosts.has(target.href)) return;
       seenPosts.add(target.href);
-      lines.push(`Post listed by ${name}\nText: ${title}\nURL: ${target.href}`);
+      const date = linkedInActivityDate(target.href);
+      lines.push(
+        `Post listed by ${name}\nText: ${title}${date ? `\nDate (decoded from activity ID): ${date}` : ""}\nURL: ${target.href}`,
+      );
     } catch {
       return;
     }
