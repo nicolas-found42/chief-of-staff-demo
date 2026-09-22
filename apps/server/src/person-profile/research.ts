@@ -71,7 +71,9 @@ import {
   seedQueries,
 } from "./research-plan.js";
 import {
+  linkedInOperationBudget,
   readPersonSource,
+  type LinkedInRequestBudget,
   type SourceAttachment,
   type SourceReadResult,
 } from "./research-readers.js";
@@ -264,6 +266,8 @@ export class PersonResearch {
       fetch?: PublicHttpFetch;
       fetchBytes?: PublicHttpBytesFetch;
       render?: BrowserRenderer;
+      /** Tests may supply a fake-clock LinkedIn budget at the reader seam. */
+      linkedInBudget?: LinkedInRequestBudget;
       complete: CompleteJson;
       /**
        * Resolve configured model bindings once so exact reuse cannot cross a
@@ -334,6 +338,7 @@ export class PersonResearch {
     const now = this.deps.now ?? (() => new Date());
     const operationId = allowance.operationId ?? allowance.checkpoint?.operationId ?? randomUUID();
     const recorder = new ResearchAttemptRecorder(operationId, now);
+    const linkedInBudget = this.deps.linkedInBudget ?? linkedInOperationBudget();
     const startedAt = now();
     const started = Date.now();
     const coverage = buildCoveragePlan();
@@ -888,6 +893,7 @@ export class PersonResearch {
             timeoutMs: allowance.requestTimeoutMilliseconds,
             profileRevision: profile.revision,
             profileUrls: profile.profileUrls,
+            linkedInBudget,
           });
         }
         if (read.access === "retrieved") leads.observeRedirect(pending.leadId, read.finalUrl);

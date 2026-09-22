@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
+import { LinkedInRequestBudget } from "../../../apps/server/src/person-profile/research-readers.js";
 import {
   PersonResearch,
   researchAllowance,
@@ -858,6 +859,7 @@ test("a profile URL-only dossier resolves the proper name from the page it serve
   const html = `<!doctype html><html><head><title>Jane Q Doe - Airbnb | LinkedIn</title></head>
 <body><main><article><p>Jane Q Doe leads operations at Airbnb in New York.</p></article></main></body></html>`;
   const research = new PersonResearch({
+    linkedInBudget: new LinkedInRequestBudget({ spacingMs: 0 }),
     people,
     dossiers,
     search: async (query, request) => {
@@ -921,6 +923,7 @@ test("a profile URL-only dossier recovers via search engine title when the socia
 <body><main><article><h1>Platform Innovations</h1><p>Jose Ceres leads platform engineering at CloudScale in Madrid.</p></article></main></body></html>`;
 
   const research = new PersonResearch({
+    linkedInBudget: new LinkedInRequestBudget({ spacingMs: 0 }),
     people,
     dossiers,
     search: async (query, request) => {
@@ -1070,6 +1073,7 @@ test("the profile's own URL is read before any search the operation runs", async
   const dossiers = new PersonDossierStore(root);
   const events: string[] = [];
   const research = new PersonResearch({
+    linkedInBudget: new LinkedInRequestBudget({ spacingMs: 0 }),
     people,
     dossiers,
     search: async (query) => {

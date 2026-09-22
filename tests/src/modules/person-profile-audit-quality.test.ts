@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
+import { LinkedInRequestBudget } from "../../../apps/server/src/person-profile/research-readers.js";
 import {
   PersonResearch,
   researchAllowance,
@@ -54,6 +55,7 @@ async function replay(
   });
   const person = people.create({ profileUrls: [sourceUrl] });
   const research = new PersonResearch({
+    linkedInBudget: new LinkedInRequestBudget({ spacingMs: 0 }),
     people,
     dossiers,
     search: async () => [],
