@@ -35,6 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        node: [22, 26]
         shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
@@ -43,14 +44,16 @@ jobs:
           version: 12.3.4
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @chief-of-staff-demo/shared build
       # Coverage data travels inside the blob report; per-shard thresholds are
       # zeroed because each shard only sees a third of the suite. The rollup
       # `test` job merges blobs and enforces the real coverage floors.
+      # Coverage and blobs come from Node 22 only; Node 26 runs the suite plain.
       - name: Run unit test shard
+        if: matrix.node == 22
         run: >-
           pnpm --filter @chief-of-staff-demo/tests exec vitest run
           --shard=${{ matrix.shard }}/3
@@ -60,8 +63,11 @@ jobs:
           --coverage.thresholds.functions=0
           --coverage.thresholds.branches=0
           --reporter=blob
+      - name: Run unit test shard
+        if: matrix.node != 22
+        run: pnpm --filter @chief-of-staff-demo/tests exec vitest run --shard=${{ matrix.shard }}/3
       - name: Upload blob report
-        if: always()
+        if: always() && matrix.node == 22
         uses: actions/upload-artifact@v7
         with:
           name: vitest-blob-${{ matrix.shard }}
@@ -103,6 +109,13 @@ jobs:
             cat coverage/coverage-summary.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      # Node 26 legs upload no blob, so the merge above cannot see their
+      # failures; the shard result carries them into this required check.
+      - name: Require every unit test shard to pass
+        if: always() && needs.test-shard.result != 'success'
+        run: |
+          echo "::error::A unit test shard did not pass (result: ${{ needs.test-shard.result }})."
+          exit 1
   e2e-shard:
     runs-on: ubuntu-latest
     timeout-minutes: 15

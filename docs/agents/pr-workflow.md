@@ -43,7 +43,8 @@ then `git push --force-with-lease` on the feature branch.
 ## The CI gate
 
 Four required checks, all from `.github/workflows/ci.yml`: `check` (typecheck, lint, format,
-knip), `test` (unit plus the four coverage floors), `e2e` (Playwright), `image` (Docker boot).
+knip), `test` (unit on Node 22 and 26, plus the four coverage floors measured on Node 22), `e2e`
+(Playwright), `image` (Docker boot).
 `canary.yml` is scheduled and diagnostic — deliberately not a gate.
 
 The required list lives in the ruleset, which no file in the repo records. Read it live:
