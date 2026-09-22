@@ -1,5 +1,6 @@
 import {
   linkedInActivityDate,
+  linkedInDeclaredAuthor,
   linkedInProfileIdentity,
   linkedInProfileText,
 } from "./linkedin-articles.js";
@@ -107,6 +108,8 @@ export interface SourceReadResult {
   upstreamIndex: string | null;
   publishedAt: string | null;
   author: string | null;
+  /** Author identity declared by a LinkedIn post/article's own JSON-LD. */
+  linkedInAuthor?: { name: string | null; profileUrl: string };
   anchors: SourceAnchor[];
   /**
    * Format provenance a claim must not lose: publisher captions versus
@@ -990,6 +993,7 @@ async function readHtml(
         .querySelector(`meta[property="${name}"], meta[name="${name}"], meta[itemprop="${name}"]`)
         ?.getAttribute("content") ?? null;
     const articleMetadata = linkedInProfileText(document, response.url);
+    const declaredAuthor = linkedInDeclaredAuthor(document, response.url);
     for (const title of document.querySelectorAll(
       ".experience-item__title.blur, .experience-item__title.blurred",
     ))
@@ -1043,7 +1047,10 @@ async function readHtml(
        name; the page it serves carries it, and later searches use it). */
     const pageTitle = document.title.trim() || meta("og:title") || null;
     const declaredDate =
-      meta("article:published_time") ?? meta("datePublished") ?? meta("publish_date");
+      declaredAuthor?.publishedAt ??
+      meta("article:published_time") ??
+      meta("datePublished") ??
+      meta("publish_date");
     const decodedDate =
       !declaredDate && !document.querySelector('script[type="application/ld+json"]')
         ? linkedInActivityDate(response.url)
@@ -1052,6 +1059,9 @@ async function readHtml(
       pageTitle ? `Page title: ${pageTitle}` : "",
       guestProfile.text,
       articleMetadata,
+      declaredAuthor?.name
+        ? `LinkedIn declared author: ${declaredAuthor.name}\nAuthor profile URL: ${declaredAuthor.profileUrl}`
+        : "",
       text,
     ]
       .filter(Boolean)
@@ -1070,7 +1080,10 @@ async function readHtml(
       route: "html-reader",
       upstreamIndex: hostOf(response.url),
       publishedAt: declaredDate ?? decodedDate,
-      author: meta("article:author") ?? meta("author") ?? null,
+      author: declaredAuthor?.name ?? meta("article:author") ?? meta("author") ?? null,
+      ...(declaredAuthor
+        ? { linkedInAuthor: { name: declaredAuthor.name, profileUrl: declaredAuthor.profileUrl } }
+        : {}),
       anchors: [],
       provenanceNote:
         [
