@@ -155,6 +155,8 @@ export interface ReaderPorts {
   recorder: ResearchAttemptRecorder;
   timeoutMs: number;
   profileRevision?: number;
+  /** The Profile's own URLs: a walled one earns one bounded render (ADR-0100). */
+  profileUrls?: readonly string[];
   systemOcr?: () => Promise<OcrEngine | null>;
 }
 
@@ -1068,6 +1070,23 @@ function articleCaptureNote(metadata: string): string | null {
       : null;
 }
 
+/**
+ * A LinkedIn render whose final URL is a sign-in surface is a wall whatever
+ * its body says: the browser follows the stub's `/authwall` hop and lands on a
+ * join form that carries none of the challenge phrases (ADR-0100).
+ */
+function linkedInSignInSurface(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      /(^|\.)linkedin\.com$/.test(parsed.hostname) &&
+      /^\/(authwall|login|signup)(\/|$)|^\/(uas|checkpoint)\//.test(parsed.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function tryRender(
   url: string,
   family: PersonSourceFamily,
@@ -1078,6 +1097,7 @@ async function tryRender(
     const rendered = await context.render(url);
     if (
       rendered.status >= 400 ||
+      linkedInSignInSurface(rendered.url) ||
       detectChallenge(rendered.body, rendered.contentType) ||
       (family === "public-social" && detectSocialWallMarker(rendered.body))
     )
@@ -2438,6 +2458,14 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
       return read;
     }
     const wall = challenge ?? (wallMarker ? "login-required" : null);
+    /* The Profile's own walled LinkedIn URL earns one bounded render; a bot
+       challenge and a discovered URL never do (ADR-0100). */
+    const identity = linkedInProfileIdentity(url);
+    const renderable =
+      wall === "login-required" &&
+      context.render !== undefined &&
+      identity !== null &&
+      (context.profileUrls ?? []).some((entry) => linkedInProfileIdentity(entry) === identity);
     context.recorder.record({
       stage: "access",
       code:
@@ -2446,7 +2474,7 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
           ? classifyHttpStatus(response.status, response.body, response.contentType).code
           : "transport-failed"),
       outcome: "failed",
-      recovery: "stopped",
+      recovery: renderable ? "alternative-route" : "stopped",
       cause: response ? "observed" : "unknown",
       target: url,
       targetKind: "url",
@@ -2469,9 +2497,35 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
       impact: `Public posts on ${host} did not contribute evidence.`,
       remediation:
         "This anonymous request was refused. Retry when public access is available, or use another permitted source; keep the current source gap recorded.",
-      recoveryStopped:
-        "Signing in, importing a session or using a paid proxy is out of scope for data acquisition.",
+      ...(renderable
+        ? {}
+        : {
+            recoveryStopped:
+              "Signing in, importing a session or using a paid proxy is out of scope for data acquisition.",
+          }),
     });
+    if (renderable) {
+      const rendered = await tryRender(url, "public-social", context);
+      /* Identity is decided from the requested URL, so a render that landed
+         on another profile would pass as the Profile's own (ADR-0097). */
+      if (rendered && linkedInProfileIdentity(rendered.finalUrl) === identity) return rendered;
+      if (rendered)
+        context.recorder.record({
+          stage: "identity",
+          code: "identity-unmatched",
+          outcome: "failed",
+          recovery: "stopped",
+          cause: "observed",
+          target: url,
+          targetKind: "url",
+          collector: "browser-renderer",
+          reason: `The bounded anonymous render landed on ${rendered.finalUrl}, not on this Profile's LinkedIn URL.`,
+          attemptOf: context.attemptOf,
+          impact: "The rendered page was not retained as this Profile's own.",
+          remediation:
+            "Confirm the Profile's LinkedIn URL; a renamed profile needs its new URL added.",
+        });
+    }
     return unavailable("public-social", "social-reader", "blocked", context.snippet, url);
   }
   return readMastodon(url, context);

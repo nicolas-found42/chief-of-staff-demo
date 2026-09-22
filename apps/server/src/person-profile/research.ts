@@ -883,6 +883,7 @@ export class PersonResearch {
             recorder,
             timeoutMs: allowance.requestTimeoutMilliseconds,
             profileRevision: profile.revision,
+            profileUrls: profile.profileUrls,
           });
         }
         if (read.access === "retrieved") leads.observeRedirect(pending.leadId, read.finalUrl);

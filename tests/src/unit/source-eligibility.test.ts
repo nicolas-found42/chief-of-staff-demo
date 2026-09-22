@@ -237,7 +237,7 @@ describe("the configured research source collection", () => {
     }).toEqual({
       podcastindex: "A key is required, which #228 excludes even where the tier is free.",
       linkedin:
-        "No keyless anonymous read exists. Research records a login-required failure for a LinkedIn URL rather than importing a session or using a paid proxy.",
+        "Not a discovery provider. An anonymous page read succeeds only per client, per slug and per moment, so research reads a LinkedIn URL directly, records a login-required failure for a wall, and gives only the Profile's own walled URL one bounded render (ADR-0100); it never imports a session or uses a paid proxy.",
       "youtube-captions":
         "Observed 2026-09-06: every listed track returned HTTP 200 with a zero-byte body in every format (srv1, srv3, json3, vtt, ttml). Research falls back to the publisher's video description and records the gap. Local transcription would be the next route and is not installed on this host.",
     });
