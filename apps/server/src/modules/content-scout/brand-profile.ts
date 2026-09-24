@@ -10,7 +10,11 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import { CONTENT_SCOUT_MODULE_ID, CONTENT_SCOUT_MODULE_VERSION } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
-import { parseResultShape } from "../../llm/failure.js";
+import {
+  modelBoundaryDiagnostic,
+  modelDiagnosticEventDetail,
+  parseResultShape,
+} from "../../llm/failure.js";
 import { StageFailure, type RetryPlan, type ShellModule } from "../../engine/module.js";
 import type { RunOutcome } from "../../runs.js";
 import {
@@ -184,6 +188,28 @@ export function modelBrandProfileProposer(
   };
 }
 
+/**
+ * A provider that refuses the key is the one failure the operator cures in
+ * Settings, so its hint says so (#484); the model diagnostic still reaches the
+ * Run's failure event.
+ */
+async function proposeNamingRejectedKey(
+  proposer: BrandProfileProposer,
+  pages: BrandProfileScanPage[],
+): Promise<string> {
+  try {
+    return await proposer.propose({ pages });
+  } catch (error) {
+    const status = modelBoundaryDiagnostic(error)?.status;
+    if (status !== 401 && status !== 403) throw error;
+    throw new StageFailure(
+      error instanceof Error ? error.message : String(error),
+      "The model provider rejected the API key. Check it in Settings → Extraction provider. No accepted revision was changed.",
+      { eventDetail: modelDiagnosticEventDetail(error) },
+    );
+  }
+}
+
 export function brandProfileScanModule(deps: {
   store: ContentScoutStore;
   crawler: BrandProfileCrawler;
@@ -237,7 +263,7 @@ export function brandProfileScanModule(deps: {
       });
       let proposal!: BrandProfileProposal;
       await ctx.stage("propose", async () => {
-        const proposedMarkdown = await deps.proposer.propose({ pages });
+        const proposedMarkdown = await proposeNamingRejectedKey(deps.proposer, pages);
         const current = deps.store.currentBrandProfile();
         proposal = {
           id: `brand-proposal-${createHash("sha256").update(`${ctx.runId}:${proposedMarkdown}`).digest("hex").slice(0, 16)}`,

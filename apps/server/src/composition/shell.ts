@@ -579,6 +579,13 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       testContentScout?.brandProfileProposer ?? modelBrandProfileProposer(contentScoutCompleteJson),
     runtimeInspector: testContentScout?.runtimeInspector ?? new ExternalRuntimeInspector(),
     isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
+    modelReadiness: () => {
+      if (testContentScout) return null;
+      const current = configStore.getForPurpose("contentDiscovery");
+      return current.provider !== "mock" && current.provider !== "ollama" && !current.apiKey.trim()
+        ? "Add a model provider key in Settings → Extraction provider before scanning your website."
+        : null;
+    },
     log: (message) => console.log(`[content-scout] ${message}`),
   });
   const contentResearchCompleteJson = () => completeForPurpose("contentResearch");

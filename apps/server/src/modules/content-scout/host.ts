@@ -91,6 +91,11 @@ export interface ContentScoutHostDeps {
   runtimeInspector?: RuntimeInspector;
   /** Content generation requires the canonical owner Profile confirmation. */
   isOwnerProfileConfirmed?: () => boolean;
+  /**
+   * Why the model a Brand Profile scan proposes with cannot answer yet, or null
+   * once it can (#484): a scan that could only fail is refused before it crawls.
+   */
+  modelReadiness?: () => string | null;
   log: (message: string) => void;
 }
 
@@ -777,6 +782,11 @@ export class ContentScoutHost implements HostedModule {
         if (!/^https?:$/.test(parsed.protocol)) throw new Error();
       } catch {
         reply.code(400).send({ error: "A public HTTP or HTTPS website URL is required." });
+        return;
+      }
+      const notReady = this.deps.modelReadiness?.() ?? null;
+      if (notReady) {
+        reply.code(409).send({ error: notReady });
         return;
       }
       return { runId: await this.scanBrandProfile(websiteUrl) };
