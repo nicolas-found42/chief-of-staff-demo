@@ -4,6 +4,7 @@ import type {
   ActionItem,
   Meeting,
   MeetingArtifact,
+  MeetingIntakeReadiness,
   MeetingReadRow,
   MeetingWorkspaceView,
   MeetingHistoryView,
@@ -17,13 +18,25 @@ import type { Runs } from "../runs.js";
 import { readPublishedDebrief } from "../modules/meeting-debrief/publication.js";
 import type { WorkspaceActionItems } from "../tasks/action-items.js";
 
-interface MeetingReadDeps {
+interface TranscriptIntakeFacts {
+  providerReady: boolean;
+  googleState: "unconfigured" | "disconnected" | "connected" | "expired";
+  folderSelected: boolean;
+  pollingEnabled: boolean;
+  consentGranted: boolean;
+  backfill: "idle" | "running" | "paused";
+  failed: number;
+  transcriptCount: number;
+}
+
+export interface MeetingReadDeps {
   meetings: WorkspaceMeetings;
   runs: Runs;
   actionItems: WorkspaceActionItems;
   transcripts: () => TranscriptRecord[];
   now: () => Date;
   timezone: () => string;
+  transcriptIntake?: () => TranscriptIntakeFacts;
   canRetry?: (meta: Readonly<RunMeta>) => boolean;
 }
 interface ArtifactSource {
@@ -39,18 +52,83 @@ const emptyArtifact = (): MeetingArtifact => ({
   retryRunId: null,
   explanation: null,
   remedy: null,
+  nextAction: null,
 });
 const recentOrder = (a: Meeting, b: Meeting) =>
   Date.parse(b.endAt || b.startAt) - Date.parse(a.endAt || a.startAt) || a.id.localeCompare(b.id);
 
 /** Read composition over durable owners. Browsing never schedules work. */
 export class MeetingRead {
+  private intakeReadiness(): MeetingIntakeReadiness {
+    const facts = this.deps.transcriptIntake?.();
+    if (!facts) {
+      return {
+        verdict: "provider-required",
+        nextAction: { label: "Configure a model provider", href: "/onboarding?goal=meetings" },
+      };
+    }
+    if (!facts.providerReady) {
+      return {
+        verdict: "provider-required",
+        nextAction: { label: "Configure a model provider", href: "/onboarding?goal=meetings" },
+      };
+    }
+    if (facts.googleState !== "connected") {
+      return {
+        verdict: "google-required",
+        nextAction: {
+          label: facts.googleState === "expired" ? "Reconnect Google" : "Connect Google",
+          href: "/onboarding?goal=meetings",
+        },
+      };
+    }
+    if (!facts.folderSelected) {
+      return {
+        verdict: "folder-required",
+        nextAction: {
+          label: "Choose the transcript Drive folder",
+          href: "/settings#drive-folder",
+        },
+      };
+    }
+    if (!facts.pollingEnabled) {
+      return {
+        verdict: "polling-required",
+        nextAction: { label: "Enable Drive polling", href: "/settings#drive-polling" },
+      };
+    }
+    if (!facts.consentGranted) {
+      return {
+        verdict: "consent-required",
+        nextAction: {
+          label: "Allow the app to read and process the selected folder",
+          href: "/settings#transcript-consent",
+        },
+      };
+    }
+    if (facts.backfill === "running") return { verdict: "intake-running", nextAction: null };
+    if (facts.backfill === "paused") return { verdict: "intake-paused", nextAction: null };
+    if (facts.failed > 0) {
+      return {
+        verdict: "intake-failed",
+        nextAction: { label: "Check transcript intake", href: "/settings#transcript-sync" },
+      };
+    }
+    if (facts.transcriptCount === 0) {
+      return {
+        verdict: "waiting-for-transcript",
+        nextAction: { label: "Sync now", href: "/settings#transcript-sync" },
+      };
+    }
+    return { verdict: "ready", nextAction: null };
+  }
   constructor(private readonly deps: MeetingReadDeps) {}
 
   private read() {
     const timezone = this.deps.timezone();
     const now = this.deps.now();
     const local = DateTime.fromJSDate(now).setZone(timezone);
+    const intakeReadiness = this.intakeReadiness();
     const localToday = local.toISODate()!;
     const partial: string[] = [];
     const safe = <T>(label: string, read: () => T, fallback: T): T => {
@@ -145,10 +223,23 @@ export class MeetingRead {
       const debriefSources = attached.flatMap((t) => sources.get(`meeting-debrief:${t.id}`) ?? []);
       const brief = this.artifact(briefSources, "brief", meeting, now);
       const debrief = this.artifact(debriefSources, "debrief", meeting, now);
-      if (!attached.length && debrief.status === "missing")
-        debrief.status = partial.some((p) => p.startsWith("Transcripts"))
+      if (!attached.length && debrief.status === "missing") {
+        debrief.status = partial.some((part) => part.startsWith("Transcripts"))
           ? "unavailable"
           : "no-transcript";
+        debrief.nextAction =
+          debrief.status === "no-transcript" &&
+          intakeReadiness.nextAction &&
+          [
+            "provider-required",
+            "google-required",
+            "folder-required",
+            "polling-required",
+            "consent-required",
+          ].includes(intakeReadiness.verdict)
+            ? intakeReadiness.nextAction
+            : null;
+      }
       if (unavailable.has("meeting-brief-generator")) brief.status = "unavailable";
       if (unavailable.has("meeting-debrief")) debrief.status = "unavailable";
       return {
@@ -174,6 +265,7 @@ export class MeetingRead {
       localToday,
       timezone,
       historyBeginsAt,
+      intakeReadiness,
       partial: [...new Set(partial)],
     };
   }
@@ -280,7 +372,16 @@ export class MeetingRead {
 
   workspace(): MeetingWorkspaceView {
     const read = this.read();
-    const { rows, pending, localToday, timezone, local, historyBeginsAt, partial } = read;
+    const {
+      rows,
+      pending,
+      localToday,
+      timezone,
+      local,
+      historyBeginsAt,
+      partial,
+      intakeReadiness,
+    } = read;
     const upcomingFrom = local.plus({ days: 1 }).toISODate()!;
     const upcomingTo = local.plus({ days: 7 }).toISODate()!;
     const starts = new Map(rows.map((meeting) => [meeting.id, Date.parse(meeting.startAt)]));
@@ -312,6 +413,7 @@ export class MeetingRead {
       localToday,
       timezone,
       historyBeginsAt,
+      intakeReadiness,
       partial,
       today: rows.filter((m) => !m.cancelled && m.localDate === localToday),
       recent: rows
@@ -347,6 +449,7 @@ export class MeetingRead {
       return {
         meeting,
         localToday: read.localToday,
+        intakeReadiness: read.intakeReadiness,
         timezone: read.timezone,
         partial: read.partial,
       };

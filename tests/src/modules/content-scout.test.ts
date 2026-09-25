@@ -796,7 +796,7 @@ United States only
     await host.idle();
 
     expect(crawlRequest).toEqual({
-      websiteUrl: "https://company.example",
+      websiteUrl: "https://company.example/",
       maxPages: 25,
       maxDepth: 2,
     });

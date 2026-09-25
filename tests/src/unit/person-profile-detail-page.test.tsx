@@ -96,11 +96,18 @@ describe("PersonProfileDetailPage heading", () => {
     expect(subtitle?.textContent).not.toContain("Satya Nadella");
   });
 
-  it("keeps the no-resolved-facts fallback", async () => {
-    const container = await mountPage(fakeClient(profile(1), [profile(1)]));
+  it("shows a typed LinkedIn identity in the header without opening maintenance", async () => {
+    const current = profile(1, {
+      handles: { linkedin: ["satyanadella"] },
+      profileUrls: ["https://www.linkedin.com/in/satyanadella"],
+    });
+    const container = await mountPage(fakeClient(current, [current]));
 
-    expect(container.querySelector("h1")?.textContent).toBe("Satya Nadella");
-    expect(container.querySelector("p.muted")?.textContent).toBe("No resolved facts yet.");
+    expect(container.querySelector("h1")?.nextElementSibling?.textContent).toBe(
+      "Identity signal: LinkedIn: satyanadella",
+    );
+    expect(container.querySelector("details")?.open).toBe(false);
+    expect(container.querySelector("p.muted")?.textContent).not.toBe("No resolved facts yet.");
   });
 });
 

@@ -414,7 +414,7 @@ test("retry preserves the server's actionable readiness refusal", async () => {
       readiness: {
         state: "setup-required",
         reason: "provider-not-configured",
-        nextAction: { label: "Configure provider", href: "/settings" },
+        nextAction: { label: "Open Guided Setup", href: "/onboarding?goal=meetings" },
       },
     });
   });
@@ -422,7 +422,31 @@ test("retry preserves the server's actionable readiness refusal", async () => {
   await click(container, "Prioritise research");
   expect(container.textContent).toContain("No model provider is configured");
   expect(container.textContent).not.toContain("research-disabled");
-  expect(container.querySelector('a[href="/settings"]')?.textContent).toBe("Configure provider");
+  expect(container.querySelector('a[href="/onboarding?goal=meetings"]')?.textContent).toBe(
+    "Open Guided Setup",
+  );
+});
+
+test("Prioritise research is disabled with its reason while research setup is required (#487)", async () => {
+  const api = client();
+  const startResearch = vi.fn<DossierClient["research"]>(async () => {});
+  api.research = startResearch;
+  api.read = vi.fn(async () => ({
+    ...view(),
+    readiness: {
+      state: "setup-required" as const,
+      reason: "provider-not-configured" as const,
+      nextAction: { label: "Open Guided Setup", href: "/onboarding?goal=meetings" },
+    },
+  }));
+  const container = await mount(api);
+  const button = [...container.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent === "Prioritise research",
+  );
+  expect(button?.disabled).toBe(true);
+  expect(container.textContent).toContain("Available once research setup is complete.");
+  await click(container, "Prioritise research");
+  expect(startResearch).not.toHaveBeenCalled();
 });
 
 test("jobless polling updates readiness from the summary envelope without enqueueing a read or an aggregate poll", async () => {

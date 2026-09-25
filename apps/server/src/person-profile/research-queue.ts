@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 import {
   PersonResearchSettingsSchema,
   PersonResearchStatusSchema,
@@ -40,13 +39,7 @@ export class PersonResearchQueue {
   private readonly file: string;
   private state: PersonResearchStatus;
   private running = new Set<string>();
-  /** Wall-clock ms when an owner's stop landed on an in-flight operation
-   * (CodeRabbit, PR #458); in-memory only. That operation's finally bills
-   * elapsed allowance up to this cutoff, never past it — a slow in-flight
-   * request that settles after the stop must not consume allowance the
-   * owner already cancelled. */
-  private cancelledAt = new Map<string, number>();
-  /** Profiles this instance deliberately dropped; never re-adopted on merge. */
+  private readonly cancelledBilling = new Set<string>();
   private readonly removed = new Set<string>();
   /** Profiles the file already held when this instance loaded it. */
   private readonly loaded = new Set<string>();
@@ -110,6 +103,10 @@ export class PersonResearchQueue {
         job.state = "queued";
         job.detail =
           "Application shutdown interrupted the previous research operation; retained evidence and pending leads are preserved.";
+      } else if (job.state === "interrupted" && job.checkpoint && job.nextAt <= this.now()) {
+        // A shutdown result was recorded after the dispatcher stopped. Resume
+        // it on this new process; an owner's stop keeps its deferred nextAt.
+        job.state = "queued";
       }
   }
   private now(): string {
@@ -119,13 +116,6 @@ export class PersonResearchQueue {
     this.rollDay();
     return structuredClone(this.state);
   }
-  /**
-   * The operation record for one Profile.
-   *
-   * Four consumers used to reach through `status().jobs` to find this, and
-   * `status()` deep-clones every job in the queue — so reading one Profile's
-   * coverage cloned all of them. The lookup is named here instead (#231).
-   */
   /**
    * Truthful readiness for the automatic/queued research pipeline (issue
    * #418, T3): what the caller reports about the Workspace, provider and
@@ -372,6 +362,8 @@ export class PersonResearchQueue {
         old.calls = 0;
         old.elapsedMilliseconds = 0;
         old.sources = 0;
+        // A settled operation is history; the next dispatch needs its own identity.
+        delete old.currentOperationId;
       } else if (reason === "explicit") {
         /* A person asking for research is starting a new operation, not
            retrying the old one, so it is cut a whole allowance (ADR-0087
@@ -434,18 +426,22 @@ export class PersonResearchQueue {
     if (!job || (job.state !== "queued" && job.state !== "paused" && job.state !== "researching"))
       return false;
     const wasResearching = job.state === "researching";
-    /* Billing stops when the owner stops (CodeRabbit, PR #458): record the
-       stop's wall-clock time so the in-flight operation's finally bills only
-       the work done before it. Guarded on an operation actually running for
-       this instance — a researching job recovered from disk but not yet
-       dispatched has no in-flight operation to cap. */
-    if (wasResearching && this.running.has(profileId)) this.cancelledAt.set(profileId, Date.now());
-    delete job.currentOperationId;
+    const cancellation =
+      wasResearching && job.currentOperationId
+        ? this.deps.research.cancel(profileId, job.currentOperationId)
+        : null;
+    if (wasResearching && !cancellation) return false;
     delete job.startedAt;
     job.state = "interrupted";
-    job.detail = wasResearching
-      ? "Research was stopped by an owner; retained evidence and pending leads are preserved."
-      : "Research was stopped before it started. Prioritise research to run it.";
+    job.detail =
+      cancellation?.detail ??
+      (wasResearching
+        ? "Research was stopped by an owner; retained evidence and pending leads are preserved."
+        : "Research was stopped before it started. Prioritise research to run it.");
+    if (cancellation) {
+      job.elapsedMilliseconds = cancellation.elapsedMilliseconds;
+      this.cancelledBilling.add(profileId);
+    }
     job.nextAt = new Date(
       Date.parse(this.now()) + this.state.settings.refreshHours * 3600000,
     ).toISOString();
@@ -483,7 +479,7 @@ export class PersonResearchQueue {
   reset(): void {
     this.loaded.clear();
     this.running.clear();
-    this.cancelledAt.clear();
+    this.cancelledBilling.clear();
     this.explicitDispatches.clear();
     this.removed.clear();
     this.state = existsSync(this.file)
@@ -620,201 +616,134 @@ export class PersonResearchQueue {
       !job.lastHistoricalAt ||
       Date.parse(this.now()) - Date.parse(job.lastHistoricalAt) >=
         (this.state.settings.historicalRefreshHours ?? 720) * 3600000;
-    /*
-     * The operation identity this dispatch runs under (issue #418, T5, spec
-     * §7; #417 F5), minted here rather than left to `research.run()` to
-     * generate internally: resuming a checkpoint keeps its operationId, a
-     * fresh dispatch mints one before the first await, so live progress can
-     * be scoped to it from the moment `researching` is set — never showing a
-     * DIFFERENT, already-settled operation's conclusion as this one's own.
-     */
-    const operationId = job.checkpoint?.operationId ?? randomUUID();
-    const active = () =>
-      this.isReady() &&
-      generation === this.generation &&
-      this.state.jobs.includes(job) &&
-      job.currentOperationId === operationId &&
-      JSON.stringify(this.deps.people.get(job.profileId)) === fingerprint &&
-      this.deps.evidenceRevision?.(profile.id) === evidenceRevision;
-    const started = Date.now();
-    job.startedAt = this.now();
-    /* A terminal conclusion under a DIFFERENT operationId is superseded, not
-       overwritten: it moves into its own labeled historical area so a caller
-       can never mistake this operation's live progress for that one's
-       failure (#417 F5). Resuming the SAME operationId (a checkpoint) is not
-       a supersession and keeps its existing merge semantics untouched. */
-    if (job.operation && job.operation.operationId !== operationId) {
-      job.previousConclusion = {
-        operationId: job.operation.operationId,
-        revision: job.operationRevision ?? 0,
-        conclusion: job.operation.conclusion,
-        finishedAt: job.operation.finishedAt,
-        detail: job.operation.detail,
-        ...(job.operation.decisiveExtraction ? { decisive: job.operation.decisiveExtraction } : {}),
-      };
-    }
-    job.state = "researching";
-    job.attempts += 1;
-    job.currentOperationId = operationId;
-    job.currentOperationRevision = job.attempts;
-    job.currentOperationStartedAt = this.now();
-    job.detail = "Research is in progress.";
-    job.updatedAt = this.now();
+    let operationId = job.currentOperationId;
+    const contextStatus = (): "current" | "interrupted" | "stale" => {
+      if (!this.isReady() || generation !== this.generation || !this.state.jobs.includes(job))
+        return "interrupted";
+      if (
+        JSON.stringify(this.deps.people.get(job.profileId)) !== fingerprint ||
+        this.deps.evidenceRevision?.(profile.id) !== evidenceRevision
+      )
+        return "stale";
+      return "current";
+    };
     this.running.add(job.profileId);
     this.save();
     try {
       const settings = this.state.settings;
-      const result = await this.deps.research.run(profile, {
-        operationId,
+      const result = await this.deps.research.execute({
+        profile,
         scope: historical ? "full" : "current",
-        /* Consumed here, not in enqueue: only the dispatch that actually
-           runs the deliberate operation re-investigates the seeds, and a
-           later interrupted re-dispatch is continuation, not re-investigation. */
-        ...(this.explicitDispatches.delete(job.profileId) ? { explicit: true } : {}),
-        maxModelCalls: Math.max(1, settings.profileCalls - job.calls),
-        maxRequests: Math.max(1, settings.profileCalls * 8),
-        maxMilliseconds: Math.max(
-          1000,
-          settings.profileMilliseconds - (job.elapsedMilliseconds ?? 0),
-        ),
-        readConcurrency: settings.readConcurrency,
-        requestTimeoutMilliseconds: settings.requestTimeoutMilliseconds,
-        quietRounds: settings.quietRounds,
+        explicit: this.explicitDispatches.delete(job.profileId),
+        limits: {
+          modelCalls: settings.profileCalls,
+          milliseconds: settings.profileMilliseconds,
+          requests: Math.max(1, settings.profileCalls * 8),
+          readConcurrency: settings.readConcurrency,
+          requestTimeoutMilliseconds: settings.requestTimeoutMilliseconds,
+          quietRounds: settings.quietRounds,
+        },
+        spent: { modelCalls: job.calls, milliseconds: job.elapsedMilliseconds ?? 0 },
+        ...(operationId ? { currentOperationId: operationId } : {}),
+        operationRevision: job.attempts + 1,
         ...(job.checkpoint ? { checkpoint: job.checkpoint } : {}),
+        ...(job.operation
+          ? {
+              previousOperation: { operation: job.operation, revision: job.operationRevision ?? 0 },
+            }
+          : {}),
+        contextStatus,
+        saveStart: (facts) => {
+          operationId = facts.operationId;
+          job.state = "researching";
+          if (facts.previousConclusion) job.previousConclusion = facts.previousConclusion;
+          job.attempts = facts.operationRevision;
+          job.currentOperationId = facts.operationId;
+          job.currentOperationRevision = facts.operationRevision;
+          job.currentOperationStartedAt = facts.startedAt;
+          job.startedAt = facts.startedAt;
+          job.detail = "Research is in progress.";
+          job.updatedAt = this.now();
+          this.save();
+        },
+        saveRequest: () => {
+          this.rollDay();
+          this.state.usedCalls += 1;
+        },
+        saveSpend: (modelCalls) => {
+          this.rollDay();
+          job.calls = modelCalls;
+          this.save();
+        },
         saveCheckpoint: (checkpoint) => {
-          if (!active()) return;
+          if (contextStatus() !== "current" || job.currentOperationId !== operationId) return;
           job.checkpoint = structuredClone(checkpoint);
           this.save();
         },
-        active,
-        reserveRequest: () => {
-          this.rollDay();
-          if (!active()) return false;
-          this.state.usedCalls += 1;
-          return true;
-        },
-        reserveModelCall: () => {
-          this.rollDay();
-          if (!active()) return false;
-          job.calls += 1;
-          this.save();
-          return true;
-        },
       });
-      /* A newer operation already superseded this one's identity on this job
-         (issue #418, T5, spec §7): this is a late or out-of-order response
-         from an older generation, and it must never overwrite the newer
-         operation's live progress or conclusion. Bookkeeping in `finally`
-         still runs; nothing about the job's research state does. */
-      if (job.currentOperationId !== operationId) return;
-      const ownUpdate =
-        result.publishedProfileRevision !== undefined &&
-        this.deps.people.get(job.profileId)?.revision === result.publishedProfileRevision &&
-        this.isReady() &&
-        generation === this.generation &&
-        this.state.jobs.includes(job);
-      if (!active() && !ownUpdate) {
-        if (this.state.jobs.includes(job)) {
-          if (
-            JSON.stringify(this.deps.people.get(job.profileId)) !== fingerprint ||
-            this.deps.evidenceRevision?.(profile.id) !== evidenceRevision
-          ) {
-            delete job.checkpoint;
-            delete job.operation;
-            job.state = "queued";
-            job.detail = "Profile or evidence changed; stale results were stopped.";
-          } else {
-            this.retainOperation(job, result.operation);
-            job.operationRevision = job.currentOperationRevision;
-            job.diagnostics = result.diagnostics;
-
-            job.state = "interrupted";
-            job.detail =
-              "Research was interrupted by shutdown or a policy change; completed evidence is retained.";
-            job.nextAt = this.now();
-          }
+      if (job.currentOperationId !== result.operationId) return;
+      if (this.cancelledBilling.has(job.profileId)) {
+        if (result.operation.conclusion === "interrupted") {
+          job.operation = result.operation;
+          job.operationRevision = result.operationRevision;
+          job.sources = result.operation.sourcesRetained;
+          job.diagnostics = result.operation.attempts.slice(-40);
+          this.recordHistory(job, result.operation);
         }
-      } else {
-        if (ownUpdate && job.checkpoint && result.publishedProfileRevision !== undefined)
-          job.checkpoint.profileRevision = result.publishedProfileRevision;
-        job.state = result.state;
-        if (historical && ["current", "empty"].includes(result.state))
-          job.lastHistoricalAt = this.now();
-
-        job.diagnostics = result.diagnostics;
-        this.retainOperation(job, result.operation);
-        job.operationRevision = job.currentOperationRevision;
-        job.detail = result.detail;
-        /* A completed operation clears its traversal: the next run is a
-           refresh of changed evidence, not the second half of this one. */
-        if (result.operation.conclusion === "completed") delete job.checkpoint;
-        job.nextAt = new Date(
-          Date.parse(this.now()) +
-            (result.state === "unavailable" || result.state === "interrupted"
-              ? Math.min(24, 2 ** Math.min(job.attempts, 5))
-              : this.state.settings.refreshHours) *
-              3600000,
-        ).toISOString();
+        this.cancelledBilling.delete(job.profileId);
+        return;
+      }
+      const context = contextStatus();
+      if (context === "stale") {
+        delete job.checkpoint;
+        delete job.operation;
+        job.state = "queued";
+        job.detail = "Profile or evidence changed; stale results were stopped.";
+        return;
+      }
+      if (result.previousConclusion) job.previousConclusion = result.previousConclusion;
+      if (result.checkpoint) job.checkpoint = result.checkpoint;
+      else if (result.operation.conclusion === "completed") delete job.checkpoint;
+      job.state = result.state;
+      job.operation = result.operation;
+      job.operationRevision = result.operationRevision;
+      job.sources = result.operation.sourcesRetained;
+      job.diagnostics = result.operation.attempts.slice(-40);
+      job.detail = result.detail;
+      if (historical && ["current", "empty"].includes(result.state))
+        job.lastHistoricalAt = this.now();
+      this.recordHistory(job, result.operation);
+      if (!this.cancelledBilling.has(job.profileId))
+        job.elapsedMilliseconds = result.elapsedMilliseconds;
+      this.cancelledBilling.delete(job.profileId);
+      job.nextAt = new Date(
+        Date.parse(this.now()) +
+          (result.state === "unavailable" || result.state === "interrupted"
+            ? Math.min(24, 2 ** Math.min(job.attempts, 5))
+            : this.state.settings.refreshHours) *
+            3600000,
+      ).toISOString();
+      if (generation !== this.generation && result.state === "interrupted" && job.checkpoint) {
+        job.nextAt = this.now();
+        job.detail =
+          "Application shutdown interrupted research; retained evidence is ready to resume.";
       }
     } catch (error) {
       console.error("[person-research] operation threw:", error);
-      /* A late rejection must not overwrite a cancellation (CodeRabbit, PR
-         #458): cancel() already cleared the operation and set the interrupted
-         state; only the operation that still owns the job may report its
-         failure. A superseded operation falls through to finally. */
-      if (job.currentOperationId === operationId && this.state.jobs.includes(job)) {
+      if (this.state.jobs.includes(job) && !this.cancelledBilling.has(job.profileId)) {
         job.state = "unavailable";
         job.detail = "Research failed; completed evidence is retained.";
         job.nextAt = new Date(Date.parse(this.now()) + 3600000).toISOString();
       }
     } finally {
-      /* The allowance is enforced, not just reported (UX audit F9): a slice
-         that overshot its backstop bills up to the allowance, so the stored
-         accumulator can never exceed what the Profile was entitled to spend
-         and the spent report can never read as an overdraw. */
-      /* An owner's stop ends the billing clock too (CodeRabbit, PR #458):
-         a cancelled slice bills only the work that ran before the stop, so
-         a slow in-flight request that settles afterwards can never consume
-         allowance the owner already took away. */
-      const billedThrough = this.cancelledAt.get(job.profileId) ?? Date.now();
-      this.cancelledAt.delete(job.profileId);
-      job.elapsedMilliseconds = Math.min(
-        (job.elapsedMilliseconds ?? 0) + Math.max(0, billedThrough - started),
-        this.state.settings.profileMilliseconds,
-      );
+      // An explicit requeue can replace currentOperationId before the cancelled
+      // run settles. Clear its billing marker even when that result was skipped.
+      this.cancelledBilling.delete(job.profileId);
       delete job.startedAt;
       this.running.delete(job.profileId);
       job.updatedAt = this.now();
       this.save();
     }
-  }
-  private retainOperation(job: PersonResearchJob, operation: PersonResearchOperationOutcome): void {
-    const previous = job.operation;
-    if (previous?.operationId === operation.operationId) {
-      operation.startedAt = previous.startedAt;
-      operation.modelCalls += previous.modelCalls;
-      operation.requests += previous.requests;
-      if (previous.retainedSourceIds && operation.retainedSourceIds) {
-        operation.retainedSourceIds = [
-          ...new Set([...previous.retainedSourceIds, ...operation.retainedSourceIds]),
-        ];
-        operation.sourcesRetained = operation.retainedSourceIds.length;
-      } else {
-        // Legacy counters lack identities: summing could count a resumed source twice.
-        // Preserve a conservative lower bound without claiming an exact identity set.
-        operation.sourcesRetained = Math.max(previous.sourcesRetained, operation.sourcesRetained);
-        delete operation.retainedSourceIds;
-      }
-      operation.claimsPublished += previous.claimsPublished;
-      operation.attempts = [...previous.attempts, ...operation.attempts];
-      const leads = new Map(previous.leads.map((lead) => [lead.id, lead]));
-      for (const lead of operation.leads)
-        if (lead.disposition !== "deduplicated" || !leads.has(lead.id)) leads.set(lead.id, lead);
-      operation.leads = [...leads.values()];
-    }
-    job.operation = operation;
-    job.sources = operation.sourcesRetained;
-    this.recordHistory(job, operation);
   }
   private recordHistory(job: PersonResearchJob, operation: PersonResearchOperationOutcome): void {
     const entries = (this.state.history ??= []);

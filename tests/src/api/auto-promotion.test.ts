@@ -705,7 +705,6 @@ describe("the release restriction and explicit enablement", () => {
       promotion: {
         facts: () => promotion.facts(configStore.get().tasks.actionItemPolicy),
         status: () => promotion.status(configStore.get().tasks.actionItemPolicy),
-        release: (evidence) => promotion.recordRelease(evidence),
         enable: () => promotion.enable(),
         disable: () => promotion.disable(),
       },
@@ -717,16 +716,11 @@ describe("the release restriction and explicit enablement", () => {
     await app.close();
   });
 
-  const evidence = {
-    reference: "private-release-evidence/baseline-9",
-    checksum: "a".repeat(64),
-  };
-
   async function put(body: Record<string, unknown>) {
     return app.inject({ method: "PUT", url: "/api/action-item-promotion", payload: body });
   }
 
-  it("reports the restriction and a saved preference as ineffective before any release", async () => {
+  it("reports a saved preference as pending and keeps release evidence out of public policy JSON", async () => {
     policy = "auto-create-mine";
     const saved = await app.inject({
       method: "PUT",
@@ -735,13 +729,31 @@ describe("the release restriction and explicit enablement", () => {
     });
 
     expect(saved.statusCode).toBe(200);
-    expect(saved.json()).toMatchObject({
+    const body = saved.json<{
+      policy: string;
+      externalDestination: string | null;
+      automaticPromotion: Record<string, unknown>;
+    }>();
+    expect(body).toMatchObject({
       policy: "auto-create-mine",
       automaticPromotion: { effective: false },
+      externalDestination: null,
     });
+    expect(body.automaticPromotion).not.toHaveProperty("release");
+    expect(body.automaticPromotion).not.toHaveProperty("basis");
+    expect(body.automaticPromotion).not.toHaveProperty("evidence");
+    expect(body.automaticPromotion).not.toHaveProperty("reference");
+    expect(body.automaticPromotion).not.toHaveProperty("checksum");
+    expect(body.automaticPromotion).not.toHaveProperty("reason");
+    expect(body.automaticPromotion).not.toHaveProperty("enabledAt");
+    expect(JSON.stringify(body.automaticPromotion)).not.toMatch(
+      /release-restriction|release-evidence-not-recorded|sha256/i,
+    );
     expect(
-      saved.json<{ automaticPromotion: { reason: string } }>().automaticPromotion.reason,
-    ).toContain("restricted");
+      Object.values(body.automaticPromotion)
+        .filter((value): value is string => typeof value === "string")
+        .join(" "),
+    ).toMatch(/pending|unavailable|not active/i);
   });
 
   it("refuses explicit enablement while the restriction stands", async () => {
@@ -749,158 +761,6 @@ describe("the release restriction and explicit enablement", () => {
 
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({ error: "promotion-restricted" });
-  });
-
-  it("refuses a release that names no retained evidence", async () => {
-    const response = await put({ action: "release", evidence: { reference: "", checksum: "" } });
-
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toMatchObject({ error: "invalid-release-evidence" });
-  });
-
-  it("releases, keeps promotion off, then enables explicitly", async () => {
-    const released = await put({ action: "release", evidence });
-    expect(released.statusCode).toBe(200);
-    expect(
-      released.json<{ automaticPromotion: { effective: boolean; reason: string } }>()
-        .automaticPromotion,
-    ).toMatchObject({ effective: false });
-
-    // A release alone creates no authorization, with the preference on.
-    await app.inject({
-      method: "PUT",
-      url: "/api/action-item-policy",
-      payload: { policy: "auto-create-mine" },
-    });
-    const stillOff = await app.inject({ method: "GET", url: "/api/action-item-policy" });
-    expect(
-      stillOff.json<{ automaticPromotion: { effective: boolean } }>().automaticPromotion.effective,
-    ).toBe(false);
-
-    const enabled = await put({ action: "enable" });
-    expect(enabled.statusCode).toBe(200);
-    expect(
-      enabled.json<{ automaticPromotion: { effective: boolean; enabledAt: string | null } }>()
-        .automaticPromotion,
-    ).toMatchObject({
-      effective: true,
-      enabledAt: NOW.toISOString(),
-    });
-  });
-
-  it("disables and re-enables, and a re-enablement is a new authorization", async () => {
-    await put({ action: "release", evidence });
-    await app.inject({
-      method: "PUT",
-      url: "/api/action-item-policy",
-      payload: { policy: "auto-create-mine" },
-    });
-    await put({ action: "enable" });
-
-    const disabled = await put({ action: "disable" });
-    expect(
-      disabled.json<{ automaticPromotion: { effective: boolean } }>().automaticPromotion.effective,
-    ).toBe(false);
-
-    const reEnabled = await put({ action: "enable" });
-    expect(
-      reEnabled.json<{ automaticPromotion: { effective: boolean } }>().automaticPromotion.effective,
-    ).toBe(true);
-    expect(promotion.read().decisions.map((decision) => decision.kind)).toEqual([
-      "enable",
-      "disable",
-      "enable",
-    ]);
-  });
-
-  it("keeps one recorded release: a different evidence record cannot replace it", async () => {
-    await put({ action: "release", evidence });
-
-    const second = await put({
-      action: "release",
-      evidence: { reference: "other", checksum: "b".repeat(64) },
-    });
-
-    expect(second.statusCode).toBe(409);
-    expect(second.json()).toMatchObject({ error: "promotion-already-released" });
-  });
-
-  it("answers the per-proposal verdict so review can say why automation declined", async () => {
-    await put({ action: "release", evidence });
-    await app.inject({
-      method: "PUT",
-      url: "/api/action-item-policy",
-      payload: { policy: "auto-create-mine" },
-    });
-    await put({ action: "enable" });
-    /* Materialized with the authorization the surface actually reports, so the
-       reservation is the one a real operation would have recorded. */
-    const live = promotion.facts("auto-create-mine");
-    actionItems.materialize({
-      debriefRunId: "run_1",
-      transcriptId: TRANSCRIPT,
-      meetingId: "meeting_1",
-      transcriptObservedRevision: 1,
-      transcriptChecksum: CHECKSUM,
-      contextChecksum: CONTEXT_CHECKSUM,
-      actionItems: [proposal({ responsibilityClaim: undefined })],
-      firstExtraction: {
-        operationId: "op_run_1",
-        claim: "first",
-        basis: "no-retained-first-reservation",
-        reservedAt: live.enabledAt ?? NOW.toISOString(),
-        authorization: live,
-      },
-    });
-
-    const response = await app.inject({ method: "GET", url: "/api/action-items" });
-    const index = response.json<{
-      items: ActionItem[];
-      automation: Record<string, { eligible: boolean; code: string; reason: string }>;
-    }>();
-
-    const verdict = index.automation[index.items[0].id];
-    expect(verdict.eligible).toBe(false);
-    expect(verdict.code).toBe("claim-unsupported");
-    expect(verdict.reason).toContain("responsibility claim");
-  });
-
-  it("reports an eligible verdict for a supported commitment under an authorized reservation", async () => {
-    /* Materialized without the policy engine, so the record stays pending and
-       its verdict is the gate's own answer rather than a promotion's. */
-    await put({ action: "release", evidence });
-    await app.inject({
-      method: "PUT",
-      url: "/api/action-item-policy",
-      payload: { policy: "auto-create-mine" },
-    });
-    await put({ action: "enable" });
-    const live = promotion.facts("auto-create-mine");
-    const [item] = actionItems.materialize({
-      debriefRunId: "run_1",
-      transcriptId: TRANSCRIPT,
-      meetingId: "meeting_1",
-      transcriptObservedRevision: 1,
-      transcriptChecksum: CHECKSUM,
-      contextChecksum: CONTEXT_CHECKSUM,
-      actionItems: [proposal()],
-      firstExtraction: {
-        operationId: "op_run_1",
-        claim: "first",
-        basis: "no-retained-first-reservation",
-        reservedAt: live.enabledAt ?? NOW.toISOString(),
-        authorization: live,
-      },
-    });
-
-    const response = await app.inject({ method: "GET", url: "/api/action-items" });
-    const index = response.json<{
-      items: ActionItem[];
-      automation?: Record<string, { eligible: boolean; code: string }>;
-    }>();
-
-    expect(item.state).toBe("pending");
-    expect(index.automation?.[item.id]).toMatchObject({ eligible: true, code: "eligible" });
   });
 });
 
@@ -952,18 +812,31 @@ describe("selecting the policy", () => {
     return app.inject({ method: "PUT", url: "/api/action-item-policy", payload: body });
   }
 
-  it("answers with Stage all and a restriction until the owner chooses otherwise", async () => {
+  it("answers with the Stage all preference and no internal release projection", async () => {
     const response = await app.inject({ method: "GET", url: "/api/action-item-policy" });
+    const body = response.json<{
+      policy: string;
+      externalDestination: string | null;
+      automaticPromotion: Record<string, unknown>;
+    }>();
 
-    expect(response.json()).toMatchObject({
+    expect(body).toMatchObject({
       policy: "stage-all",
       externalDestination: null,
-      automaticPromotion: { effective: false, enabledAt: null },
+      automaticPromotion: { effective: false },
     });
+    expect(body.automaticPromotion).not.toHaveProperty("release");
+    expect(body.automaticPromotion).not.toHaveProperty("basis");
+    expect(body.automaticPromotion).not.toHaveProperty("evidence");
+    expect(body.automaticPromotion).not.toHaveProperty("reference");
+    expect(body.automaticPromotion).not.toHaveProperty("checksum");
+    expect(body.automaticPromotion).not.toHaveProperty("reason");
+    expect(body.automaticPromotion).not.toHaveProperty("enabledAt");
     expect(
-      response.json<{ automaticPromotion: { release: { state: string } } }>().automaticPromotion
-        .release.state,
-    ).toBe("restricted");
+      Object.values(body.automaticPromotion)
+        .filter((value): value is string => typeof value === "string")
+        .join(" "),
+    ).toMatch(/pending|unavailable|not active/i);
   });
 
   it("turns the preference on for a locally filed Workspace without ceremony", async () => {

@@ -77,6 +77,23 @@ interface SourceAnchor {
   offset: number;
 }
 
+interface LinkedInReadResult {
+  kind: "profile" | "post" | "article";
+  identity: {
+    decision: "matched" | "unmatched" | "unresolved";
+    anchor: "signal" | "name";
+  };
+  declaredAuthor?: { name: string | null; profileUrl: string };
+  profileName?: string;
+  omittedFollowUps?: number;
+  followUps: {
+    kind: "post" | "article";
+    url: string;
+    title: string;
+    publishedAt?: string | null;
+  }[];
+}
+
 export interface SourceReadResult {
   text: string;
   /**
@@ -110,6 +127,8 @@ export interface SourceReadResult {
   author: string | null;
   /** Author identity declared by a LinkedIn post/article's own JSON-LD. */
   linkedInAuthor?: { name: string | null; profileUrl: string };
+  /** LinkedIn facts recovered from the page's structure, never its display-label grammar. */
+  linkedIn?: LinkedInReadResult;
   anchors: SourceAnchor[];
   /**
    * Format provenance a claim must not lose: publisher captions versus
@@ -1084,7 +1103,7 @@ async function readHtml(
       document
         .querySelector(`meta[property="${name}"], meta[name="${name}"], meta[itemprop="${name}"]`)
         ?.getAttribute("content") ?? null;
-    const articleMetadata = linkedInProfileText(document, response.url);
+    const profileRead = linkedInProfileText(document, response.url);
     const declaredAuthor = linkedInDeclaredAuthor(document, response.url);
     for (const title of document.querySelectorAll(
       ".experience-item__title.blur, .experience-item__title.blurred",
@@ -1150,7 +1169,7 @@ async function readHtml(
     const documentText = [
       pageTitle ? `Page title: ${pageTitle}` : "",
       guestProfile.text,
-      articleMetadata,
+      profileRead.text,
       declaredAuthor?.name
         ? `LinkedIn declared author: ${declaredAuthor.name}\nAuthor profile URL: ${declaredAuthor.profileUrl}`
         : "",
@@ -1158,12 +1177,17 @@ async function readHtml(
     ]
       .filter(Boolean)
       .join("\n\n");
+    const linkedIn = linkedInSemanticResult(
+      response.url,
+      declaredAuthor,
+      guestProfile.posts,
+      profileRead.articles,
+      guestProfile.name,
+      context.profileUrls,
+    );
     return {
       text: documentText.slice(0, MAX_TEXT),
       capturedAt: null,
-      /* The title prefix is part of what is retained, so completeness is
-         measured on the combined text: a prefix that pushes the article past
-         MAX_TEXT truncates its tail, and that is partial. */
       completeness: documentText.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
       outboundUrls,
@@ -1176,10 +1200,14 @@ async function readHtml(
       ...(declaredAuthor
         ? { linkedInAuthor: { name: declaredAuthor.name, profileUrl: declaredAuthor.profileUrl } }
         : {}),
+      ...(linkedIn ? { linkedIn } : {}),
       anchors: [],
       provenanceNote:
         [
-          articleCaptureNote(articleMetadata),
+          articleCaptureNote(profileRead.text),
+          linkedIn?.omittedFollowUps
+            ? `LinkedIn follow-up work was bounded to the first 2 posts and 1 article; ${linkedIn.omittedFollowUps} listed item(s) were omitted.`
+            : null,
           guestProfile.redactedTitles
             ? `${guestProfile.redactedTitles} experience title(s) were redacted in the anonymous profile and were not retained as content.`
             : null,
@@ -1194,6 +1222,68 @@ async function readHtml(
   } finally {
     dom.window.close();
   }
+}
+
+function linkedInSemanticResult(
+  url: string,
+  declaredAuthor: { name: string | null; profileUrl: string } | null,
+  posts: { kind: "post"; url: string; title: string; publishedAt: string | null }[],
+  articles: { kind: "article"; url: string; title: string; publishedAt: string | null }[],
+  guestProfileName: string | null,
+  profileUrls: readonly string[] | undefined,
+): LinkedInReadResult | null {
+  let page: URL;
+  try {
+    page = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!/(^|\.)linkedin\.com$/i.test(page.hostname)) return null;
+  const kind = linkedInProfileIdentity(url)
+    ? "profile"
+    : /^\/posts\//.test(page.pathname)
+      ? "post"
+      : /^\/pulse\//.test(page.pathname)
+        ? "article"
+        : null;
+  if (!kind) return null;
+  if (declaredAuthor) {
+    const authorIdentity = linkedInProfileIdentity(declaredAuthor.profileUrl);
+    const matched =
+      authorIdentity !== null &&
+      (profileUrls ?? []).some(
+        (profileUrl) => linkedInProfileIdentity(profileUrl) === authorIdentity,
+      );
+    return {
+      kind,
+      identity: {
+        decision: matched ? "matched" : "unmatched",
+        anchor: matched ? "signal" : "name",
+      },
+      declaredAuthor: { name: declaredAuthor.name, profileUrl: declaredAuthor.profileUrl },
+      followUps: [],
+    };
+  }
+  const profileIdentity = kind === "profile" ? linkedInProfileIdentity(url) : null;
+  const matchedProfile =
+    profileIdentity !== null &&
+    (profileUrls ?? []).some(
+      (profileUrl) => linkedInProfileIdentity(profileUrl) === profileIdentity,
+    );
+  const followUps = matchedProfile ? [...posts.slice(0, 2), ...articles.slice(0, 1)] : [];
+  const omitted = matchedProfile
+    ? Math.max(0, posts.length - 2) + Math.max(0, articles.length - 1)
+    : 0;
+  return {
+    kind,
+    identity:
+      kind === "profile"
+        ? { decision: matchedProfile ? "matched" : "unmatched", anchor: "signal" }
+        : { decision: "unresolved", anchor: "name" },
+    ...(matchedProfile && guestProfileName ? { profileName: guestProfileName } : {}),
+    followUps,
+    ...(omitted ? { omittedFollowUps: omitted } : {}),
+  };
 }
 
 function articleCaptureNote(metadata: string): string | null {
@@ -1270,7 +1360,7 @@ async function tryRender(
     }
     const dom = new JSDOM(rendered.body, { url: rendered.url });
     try {
-      const articleMetadata = linkedInProfileText(dom.window.document, rendered.url);
+      const profileRead = linkedInProfileText(dom.window.document, rendered.url);
       const guestProfile = linkedInGuestProfile(rendered.body, rendered.url);
       for (const title of dom.window.document.querySelectorAll(
         ".experience-item__title.blur, .experience-item__title.blurred",
@@ -1297,11 +1387,19 @@ async function tryRender(
       const text = [
         pageTitle ? `Page title: ${pageTitle}` : "",
         guestProfile.text,
-        articleMetadata,
+        profileRead.text,
         body,
       ]
         .filter(Boolean)
         .join("\n\n");
+      const linkedIn = linkedInSemanticResult(
+        rendered.url,
+        null,
+        guestProfile.posts,
+        profileRead.articles,
+        guestProfile.name,
+        context.profileUrls,
+      );
       context.recorder.record({
         stage: "rendering",
         code: "retrieval-recovered",
@@ -1326,10 +1424,14 @@ async function tryRender(
         upstreamIndex: hostOf(rendered.url),
         publishedAt: null,
         author: null,
+        ...(linkedIn ? { linkedIn } : {}),
         anchors: [],
         provenanceNote: [
           "Text came from a bounded anonymous render, not the raw response.",
-          articleCaptureNote(articleMetadata),
+          articleCaptureNote(profileRead.text),
+          linkedIn?.omittedFollowUps
+            ? `LinkedIn follow-up work was bounded to the first 2 posts and 1 article; ${linkedIn.omittedFollowUps} listed item(s) were omitted.`
+            : null,
           guestProfile.redactedTitles
             ? `${guestProfile.redactedTitles} experience title(s) were redacted in the anonymous profile and were not retained as content.`
             : null,

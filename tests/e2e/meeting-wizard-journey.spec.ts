@@ -39,12 +39,68 @@ function fixtureEvent(overrides: Record<string, unknown> = {}): Record<string, u
   };
 }
 
-test("meeting wizard home — a day with no meetings says so", async ({ page }) => {
-  // Fresh hermetic workspace: no Meeting recorded carries today's date.
+test("meeting wizard home — a new Workspace offers the first unmet Transcript Intake action", async ({
+  page,
+}) => {
   await page.goto("/meetings");
   await expect(page.getByRole("heading", { level: 1, name: "Meeting Wizard" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Connect Google" })).toHaveAttribute(
+    "href",
+    "/onboarding?goal=meetings",
+  );
+  await expect(page.getByText("No meetings today.")).toHaveCount(0);
+  await expect(page.getByText("No completed meetings recorded yet.")).toHaveCount(0);
+  await expect(page.getByText("No meetings in the upcoming range.")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Your work" })).toBeVisible();
+  await expect(page.locator("main")).not.toContainText(/upload/i);
+});
+
+test("an empty Today inside retained history keeps the Meeting-first hierarchy", async ({
+  page,
+  request,
+}) => {
+  const oldDay = new Date();
+  oldDay.setDate(oldDay.getDate() - 1);
+  oldDay.setHours(15, 0, 0, 0);
+  const transcript = {
+    id: "drive_retained_history",
+    source: {
+      sourceSystem: "drive",
+      externalFileId: "retained-history",
+      fileName: "Retained planning.txt",
+      sourceUrl: null,
+      checksum: "retained-history-checksum",
+      observedRevision: 1,
+      modifiedAt: null,
+    },
+    ingestedAt: new Date().toISOString(),
+    extractorVersion: 1,
+    normalizedText: "Retained planning transcript.",
+    meetingDate: oldDay.toISOString().slice(0, 10),
+    occurrence: null,
+    speakers: [],
+    speakerIdentityMappings: [],
+    roster: [],
+  };
+  expect(
+    (
+      await request.post("/api/test/meeting-brief/seed-transcript", {
+        data: { record: transcript },
+      })
+    ).ok(),
+  ).toBe(true);
+  expect((await request.post("/api/meeting-brief/reconcile")).ok()).toBe(true);
+
+  await page.goto("/meetings");
+  await expect(page.getByRole("heading", { name: "Transcript Intake" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Connect Google" })).toHaveAttribute(
+    "href",
+    "/onboarding?goal=meetings",
+  );
   await expect(page.getByText("No meetings today.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Recent meetings" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Upcoming" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your work" })).toBeVisible();
 });
 
 test("meeting history — collected back to the oldest Transcript, the home says where it begins", async ({
@@ -472,4 +528,53 @@ test("meeting history and artifact tabs retain their URLs through reload and Bac
     "aria-selected",
     "true",
   );
+});
+
+test("a populated Meeting without a Transcript offers the same intake action in Wizard and detail", async ({
+  page,
+  request,
+}) => {
+  expect(
+    (
+      await request.post("/api/test/meeting-brief/set-now", { data: { now: atTodayLocal(15) } })
+    ).ok(),
+  ).toBe(true);
+  const response = await request.post("/api/test/meeting-brief/schedule", {
+    data: {
+      event: fixtureEvent({
+        eventId: "evt_missing_transcript",
+        occurrenceId: atTodayLocal(16),
+        summary: "Planning without notes",
+        startAt: atTodayLocal(16),
+        endAt: atTodayLocal(17),
+      }),
+    },
+  });
+  expect(response.ok()).toBe(true);
+  expect((await request.post("/api/meeting-brief/reconcile")).ok()).toBe(true);
+  const meetings = (await (await request.get("/api/meetings/list")).json()) as {
+    meetings: { id: string; title: string }[];
+  };
+  const meeting = meetings.meetings.find(
+    (candidate) => candidate.title === "Planning without notes",
+  );
+  if (!meeting) throw new Error("Calendar-only Meeting was not recorded");
+
+  await page.goto("/meetings");
+  const row = page.locator("li.wizard-line").filter({ hasText: meeting.title });
+  await expect(row.getByText("No Transcript for Debrief")).toBeVisible();
+  await expect(row.getByRole("link", { name: "Connect Google" })).toHaveAttribute(
+    "href",
+    "/onboarding?goal=meetings",
+  );
+
+  await page.goto(`/meetings/${meeting.id}?tab=debrief`);
+  await expect(page.getByText("No Transcript for Debrief")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Transcript Intake" })).toBeVisible();
+  await expect(page.getByText(/Connect Google so the app can read/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Connect Google" })).toHaveAttribute(
+    "href",
+    "/onboarding?goal=meetings",
+  );
+  await expect(page.locator("main")).not.toContainText(/upload/i);
 });

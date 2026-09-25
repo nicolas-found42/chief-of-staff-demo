@@ -123,6 +123,28 @@ post-backup loss interval. Rollback to a build that predates the record refuses 
 rather than ignoring the restriction, so it needs a compatible reader or the verified backup.
 No such migration was run for #360; the live activation is not claimed.
 
+## Installation credential migration
+
+The explicit installation-credential cutover consumes this accepted backup result. It is an
+operator procedure, never a startup side effect:
+
+```sh
+pnpm exec tsx scripts/migrate-installation-credentials.mts check \
+  --workspace /absolute/workspace --env /absolute/installation.env \
+  --backup-result /absolute/backup/result.json
+pnpm exec tsx scripts/migrate-installation-credentials.mts apply \
+  --workspace /absolute/workspace --env /absolute/installation.env \
+  --backup-result /absolute/backup/result.json
+```
+
+`check` is read-only. `apply` requires the app to be stopped and refuses while the supported
+Workspace writer lock is held. It preserves unrelated Workspace data, verifies exact
+provider-specific values and mode `600`, and removes only the superseded Workspace `apiKey`, Google
+client ID, and Google client secret after destination verification. A failure before source removal
+leaves the Workspace unchanged; the private backup remains the recovery boundary. Never run this
+command against the live Workspace without a newly accepted backup and explicit operator
+confirmation.
+
 ## Verification evidence
 
 The public-store/HTTP tests in `tests/src/migration/workspace-backup.test.ts`

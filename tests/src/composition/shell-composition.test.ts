@@ -38,6 +38,7 @@ const DEPLOYMENT_RELAY_BASE_URL = "http://relay:4318";
 
 const shells: Shell[] = [];
 let priorRelayBaseUrl: string | undefined;
+let priorOpenRouterApiKey: string | undefined;
 
 beforeEach(() => {
   /* Set for the whole test, not just the compose: the boot sequence reads it
@@ -45,6 +46,8 @@ beforeEach(() => {
      effect at startup is one the gate has to be able to withhold. */
   priorRelayBaseUrl = process.env.RELAY_BASE_URL;
   process.env.RELAY_BASE_URL = DEPLOYMENT_RELAY_BASE_URL;
+  priorOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
 });
 
 afterEach(() => {
@@ -52,6 +55,8 @@ afterEach(() => {
   while (shells.length > 0) shells.pop()?.stop();
   if (priorRelayBaseUrl === undefined) delete process.env.RELAY_BASE_URL;
   else process.env.RELAY_BASE_URL = priorRelayBaseUrl;
+  if (priorOpenRouterApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+  else process.env.OPENROUTER_API_KEY = priorOpenRouterApiKey;
 });
 
 async function compose(workspaceDir: string): Promise<Shell> {
@@ -66,16 +71,14 @@ async function compose(workspaceDir: string): Promise<Shell> {
  * reason the browser suite parks it: a scheduler tick that fired mid-test would
  * write a Run, and these assertions are about what startup writes.
  */
-function workspaceDirectory(migrated: boolean): string {
+function workspaceDirectory(migrated: boolean, provider: "mock" | "openrouter" = "mock"): string {
   const dir = mkdtempSync(join(tmpdir(), "cos-shell-"));
   writeFileSync(
     join(dir, "config.json"),
     `${JSON.stringify(
       {
-        provider: "mock",
+        provider,
         model: "",
-        apiKey: "",
-        google: { clientId: "", clientSecret: "", refreshToken: null },
         drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
         ollama: { baseUrl: "http://127.0.0.1:11434" },
         modules: {
@@ -181,6 +184,23 @@ describe("the mock provider follows the process posture, not the config (#198)",
       const shell = await compose(workspaceDirectory(true));
       const get = await shell.app.inject({ method: "GET", url: "/api/config" });
       expect(get.json<{ mockAvailable: boolean }>().mockAvailable).toBe(true);
+    });
+  });
+});
+
+describe("provider setup links target the installation credential (#485)", () => {
+  it("serves the installation setup destination from public research readiness", async () => {
+    const shell = await compose(workspaceDirectory(true, "openrouter"));
+    const response = await shell.app.inject({ method: "GET", url: "/api/people/research/status" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().readiness).toMatchObject({
+      state: "setup-required",
+      reason: "provider-not-configured",
+      nextAction: {
+        label: "Open Guided Setup",
+        href: "/onboarding?goal=meetings",
+      },
     });
   });
 });

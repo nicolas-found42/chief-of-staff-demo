@@ -1,10 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { TaskCutoverPreview, TaskCutoverReceipt } from "@chief-of-staff-demo/shared";
 import { migrationApi } from "../clients/workspace";
 import { errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
+
+const COUNT_LABELS: Record<string, string> = {
+  legacyRuns: "Historical Debrief Runs",
+  receipts: "App-created provider receipts",
+  tasks: "Tasks after cutover",
+  actionItems: "Action Items after cutover",
+  taskLists: "Task Lists preserved",
+  tasksToCreate: "New canonical Tasks",
+  actionItemsToCreate: "New canonical Action Items",
+};
 
 export function MigrationGatePage({ onCutOver }: { onCutOver: () => void }) {
   useTitle("Workspace migration");
@@ -30,7 +40,7 @@ export function MigrationGatePage({ onCutOver }: { onCutOver: () => void }) {
       live = false;
     };
   }, []);
-  async function confirm(event: React.FormEvent) {
+  async function confirm(event: FormEvent) {
     event.preventDefault();
     if (!preview || busy) return;
     setBusy(true);
@@ -91,19 +101,7 @@ export function MigrationGatePage({ onCutOver }: { onCutOver: () => void }) {
           <dl>
             {Object.entries(preview.counts).map(([name, count]) => (
               <div key={name}>
-                <dt>
-                  {
-                    {
-                      legacyRuns: "Historical Debrief Runs",
-                      receipts: "App-created provider receipts",
-                      tasks: "Tasks after cutover",
-                      actionItems: "Action Items after cutover",
-                      taskLists: "Task Lists preserved",
-                      tasksToCreate: "New canonical Tasks",
-                      actionItemsToCreate: "New canonical Action Items",
-                    }[name]
-                  }
-                </dt>
+                <dt>{COUNT_LABELS[name] ?? name}</dt>
                 <dd>{count}</dd>
               </div>
             ))}

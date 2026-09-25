@@ -68,6 +68,29 @@ export interface MeetingIndex {
   historyBeginsAt: string | null;
 }
 
+export type TranscriptIntakeVerdict =
+  | "provider-required"
+  | "google-required"
+  | "folder-required"
+  | "polling-required"
+  | "consent-required"
+  | "intake-paused"
+  | "intake-running"
+  | "waiting-for-transcript"
+  | "intake-failed"
+  | "ready";
+
+export interface TranscriptIntakeNextAction {
+  label: string;
+  href: string;
+}
+
+/** One content-free verdict shared by Meeting workspace and detail reads. */
+export interface MeetingIntakeReadiness {
+  verdict: TranscriptIntakeVerdict;
+  nextAction: TranscriptIntakeNextAction | null;
+}
+
 /** Artifact availability is derived, never persisted on a Meeting. */
 export interface MeetingArtifact {
   status:
@@ -78,6 +101,8 @@ export interface MeetingArtifact {
   retryRunId: string | null;
   explanation: string | null;
   remedy: string | null;
+  /** Contextual Transcript Intake action, present only while setup blocks a missing Transcript. */
+  nextAction: TranscriptIntakeNextAction | null;
 }
 export interface MeetingReadRow extends Meeting {
   localDate: string;
@@ -103,6 +128,7 @@ export interface MeetingWorkspaceView {
   upcomingFrom: string;
   upcomingTo: string;
   historyBeginsAt: string | null;
+  intakeReadiness: MeetingIntakeReadiness;
   proposals: {
     total: number;
     meetingCount: number;
@@ -126,6 +152,7 @@ export interface MeetingHistoryView {
 export interface MeetingDetailView {
   meeting: MeetingReadRow;
   localToday: string;
+  intakeReadiness: MeetingIntakeReadiness;
   timezone: string;
   partial: string[];
 }

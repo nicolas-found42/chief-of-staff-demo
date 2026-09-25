@@ -91,11 +91,8 @@ function buildPreCutoverWorkspace(dir: string): void {
     JSON.stringify({
       provider: "mock",
       model: "",
-      apiKey: "",
       tasklistName: "Legacy Meeting Followups",
       google: {
-        clientId: "legacy-client-id.apps.googleusercontent.com",
-        clientSecret: "legacy-client-secret",
         refreshToken: "legacy-refresh-token",
         lastConnectedAt: "2026-08-01T00:00:00.000Z",
         hasExpiredBefore: true,

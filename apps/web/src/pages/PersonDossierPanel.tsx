@@ -2,7 +2,6 @@ import {
   PERSON_OVERVIEW_IDENTITY_FIELDS,
   PersonResearchReadinessSchema,
   personOverviewClaims,
-  summarizePersonClaims,
   type PersonSourceSummary,
 } from "@chief-of-staff-demo/shared";
 import { EvidenceDate } from "./EvidenceDate";
@@ -779,6 +778,10 @@ export function PersonDossierPanel({
           nextAction: readiness.nextAction,
         }
       : researchSurface(view?.research ?? null);
+  /* A request the server can only refuse must not look startable (#487):
+     the 409 folds back into the readiness already on screen, so an enabled
+     button appeared to do nothing. */
+  const researchBlocked = readiness?.state === "setup-required" || readiness?.state === "disabled";
   const dossier = view?.dossier;
   const claims = dossier?.claims ?? [];
   /* The clock belongs to the researching surface's own line (UX audit F7a),
@@ -861,6 +864,19 @@ export function PersonDossierPanel({
       {item.changeReason && <p>{item.changeReason}</p>}
     </article>
   );
+  if (view && !view.dossier && !view.research) {
+    return (
+      <section aria-label="Person dossier">
+        <div className="card">
+          <h2>Research has not run yet</h2>
+          <p className="muted">
+            This saved Person Profile has no research result yet. Prioritise research when ready;
+            retained evidence will appear here after the first run.
+          </p>
+        </div>
+      </section>
+    );
+  }
   return (
     <section aria-label="Person dossier">
       {latestRevision > 0 && (
@@ -967,7 +983,7 @@ export function PersonDossierPanel({
         )}
         <button
           type="button"
-          disabled={startingResearch || unreachable}
+          disabled={startingResearch || unreachable || researchBlocked}
           onClick={() => {
             setStartingResearch(true);
             void act(() => client.research(profileId)).finally(() => setStartingResearch(false));
@@ -975,6 +991,9 @@ export function PersonDossierPanel({
         >
           {startingResearch ? "Starting research…" : "Prioritise research"}
         </button>{" "}
+        {researchBlocked && (
+          <span className="muted">Available once research setup is complete. </span>
+        )}
         {!unreachable &&
           (view?.research?.state === "queued" || view?.research?.state === "researching") && (
             <>
@@ -1243,22 +1262,12 @@ export function PersonDossierPanel({
         <h2>{tabs[tab]}</h2>
         {section && (
           <>
-            <p>
-              {section.claimIds.length && dossier
-                ? summarizePersonClaims(
-                    tab === "overview"
-                      ? overviewClaims
-                      : section.claimIds.flatMap((id) =>
-                          dossier.claims.filter((claim) => claim.id === id),
-                        ),
-                  )
-                : section.summary}
-            </p>
+            <p>{section.summary}</p>
             <p className="muted">
               {sectionStateLabel(section.state)} · Last researched{" "}
               <EvidenceDate value={section.updatedAt} />
             </p>
-            {evidence(tab === "overview" ? { claimIds: displayed.map((c) => c.id) } : section)}
+            {evidence(section)}
             {section.gaps.map((gap) => (
               <p className="muted" key={gap}>
                 {gap}

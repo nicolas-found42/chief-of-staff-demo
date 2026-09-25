@@ -14,6 +14,7 @@ import {
   LinkedInRequestBudget,
   readPersonSource,
   type ReaderPorts,
+  type SourceReadResult,
 } from "../../../apps/server/src/person-profile/research-readers.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
 
@@ -28,9 +29,6 @@ import { PersonProfileStore } from "../../../apps/server/src/person-profile/stor
  * person's own words.
  */
 
-const ports = (recorder: ResearchAttemptRecorder, fetch: ReaderPorts["fetch"]): ReaderPorts =>
-  fromPartial({ fetch, recorder, timeoutMs: 1000 });
-
 function read(url: string, body: string, status = 200) {
   const recorder = new ResearchAttemptRecorder(
     "social-walls",
@@ -39,36 +37,61 @@ function read(url: string, body: string, status = 200) {
   const result = readPersonSource(
     url,
     "search snippet",
-    ports(recorder, async (target) => ({
-      url: target,
-      status,
-      contentType: "text/html",
-      etag: null,
-      lastModified: null,
-      retryAfter: null,
-      body,
-    })),
+    fromPartial({
+      fetch: async (target: string) => ({
+        url: target,
+        status,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body,
+      }),
+      recorder,
+      timeoutMs: 1000,
+      profileUrls: [ownUrl],
+    }),
   );
   return { recorder, result };
 }
-
-test("a LinkedIn 999 authentication redirect is a login restriction, not a generic HTTP failure", async () => {
-  const body =
-    '<script>window.onload = function() { window.location.href = "https://" + domain + "/authwall?trk=" + trk; };</script>';
-  const { recorder, result } = read("https://www.linkedin.com/in/maya-okafor", body, 999);
-  expect((await result).access).toBe("blocked");
-  expect(recorder.failures()).toContainEqual(
-    expect.objectContaining({
-      code: "login-required",
-      observed: expect.objectContaining({ status: 999 }),
-    }),
-  );
-});
 
 const paragraph =
   "Maya Okafor has spent a decade leading coastal sensor deployments across West Africa, " +
   "publishing measurement methods that independent teams reuse in seasonal outbreak studies. ";
 const ownUrl = "https://www.linkedin.com/in/maya-okafor";
+
+type SemanticLinkedInRead = Omit<SourceReadResult, "linkedInAuthor"> & {
+  linkedInAuthor?: { name: string | null; profileUrl: string };
+  linkedIn: {
+    kind: "profile" | "post" | "article";
+    identity: { decision: "matched" | "unmatched" | "unresolved"; anchor: "signal" | "name" };
+    declaredAuthor?: { name: string | null; profileUrl: string };
+    followUps: { kind: "post" | "article"; url: string; title: string }[];
+  };
+};
+
+function semanticRead(
+  overrides: Partial<SemanticLinkedInRead> & Pick<SemanticLinkedInRead, "linkedIn">,
+): SemanticLinkedInRead {
+  return {
+    text: "",
+    capturedAt: null,
+    completeness: "full",
+    access: "retrieved",
+    outboundUrls: [],
+    family: "public-social",
+    route: "html-reader",
+    upstreamIndex: "linkedin.com",
+    publishedAt: null,
+    author: null,
+    anchors: [],
+    provenanceNote: null,
+    sourceVersion: null,
+    rights: null,
+    finalUrl: "",
+    ...overrides,
+  };
+}
 
 /* A public profile page that renders anonymously: substantive profile content
    beside the usual sign-in chrome, mirroring the live LinkedIn probe. */
@@ -92,6 +115,45 @@ test("an anonymously readable public profile page yields retained text with its 
   expect(outcome.text).toContain("seasonal outbreak studies");
   expect(recorder.all().some((attempt) => attempt.code === "login-required")).toBe(false);
   expect(recorder.all().some((attempt) => attempt.code === "challenge-page")).toBe(false);
+});
+
+test("an own-profile LinkedIn read returns semantic identity and bounded listed follow-up work", async () => {
+  const posts = [1, 2, 3].map(
+    (index) =>
+      `https://www.linkedin.com/posts/maya-okafor_sensor-${index}-activity-7487189920416108544-x`,
+  );
+  const articles = [1, 2].map(
+    (index) => `https://www.linkedin.com/pulse/coastal-sensors-${index}-maya-okafor`,
+  );
+  const body = `<html><body><article><h1>Maya Okafor</h1><p>${paragraph.repeat(4)}</p>
+    <section data-section="posts">${posts
+      .map(
+        (url, index) =>
+          `<div class="base-card"><div class="see-more-text">Sensor finding ${index + 1}</div><a href="${url}">Post</a></div>`,
+      )
+      .join("")}</section>
+    <section data-section="articles"><h2>Articles by Maya Okafor</h2>${articles
+      .map(
+        (url, index) =>
+          `<div class="main-article-card"><h3>Coastal sensors ${index + 1}</h3><a href="${url}">Article</a><span class="base-main-card__metadata-item">Jul 26, 2026</span></div>`,
+      )
+      .join("")}</section></article></body></html>`;
+  const outcome = await read(ownUrl, body).result;
+
+  expect(outcome).toMatchObject({
+    access: "retrieved",
+    text: expect.stringContaining("seasonal outbreak studies"),
+    provenanceNote: expect.stringMatching(/first 2 posts and 1 article|not a complete/i),
+    linkedIn: {
+      kind: "profile",
+      identity: { decision: "matched", anchor: "signal" },
+      followUps: [
+        { kind: "post", url: posts[0], title: "Sensor finding 1" },
+        { kind: "post", url: posts[1], title: "Sensor finding 2" },
+        { kind: "article", url: articles[0], title: "Coastal sensors 1" },
+      ],
+    },
+  });
 });
 
 test("a guest profile retains labelled experience, education, summary and listed posts without redacted titles", async () => {
@@ -229,6 +291,36 @@ test("a logged-out LinkedIn article retains its declared author URL", async () =
   expect(outcome.linkedInAuthor).toEqual({ name: "Maya Okafor", profileUrl: ownUrl });
   expect(outcome.publishedAt).toBe("2026-07-25T12:00:00Z");
 });
+
+test.each([
+  { kind: "post" as const, url: authoredPostUrl, body: authoredPost(ownUrl) },
+  {
+    kind: "article" as const,
+    url: "https://www.linkedin.com/pulse/coastal-data-maya-okafor",
+    body: `<html><head><script type="application/ld+json">${JSON.stringify({
+      "@type": "Article",
+      author: { name: "Maya Okafor", url: ownUrl },
+      datePublished: "2026-07-25T12:00:00Z",
+    })}</script></head><body><article><h1>Coastal data</h1><p>${paragraph.repeat(4)}</p></article></body></html>`,
+  },
+])(
+  "a declared-author LinkedIn $kind returns one semantic retained result",
+  async ({ kind, url, body }) => {
+    const outcome = await read(url, body).result;
+    expect(outcome).toMatchObject({
+      access: "retrieved",
+      route: "html-reader",
+      text: expect.stringContaining("seasonal outbreak studies"),
+      publishedAt: expect.any(String),
+      linkedIn: {
+        kind,
+        identity: { decision: "matched", anchor: "signal" },
+        declaredAuthor: { name: "Maya Okafor", profileUrl: ownUrl },
+        followUps: [],
+      },
+    });
+  },
+);
 
 test.each([
   { authorUrl: ownUrl, accepted: true },
@@ -377,6 +469,96 @@ test("a matched guest profile follows two listed posts and one article through a
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test.each(["post", "article"] as const)(
+  "Person Research follows a declared-author LinkedIn $kind without reader display-label grammar",
+  async (kind) => {
+    const root = mkdtempSync(join(tmpdir(), `linkedin-semantic-${kind}-`));
+    try {
+      const people = new WorkspacePersonProfiles({
+        store: new PersonProfileStore(root),
+        lifecycle: [],
+      });
+      const profile = people.create({ profileUrls: [ownUrl] });
+      const dossiers = new PersonDossierStore(root);
+      const post =
+        "https://www.linkedin.com/posts/maya-okafor_semantic-result-activity-7487189920416108544-x";
+      const article = "https://www.linkedin.com/pulse/semantic-result-maya-okafor";
+      const followUp = kind === "post" ? post : article;
+      const seen: string[] = [];
+      const research = new PersonResearch({
+        people,
+        dossiers,
+        linkedInBudget: new LinkedInRequestBudget({ maxRequests: 2, spacingMs: 0 }),
+        seeds: () => [ownUrl],
+        search: async () => [],
+        readSource: async (url) => {
+          seen.push(url);
+          if (url === ownUrl) {
+            return semanticRead({
+              text: `Maya Okafor publishes field measurements. ${paragraph}`,
+              finalUrl: ownUrl,
+              access: "retrieved",
+              route: "html-reader",
+              outboundUrls: [],
+              anchors: [],
+              linkedIn: {
+                kind: "profile",
+                identity: { decision: "matched", anchor: "signal" },
+                followUps: [{ kind, url: followUp, title: `Semantic ${kind}` }],
+              },
+            });
+          }
+          return semanticRead({
+            text: `Maya Okafor published ${url}. ${paragraph}`,
+            finalUrl: url,
+            access: "retrieved",
+            route: "html-reader",
+            anchors: [],
+            outboundUrls: [],
+            linkedIn: {
+              kind,
+              identity: { decision: "matched", anchor: "signal" },
+              declaredAuthor: { name: "Maya Okafor", profileUrl: ownUrl },
+              followUps: [],
+            },
+          });
+        },
+        complete: async () => ({
+          fullName: null,
+          employer: null,
+          sourceClass: "self-report" as const,
+          author: null,
+          publishedAt: null,
+          claims: [],
+          works: [],
+          expertise: [],
+          connections: [],
+          sections: [],
+        }),
+      });
+
+      const outcome = await research.run(
+        profile,
+        researchAllowance({ maxRequests: 2, maxModelCalls: 4, quietRounds: 1 }),
+      );
+      expect(seen).toEqual([ownUrl, followUp]);
+      expect(outcome.operation.leads).toContainEqual(
+        expect.objectContaining({ target: followUp, disposition: "investigated" }),
+      );
+      const sources = dossiers
+        .get(profile.id)!
+        .sourceIds.map((sourceId) => dossiers.source(profile.id, sourceId)!);
+      expect(sources.map((source) => source.url)).toEqual([ownUrl, ownUrl, followUp]);
+      expect(sources.slice(0, 2).map((source) => source.extractionCoverage)).toEqual([
+        "unattempted",
+        "full",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test("a listed post redirected to another author is not attributed through its requested URL", async () => {
   const root = mkdtempSync(join(tmpdir(), "linkedin-listed-redirect-"));

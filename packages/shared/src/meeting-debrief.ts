@@ -680,17 +680,19 @@ export interface MeetingDebriefRunResult {
    * The extraction keeps the model-result shape, so a failed section is
    * emptied there and named here — and the availability travels with the
    * bytes, so an interrupted commit that is adopted later still reads as the
-   * incomplete revision it was. Absent on results written before #345 and on
-   * producers that claim a complete revision.
+   * incomplete revision it was. New checked results always carry one entry
+   * per required section; legacy results may omit the field and remain
+   * readable.
    */
   sections?: DebriefSectionAvailability[];
   /**
-   * The extraction's own candidate ids, aligned with `debrief.actionItems`
-   * (#385). They travel with the checked bytes because the result is the one
-   * artifact an interrupted commit is guaranteed to leave behind: an adopted
-   * revision materializes under the aliases its model run produced. Absent on
-   * results written before this field and on producers without accounting,
-   * which materialize alias-less as they always did.
+   * The extraction's own candidate ids, aligned one-to-one with
+   * `debrief.actionItems` (#385, #493). They travel with the checked bytes
+   * because the result is the one artifact an interrupted commit is
+   * guaranteed to leave behind: an adopted revision materializes under the
+   * aliases its model run produced. New checked results carry exactly one
+   * string or null per Action Item; legacy results may omit the field and
+   * materialize alias-less as they always did.
    */
   candidateAliases?: (string | null)[];
 }

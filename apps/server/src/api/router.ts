@@ -1,8 +1,15 @@
 import type { PersonResearchQueue } from "../person-profile/research-queue.js";
 import type { FastifyInstance } from "fastify";
-import { DEFAULT_MODELS, ConfigUpdateSchema, type RunActivity } from "@chief-of-staff-demo/shared";
+import {
+  DEFAULT_MODELS,
+  ConfigUpdateSchema,
+  type InstallationProviderId,
+  type RunActivity,
+} from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
+import { installationStatus } from "../installation.js";
+
 import {
   googleFailureHint,
   IncompleteGrantError,
@@ -34,6 +41,19 @@ import type { ModelBudgetLedger } from "../llm/budget.js";
 import type { ModelTimelineStore } from "../llm/timeline.js";
 import { generateCorpusLoadReport } from "../llm/timeline.js";
 import { ExpectedVersionConflictError } from "../engine/commit.js";
+function carriesInstallationSecret(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (Object.hasOwn(record, "apiKey")) return true;
+  const google = record.google;
+  return (
+    !!google &&
+    typeof google === "object" &&
+    !Array.isArray(google) &&
+    (Object.hasOwn(google, "clientId") || Object.hasOwn(google, "clientSecret"))
+  );
+}
+
 export interface ApiContext {
   runs: Runs;
   port: number;
@@ -308,19 +328,36 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     reply.header("content-type", "text/plain; charset=utf-8").send(text);
   });
 
+  app.get("/api/config.installation", async () => installationStatus());
+
   app.get("/api/config", async () => ({
     config: redactConfig(ctx.configStore.get()),
+    installation: installationStatus(),
     defaults: DEFAULT_MODELS,
     mockAvailable: ctx.mockProviderAvailable,
   }));
 
   app.put("/api/config", async (request, reply) => {
+    if (carriesInstallationSecret(request.body)) {
+      reply.code(400).send({ error: "installation-credentials-are-not-workspace-config" });
+      return;
+    }
     const parsed = ConfigUpdateSchema.safeParse(request.body);
     if (!parsed.success) {
       reply.code(400).send({ error: "invalid config", issues: parsed.error.issues });
       return;
     }
     const update = parsed.data;
+    if (
+      update.provider &&
+      update.provider !== "ollama" &&
+      update.provider !== "mock" &&
+      installationStatus().providerKeys[update.provider as InstallationProviderId].state !==
+        "configured"
+    ) {
+      reply.code(400).send({ error: "provider-installation-credential-missing" });
+      return;
+    }
     /* The mock posture is the composition's, not the caller's: outside tests
        and explicit demo mode there is no mock provider to switch into, whatever
        the request asks for. A workspace that already runs mock (carried from a
@@ -341,6 +378,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     await ctx.onConfigChanged();
     return {
       config: redactConfig(next),
+      installation: installationStatus(),
       defaults: DEFAULT_MODELS,
       mockAvailable: ctx.mockProviderAvailable,
     };
@@ -455,15 +493,14 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       get: () => ctx.configStore.get().tasks.actionItemPolicy,
       set: (policy) => ctx.configStore.setActionItemPolicy(policy),
     },
-    /* Automatic promotion's release restriction and explicit enablement
-       (#360): recorded state the policy surface reports and the owner acts on,
-       never a preference read as authorization. */
+    /* Automatic promotion's public availability and the owner's explicit
+       enablement (#479). Release attestation remains an operator/deployment
+       capability on WorkspacePromotionAuthorization, not ordinary HTTP. */
     ...(ctx.promotion
       ? {
           promotion: {
             facts: () => ctx.promotion!.facts(ctx.configStore.get().tasks.actionItemPolicy),
             status: () => ctx.promotion!.status(ctx.configStore.get().tasks.actionItemPolicy),
-            release: (evidence) => ctx.promotion!.recordRelease(evidence),
             enable: () => ctx.promotion!.enable(),
             disable: () => ctx.promotion!.disable(),
           },

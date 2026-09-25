@@ -140,9 +140,11 @@ test("sparse and unavailable dossiers keep unquoted sources accessible with queu
     await page.request.post("/api/people", { data: { primaryEmail: "retained-only@example.com" } })
   ).json();
   await page.goto(`/people/${created.id}`);
-  await page.getByText("Research settings", { exact: true }).click();
-  await expect(page.getByText(/Backfill:/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume research", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Research has not run yet" })).toBeVisible();
+  await expect(
+    page.getByText(/retained evidence will appear here after the first run/i),
+  ).toBeVisible();
+  await expect(page.getByText("Research settings", { exact: true })).toHaveCount(0);
   await page.request.post("/api/test/person-dossier-source", {
     data: {
       url: "https://example.com/retained-only",
@@ -151,6 +153,10 @@ test("sparse and unavailable dossiers keep unquoted sources accessible with queu
     },
   });
   await page.request.patch("/api/people/research/settings", { data: { paused: false } });
+  const researchSettings = page.getByText("Research settings", { exact: true });
+  await expect(researchSettings).toBeVisible({ timeout: 30000 });
+  await researchSettings.click();
+  await expect(page.getByText(/Backfill:/)).toBeVisible();
   await page.getByRole("tab", { name: "Sources", exact: true }).click();
   await expect(retainedSource(page)).toBeVisible({ timeout: 30000 });
   await retainedSource(page).focus();

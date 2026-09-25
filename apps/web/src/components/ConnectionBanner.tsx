@@ -31,7 +31,7 @@ export function ConnectionBanner() {
       {notice && (
         <div className="banner banner-warn">
           <span>{notice.text}</span>
-          <Link className="step-link" to="/settings">
+          <Link className="step-link" to={notice.href}>
             {notice.action}
           </Link>
         </div>

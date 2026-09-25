@@ -14,7 +14,7 @@ import {
 } from "@chief-of-staff-demo/shared";
 import { runsApi } from "../clients/workspace";
 import { contentApi, type ContentClient, type ContentScoutState } from "../clients/content";
-import { errorMessage } from "../client";
+import { ApiError, errorMessage } from "../client";
 import { contentProjectReadinessLabel } from "../contentProjectGates";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -54,7 +54,7 @@ async function waitForRun(runId: string): Promise<void> {
 }
 
 export function ContentScoutPage({ client = contentApi }: { client?: ContentClient }) {
-  useTitle("Content Scout");
+  useTitle("Content Engine");
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [view, setView] = useState<View>("shortlist");
   const [state, setState] = useState<ContentScoutState | null>(null);
@@ -85,7 +85,20 @@ export function ContentScoutPage({ client = contentApi }: { client?: ContentClie
       await refresh();
       setNotice(message);
     } catch (err) {
-      setError(errorMessage(err));
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        err.body &&
+        typeof err.body === "object"
+      ) {
+        const body = err.body as { readiness?: ContentScoutState["brandProfileScanReadiness"] };
+        if (body.readiness?.nextAction) {
+          setError(body.readiness.nextAction.label);
+          setState((current) =>
+            current ? { ...current, brandProfileScanReadiness: body.readiness! } : current,
+          );
+        } else setError(errorMessage(err));
+      } else setError(errorMessage(err));
     } finally {
       setBusy(false);
       selectedBeforeBusy.current?.focus();
@@ -105,7 +118,7 @@ export function ContentScoutPage({ client = contentApi }: { client?: ContentClie
         <div className="page-header">
           <div>
             <h1 ref={headingRef} tabIndex={-1}>
-              Content Scout
+              Content Engine
             </h1>
             <p role="status" className={error ? "field-error" : "muted"}>
               {error ?? "Loading Content Scout…"}
@@ -121,7 +134,7 @@ export function ContentScoutPage({ client = contentApi }: { client?: ContentClie
       <div className="page-header">
         <div>
           <h1 ref={headingRef} tabIndex={-1}>
-            Content Scout
+            Content Engine
           </h1>
           <p className="muted">
             Public Source Targets become a ranked shortlist; selecting an Opportunity starts one
@@ -144,6 +157,41 @@ export function ContentScoutPage({ client = contentApi }: { client?: ContentClie
           {busy ? "Working…" : "Scout now"}
         </button>
       </div>
+      <section className="card" aria-labelledby="content-engine-setup-heading">
+        <h2 id="content-engine-setup-heading">Content Engine setup</h2>
+        <ul className="setup-check-list">
+          <li>
+            {state.setup?.providerConfigured ? "Working" : "To do"} · Configure model access{" "}
+            {state.setup?.providerConfigured ? (
+              <span className="muted">— provider key is configured</span>
+            ) : (
+              <a href={state.setup?.nextAction?.href ?? "/onboarding?goal=meetings"}>
+                {state.setup?.nextAction?.label ?? "Open Guided Setup"}
+              </a>
+            )}
+          </li>
+          <li>
+            {state.setup?.brandVoiceAccepted ? "Working" : "To do"} · Create Brand Voice{" "}
+            {state.setup?.brandVoiceAccepted ? (
+              <span className="muted">— accepted revision is ready</span>
+            ) : (
+              <button type="button" onClick={() => setView("brand")}>
+                Create Brand Voice
+              </button>
+            )}
+          </li>
+          <li>
+            {state.setup?.sourceTargetCollectable ? "Working" : "To do"} · Add a source to monitor{" "}
+            {state.setup?.sourceTargetCollectable ? (
+              <span className="muted">— an active Available Source Adapter is collectable</span>
+            ) : (
+              <button type="button" onClick={() => setView("sources")}>
+                Add a source to monitor
+              </button>
+            )}
+          </li>
+        </ul>
+      </section>
 
       <nav className="subnav" aria-label="Content Scout views">
         {VIEWS.map((item) => (
@@ -929,7 +977,7 @@ function BrandView({ state, busy, act, client, retainFocus }: ViewProps) {
         className="card brand-scan-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (busy) return;
+          if (busy || state.brandProfileScanReadiness?.state === "setup-required") return;
           const button =
             event.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]');
           if (button) retainFocus(button);
@@ -939,6 +987,13 @@ function BrandView({ state, busy, act, client, retainFocus }: ViewProps) {
           }, "Brand Profile proposal is ready for review.");
         }}
       >
+        {state.brandProfileScanReadiness?.nextAction && (
+          <p role="status">
+            <a href={state.brandProfileScanReadiness.nextAction.href}>
+              {state.brandProfileScanReadiness.nextAction.label}
+            </a>
+          </p>
+        )}
         <label className="field">
           Company website URL
           <input
@@ -948,7 +1003,11 @@ function BrandView({ state, busy, act, client, retainFocus }: ViewProps) {
             required
           />
         </label>
-        <button className="primary" type="submit" aria-disabled={busy}>
+        <button
+          className="primary"
+          type="submit"
+          aria-disabled={busy || state.brandProfileScanReadiness?.state === "setup-required"}
+        >
           {busy ? "Scanning…" : revision ? "Rescan website" : "Scan website"}
         </button>
       </form>

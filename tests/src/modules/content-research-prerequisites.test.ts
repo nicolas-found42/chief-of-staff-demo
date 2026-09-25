@@ -65,9 +65,9 @@ function fixture() {
 describe("Content Research setup admission", () => {
   it("refuses manual and scheduled dependent work before Run creation", async () => {
     const f = fixture();
-    await expect(f.host.researchNow()).rejects.toThrow("Setup required");
-    await expect(f.host.backfillNow(30)).rejects.toThrow("Setup required");
-    await expect(f.host.discoverNow()).rejects.toThrow("Setup required");
+    await expect(f.host.researchNow()).rejects.toThrow("Configure provider and confirm owner");
+    await expect(f.host.backfillNow(30)).rejects.toThrow("Configure provider and confirm owner");
+    await expect(f.host.discoverNow()).rejects.toThrow("Configure provider and confirm owner");
     f.host.addPerson({ profileId: "synthetic-person" });
     await f.host.checkSchedules();
     expect(f.runs.list().runs).toEqual([]);

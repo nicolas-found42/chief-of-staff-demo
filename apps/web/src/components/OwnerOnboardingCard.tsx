@@ -78,7 +78,9 @@ export function OwnerOnboardingCard({
 
   return (
     <div className="card" role="group" aria-labelledby="group-owner-onboarding">
-      <h3 id="group-owner-onboarding">Owner Profile</h3>
+      <h3 id="group-owner-onboarding" tabIndex={-1}>
+        Owner Profile
+      </h3>
       {error ? <p role="alert">{error}</p> : null}
       {confirmed ? (
         <>

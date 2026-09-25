@@ -296,8 +296,8 @@ export function DebriefEmailPanel({
           {googleStatus && googleStatus.state !== "connected" && (
             <p>
               Gmail requires a connected Google account.{" "}
-              <Link to="/settings">Set up or reconnect Google</Link> before creating a draft.
-              Reading and local Task review remain available.
+              <Link to="/onboarding?goal=meetings">Set up or reconnect Google</Link> before creating
+              a draft. Reading and local Task review remain available.
             </p>
           )}
           {step === 1 ? (

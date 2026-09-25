@@ -82,3 +82,36 @@ test("a proposal that may repeat earlier work waits for the owner to say what it
   await expect(question).toHaveCount(0);
   await expect(row.getByRole("button", { name: "Create Task", exact: true })).toBeVisible();
 });
+
+test("pending backlog explains review-only automation and separates mentions from confirmed responsibility", async ({
+  page,
+  request,
+}) => {
+  const fixture = (await (await request.post("/api/test/meetings/overview-fixture")).json()) as {
+    recent: { id: string }[];
+  };
+  await confirmMeetingOwner(request);
+  await page.goto(`/meetings/${fixture.recent[3].id}?tab=debrief#action-items`);
+  const actions = page.getByRole("region", { name: "Action Items", exact: true });
+  const mentioned = actions
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("heading", { name: "Follow up tomorrow 4-1", exact: true }) });
+  await expect(mentioned).toContainText("Responsible Person: Nobody confirmed");
+  await expect(mentioned).toContainText("Bob is mentioned in the source");
+
+  const unnamed = actions
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("heading", { name: "Follow up tomorrow 4-0", exact: true }) });
+  await expect(mentioned.getByRole("button", { name: "Create Task", exact: true })).toBeVisible();
+  await mentioned.getByRole("button", { name: "Create Task", exact: true }).click();
+  await expect(mentioned.getByLabel("Responsible Person", { exact: true })).toHaveValue("");
+  await expect(mentioned.getByText("Auto-promotion declined:", { exact: false })).toBeVisible();
+
+  await expect(unnamed).toContainText("Responsible Person: Nobody confirmed");
+  await expect(unnamed).not.toContainText("mentioned in the source");
+  await expect(unnamed.getByText("Auto-promotion declined:", { exact: false })).toBeVisible();
+
+  await expect(mentioned).toContainText("reserved as review-only");
+  await expect(unnamed).toContainText("reserved as review-only");
+  await expect(actions.getByRole("note")).toHaveCount(0);
+});

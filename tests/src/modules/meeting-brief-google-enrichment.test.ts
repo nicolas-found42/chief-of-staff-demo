@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
 import {
   completeFixtureBrief,
@@ -89,11 +89,24 @@ function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefE
 let workspaceDir: string;
 let runs: Runs;
 let now: Date;
+let priorGoogleClientId: string | undefined;
+let priorGoogleClientSecret: string | undefined;
 
 beforeEach(() => {
+  priorGoogleClientId = process.env.GOOGLE_CLIENT_ID;
+  priorGoogleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  delete process.env.GOOGLE_CLIENT_ID;
+  delete process.env.GOOGLE_CLIENT_SECRET;
   workspaceDir = mkdtempSync(join(tmpdir(), "mbf-google-"));
   runs = openRuns(workspaceDir);
   now = new Date("2026-08-28T09:00:00.000Z");
+});
+
+afterEach(() => {
+  if (priorGoogleClientId === undefined) delete process.env.GOOGLE_CLIENT_ID;
+  else process.env.GOOGLE_CLIENT_ID = priorGoogleClientId;
+  if (priorGoogleClientSecret === undefined) delete process.env.GOOGLE_CLIENT_SECRET;
+  else process.env.GOOGLE_CLIENT_SECRET = priorGoogleClientSecret;
 });
 
 describe("Google enrichment via host seam — bounded, keyed, diagnostics, untrusted", () => {
@@ -761,17 +774,11 @@ describe("Google connection diagnoses without side effects", () => {
       await import("../../../apps/server/src/google/connection");
     const { ConfigStore } = await import("../../../apps/server/src/config");
     const workspace = mkdtempSync(join(tmpdir(), "google-check-"));
+    process.env.GOOGLE_CLIENT_ID = "id.apps";
+    process.env.GOOGLE_CLIENT_SECRET = "secret";
     const store = new ConfigStore(join(workspace, "config.json"));
     store.load();
-    store.update({
-      google: {
-        clientId: "id.apps",
-        clientSecret: "secret",
-        refreshToken: "rt",
-        lastConnectedAt: new Date().toISOString(),
-        hasExpiredBefore: false,
-      },
-    } as any);
+    store.setGoogleRefreshToken("rt");
     // Mock surfaceProbe to throw different errors for gmail-read vs calendar vs drive
     const probe = async (_cfg: any, _port: number, surface: any) => {
       if (surface === "gmail-read") {

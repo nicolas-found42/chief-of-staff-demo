@@ -32,14 +32,17 @@ describe("the Shell's connection notice", () => {
     expect(connectionNotice(status("unconfigured"))).toEqual({
       text: "Google is not set up. Gmail and Google Tasks need a connection; local Tasks remain available.",
       action: "Set up Google",
+      href: "/onboarding?goal=meetings",
     });
     expect(connectionNotice(status("disconnected"))).toEqual({
       text: "Google is not signed in. Gmail and Google Tasks need a connection; local Tasks remain available.",
       action: "Sign in with Google",
+      href: "/onboarding?goal=meetings",
     });
     expect(connectionNotice(status("expired"))).toEqual({
       text: "The saved Google sign-in has expired as expected. Reconnect for Gmail and Google Tasks; local Tasks remain available.",
       action: "Reconnect Google",
+      href: "/onboarding?goal=meetings",
     });
   });
 
@@ -59,6 +62,7 @@ describe("the Shell's connection notice", () => {
       status("connected", { lastConnectedAt: inHours(-6), expiresAbout: inHours(12) }),
     );
     expect(notice?.action).toBe("Sign in with Google");
+    expect(notice?.href).toBe("/onboarding?goal=meetings");
     expect(notice?.text).toMatch(/^You signed in today, so Google will probably ask again around /);
   });
 

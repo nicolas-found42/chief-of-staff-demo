@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { PersonProfile } from "@chief-of-staff-demo/shared";
 import { registerPeopleApi } from "../../../apps/server/src/api/people";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
@@ -157,15 +158,34 @@ describe("POST /api/people/lookup/accept", () => {
     expect(again.json<{ existing: boolean }>().existing).toBe(true);
   });
 
-  it("records the submitted full name on the accepted profile (UX audit F5)", async () => {
+  it("accepts a typed LinkedIn identity as revision 1 without recording a correction", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/people/lookup/accept",
-      payload: { identifier: "ada@example.com", fullName: "Ada Lovelace" },
+      payload: {
+        identifier: "https://www.linkedin.com/in/satyanadella/",
+        fullName: "Satya Nadella",
+      },
     });
     expect(response.statusCode).toBe(200);
-    const { profile } = response.json<{ profile: { id: string } }>();
-    expect(store.get(profile.id)?.fullName).toBe("Ada Lovelace");
+    const accepted = response.json<{ profile: PersonProfile }>().profile;
+    expect(accepted).toMatchObject({
+      revision: 1,
+      fullName: "Satya Nadella",
+      profileUrls: ["https://www.linkedin.com/in/satyanadella"],
+      handles: { linkedin: ["satyanadella"] },
+    });
+
+    const revisions = await app.inject({
+      method: "GET",
+      url: `/api/people/${accepted.id}/revisions`,
+    });
+    expect(revisions.json<PersonProfile[]>()).toEqual([accepted]);
+    const invalidations = await app.inject({
+      method: "GET",
+      url: `/api/people/${accepted.id}/invalidations`,
+    });
+    expect(invalidations.json()).toEqual([]);
   });
 
   it("names a reused identity that was first accepted unnamed (UX audit F5)", async () => {

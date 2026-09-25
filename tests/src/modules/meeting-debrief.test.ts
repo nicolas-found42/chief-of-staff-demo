@@ -485,8 +485,10 @@ describe("Meeting Debrief writes nothing outward (#139)", () => {
       if (raw) {
         const result = JSON.parse(raw) as Record<string, unknown>;
         expect(Object.keys(result).sort()).toEqual([
+          "candidateAliases",
           "debrief",
           "extractedAt",
+          "sections",
           "transcriptId",
           "version",
         ]);

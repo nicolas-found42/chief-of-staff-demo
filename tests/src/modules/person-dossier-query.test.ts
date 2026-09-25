@@ -6,6 +6,7 @@ import { PersonDossierQueries } from "../../../apps/server/src/person-profile/do
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
+import { publishCanonicalDossier } from "./person-dossier-fixture.js";
 
 test("workspace intersections distinguish demonstrated work from self-report and include sparse coverage", () => {
   const root = mkdtempSync(join(tmpdir(), "dossier-query-"));
@@ -52,7 +53,7 @@ test("workspace intersections distinguish demonstrated work from self-report and
         supersedes: [],
         changeReason: null,
       };
-      dossiers.publish(person.id, 0, {
+      publishCanonicalDossier(dossiers, person.id, 0, {
         claims: [claim],
         works: demonstrated
           ? [
@@ -89,7 +90,6 @@ test("workspace intersections distinguish demonstrated work from self-report and
           claimIds: ["c"],
         })),
         connections: [],
-        sections: [],
       });
     }
     const queries = new PersonDossierQueries({ people, dossiers });
@@ -138,7 +138,7 @@ test("category queries keep undocumented-contribution work out of the demonstrat
       access: "retrieved",
       acquisition: "website",
     });
-    dossiers.publish(maya.id, 0, {
+    publishCanonicalDossier(dossiers, maya.id, 0, {
       claims: [
         {
           id: "team",
@@ -184,7 +184,6 @@ test("category queries keep undocumented-contribution work out of the demonstrat
         },
       ],
       connections: [],
-      sections: [],
     });
     const result = new PersonDossierQueries({ people, dossiers }).search({
       categories: ["deployment"],
@@ -223,7 +222,7 @@ test("observed activity and repeated collaboration count distinct work rather th
       access: "retrieved",
       acquisition: "website",
     });
-    dossiers.publish(person.id, 0, {
+    publishCanonicalDossier(dossiers, person.id, 0, {
       claims: [
         {
           id: "c",
@@ -269,7 +268,6 @@ test("observed activity and repeated collaboration count distinct work rather th
         },
       ],
       expertise: [],
-      sections: [],
     });
     const analysis = new PersonDossierQueries({ people, dossiers }).analyse(person.id, "public")!;
     expect(analysis.activity).toEqual([{ period: "2024-02", kind: "paper", count: 2 }]);
@@ -324,7 +322,7 @@ test("connection paths use dated supported edges and disappear when an intermedi
         access: "retrieved",
         acquisition: "website",
       });
-      dossiers.publish(from.id, 0, {
+      publishCanonicalDossier(dossiers, from.id, 0, {
         claims: [
           {
             id: "c",
@@ -343,7 +341,6 @@ test("connection paths use dated supported edges and disappear when an intermedi
         ],
         works: [],
         expertise: [],
-        sections: [],
         connections: [
           {
             id: "edge",

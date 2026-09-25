@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import {
   BenchmarkArmStatsSchema,
   BenchmarkReportSchema,
@@ -12,6 +12,19 @@ import {
 } from "@chief-of-staff-demo/shared";
 import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus";
 import { runBenchmarkCli } from "../../../scripts/person-research-benchmark.mjs";
+
+let benchmarkConfigRoot = "";
+let benchmarkConfig = "";
+
+beforeAll(() => {
+  benchmarkConfigRoot = mkdtempSync(join(tmpdir(), "benchmark-default-config-"));
+  benchmarkConfig = join(benchmarkConfigRoot, "config.json");
+  writeFileSync(benchmarkConfig, JSON.stringify({ provider: "mock", model: "mock" }));
+});
+
+afterAll(() => {
+  rmSync(benchmarkConfigRoot, { recursive: true, force: true });
+});
 
 it("the CLI entrypoint executes as a child process and prints usage help", () => {
   const result = spawnSync(
@@ -27,7 +40,14 @@ it("the CLI entrypoint executes as a child process and prints usage help", () =>
 it("rejects unknown requested people without writing a successful empty report", async () => {
   const output = mkdtempSync(join(tmpdir(), "benchmark-invalid-selection-"));
   try {
-    const result = await runBenchmarkCli(["--people", "definitely-unknown", "--out", output]);
+    const result = await runBenchmarkCli([
+      "--config",
+      benchmarkConfig,
+      "--people",
+      "definitely-unknown",
+      "--out",
+      output,
+    ]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Unknown Benchmark Person: definitely-unknown");
     expect(readdirSync(output)).toEqual([]);
@@ -41,7 +61,14 @@ it("refuses a rejected corpus instead of evaluating its remaining entries", asyn
   const output = mkdtempSync(join(tmpdir(), "benchmark-invalid-output-"));
   try {
     writeFileSync(join(corpus, "broken.json"), "{}");
-    const result = await runBenchmarkCli(["--corpus", corpus, "--out", output]);
+    const result = await runBenchmarkCli([
+      "--config",
+      benchmarkConfig,
+      "--corpus",
+      corpus,
+      "--out",
+      output,
+    ]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Benchmark corpus contains rejected entries");
     expect(readdirSync(output)).toEqual([]);
@@ -61,7 +88,15 @@ it.each([
   const corpus = mkdtempSync(join(tmpdir(), "benchmark-empty-corpus-"));
   const output = mkdtempSync(join(tmpdir(), "benchmark-empty-output-"));
   try {
-    const result = await runBenchmarkCli(["--corpus", corpus, "--out", output, ...args]);
+    const result = await runBenchmarkCli([
+      "--config",
+      benchmarkConfig,
+      "--corpus",
+      corpus,
+      "--out",
+      output,
+      ...args,
+    ]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(error);
     expect(readdirSync(output)).toEqual([]);
@@ -172,10 +207,7 @@ it("retains public evidence without credentials and produces a separately reasse
   const output = mkdtempSync(join(tmpdir(), "benchmark-retained-evidence-"));
   try {
     const config = join(output, "config.json");
-    writeFileSync(
-      config,
-      JSON.stringify({ provider: "mock", model: "mock", apiKey: "fixture-secret-never-copy" }),
-    );
+    writeFileSync(config, JSON.stringify({ provider: "mock", model: "mock" }));
     const result = await runBenchmarkCli([
       "--config",
       config,
@@ -185,16 +217,8 @@ it("retains public evidence without credentials and produces a separately reasse
       "--out",
       output,
     ]);
-    expect(result.status).toBe(1); // Mock judging fails honestly, evidence remains usable.
+    expect(result.status, result.stderr).toBe(1); // Mock judging fails honestly, evidence remains usable.
     const files = readdirSync(output);
-    const evidence = join(
-      output,
-      files.find((file) => file.endsWith(".evidence"))!,
-    );
-    expect(readdirSync(evidence)).not.toContain("config.json");
-    const manifest = JSON.parse(readFileSync(join(evidence, "snapshot-manifest.json"), "utf8")) as {
-      completedOperationIds: string[];
-    };
     const reportFile = files.find(
       (file) =>
         file.endsWith(".json") &&
@@ -205,6 +229,16 @@ it("retains public evidence without credentials and produces a separately reasse
     const report = BenchmarkReportSchema.parse(
       JSON.parse(readFileSync(join(output, reportFile), "utf8")),
     );
+    expect(report.statusDetail).not.toContain("Evidence snapshot failed");
+    expect(result.stderr).not.toContain("Evidence snapshot failed");
+    const evidence = join(
+      output,
+      files.find((file) => file.endsWith(".evidence"))!,
+    );
+    expect(readdirSync(evidence)).not.toContain("config.json");
+    const manifest = JSON.parse(readFileSync(join(evidence, "snapshot-manifest.json"), "utf8")) as {
+      completedOperationIds: string[];
+    };
     expect(report.provenance.researchSettings.operationConcurrency).toBe(1);
     expect(report.evidenceBundleHash).toMatch(/^[a-f0-9]{64}$/);
     const personFile = files.find((file) => file.endsWith(".person.json"))!;
@@ -234,7 +268,7 @@ it("retains public evidence without credentials and produces a separately reasse
       join(output, "reassessed"),
     ]);
     expect(reassessed.status, reassessed.stderr).toBe(1);
-    expect(reassessed.stdout).toContain("no research was repeated");
+    expect(reassessed.stdout, reassessed.stderr).toContain("no research was repeated");
     const reassessedPerson = readdirSync(join(output, "reassessed")).find((file) =>
       file.endsWith(".person.json"),
     )!;

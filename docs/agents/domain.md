@@ -39,6 +39,7 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 
 ## Flag ADR conflicts
 
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
+If your output contradicts an existing ADR, surface it explicitly rather than silently overriding.
+ADR-0104 amends ADR-0007's credential custody; read both when changing Google setup:
 
-> _Contradicts ADR-0007 (per-user Google OAuth client), but worth reopening because…_
+> _Superseded custody decision: ADR-0104 (installation-owned credentials and owner consent)._

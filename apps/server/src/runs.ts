@@ -234,6 +234,9 @@ function toSummary(meta: RunMeta): RunSummary {
     skipReason: meta.skipReason,
     summary: meta.summary ?? null,
     ...(meta.connectionState ? { connectionState: meta.connectionState } : {}),
+    ...(meta.status === "failed"
+      ? { failedStage: meta.failedStage, failureHint: meta.failureHint }
+      : {}),
   };
 }
 

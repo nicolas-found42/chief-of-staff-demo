@@ -3,6 +3,7 @@ import type {
   TaskCutoverReceipt,
   RedactedConfig,
   GoogleStatus,
+  InstallationStatus,
   SetupCheck,
   DriveIntakeStatus,
   TranscriptCatalogStatus,
@@ -23,6 +24,7 @@ import { request, requestText } from "../client";
 
 export interface ConfigPayload {
   config: RedactedConfig;
+  installation: InstallationStatus;
   defaults: Record<string, string>;
   /** Whether the mock provider exists in this process: tests and explicit
    *  demo mode only (issue #198). The UI offers mock exactly when this holds. */
@@ -183,26 +185,53 @@ export const onboardingApi = {
 
 type MigrationState = "fresh" | "required" | "completed";
 
-interface OnboardingStep {
-  id: string;
+type OnboardingStepId =
+  | "provider-enablement"
+  | "owner-profile"
+  | "brand-voice"
+  | "internal-domains"
+  | "transcript-polling"
+  | "sheets-destinations"
+  | "workflow-bundles"
+  | "meeting-provider"
+  | "meeting-google"
+  | "meeting-folder"
+  | "meeting-polling"
+  | "meeting-consent";
+
+export interface OnboardingStep {
+  id: OnboardingStepId;
   label: string;
   done: boolean;
   href: string;
 }
 
 export interface OnboardingStatus {
+  goal: "general" | "meetings";
   complete: boolean;
   steps: OnboardingStep[];
+  otherSetup?: { complete: boolean; steps: OnboardingStep[] };
+  guidedSetup?: {
+    stages: {
+      id: string;
+      label: string;
+      state: "confirmed" | "to-do" | "operator-check" | "waiting" | "unavailable";
+      href: string | null;
+    }[];
+  };
 }
 
 export interface MigrationStatus {
   state: MigrationState;
+  origin: "pristine" | "migrated";
+  kind?: "canonical-tasks" | "legacy-reset";
   onboarding: OnboardingStatus;
 }
 
 export const migrationApi = {
   /** Always mounted, never gated — the boot gate itself reads it. */
-  status: () => request<MigrationStatus>("/api/migration/status"),
+  status: (goal?: "general" | "meetings") =>
+    request<MigrationStatus>(`/api/migration/status${goal ? `?goal=${goal}` : ""}`),
   inventory: () => request<TaskCutoverPreview>("/api/migration/inventory"),
   confirm: (typedConfirmation: string, preview: TaskCutoverPreview) =>
     request<{ receipt: TaskCutoverReceipt }>("/api/migration/confirm", {

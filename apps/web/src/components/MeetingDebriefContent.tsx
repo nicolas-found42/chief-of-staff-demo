@@ -250,7 +250,10 @@ export function MeetingDebriefContent({
       {reviewOnMeeting ? (
         <section id="action-items" aria-labelledby="historical-actions-heading">
           <h3 id="historical-actions-heading">Action Items</h3>
-          <p>Original extracted proposals · current review state is on the source Meeting.</p>
+          <p>
+            This readable Debrief lists the original extraction. The separately retained canonical
+            proposals keep their review state and are available from the source context.
+          </p>
           <ul>
             {extraction.actionItems.map((item, index) => (
               <li key={index}>
@@ -270,9 +273,10 @@ export function MeetingDebriefContent({
             ))}
           </ul>
           <p>
-            Review proposals with their source Meeting. Existing decisions and Tasks are retained.
+            Review retained proposals in their run context. Existing decisions and Tasks are
+            retained.
           </p>
-          <Link to={`/meetings/recovery/${encodeURIComponent(detail.runId)}`}>
+          <Link to={`/meetings/recovery/${encodeURIComponent(detail.runId)}?retained=1`}>
             Review on source Meeting
           </Link>
         </section>

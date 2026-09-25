@@ -22,11 +22,8 @@ if (!process.env.MIGRATION_TEST_WORKSPACE_DIR) {
       {
         provider: "mock",
         model: "",
-        apiKey: "",
         tasklistName: "Meeting Followups",
         google: {
-          clientId: "",
-          clientSecret: "",
           refreshToken: null,
           lastConnectedAt: null,
           hasExpiredBefore: false,

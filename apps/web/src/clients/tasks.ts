@@ -83,20 +83,12 @@ export interface AsanaDestination {
 export interface ActionItemPolicySetting {
   policy: ActionItemPolicy;
   externalDestination: string | null;
-  /**
-   * Automatic promotion's own record (#360). Reported beside the preference
-   * because the two are independent: a saved preference never lifts the
-   * release restriction, and a release never resumes a preference saved
-   * before it. `reason` is what the surface shows when automation is off.
-   */
+  /** Public effective authorization and availability; never release evidence. */
   automaticPromotion: AutomaticPromotionStatus;
 }
 
-/** One automatic-promotion act: record a release, enable, or disable (#360). */
-export type AutomaticPromotionAction =
-  | { action: "release"; evidence: { reference: string; checksum: string } }
-  | { action: "enable" }
-  | { action: "disable" };
+/** The owner acts on automatic promotion only by enabling or disabling it. */
+export type AutomaticPromotionAction = { action: "enable" | "disable" };
 
 /** What Check connection answers: who the token belongs to and what it reaches. */
 export interface AsanaCheckConnection {
@@ -180,7 +172,7 @@ export const tasksApi = {
       state?: ActionItemState;
       debriefRunId?: string;
       meetingId?: string;
-      source?: "unavailable";
+      source?: "available" | "unavailable";
     } = {},
   ) => {
     const params = new URLSearchParams();
@@ -247,12 +239,9 @@ export const tasksApi = {
       },
     ),
   actionItemPolicy: () => request<ActionItemPolicySetting>("/api/action-item-policy"),
-  /* The confirmation travels in the request, like permanent deletion's does:
-     the server refuses automatic outbound writes nobody agreed to, and this
-     is the surface saying the owner agreed. */
-  /* The release records the retained evidence it stands on, and enablement is
-     available only once one is recorded: the surface can ask for both, never
-     assume either. */
+  /* Confirmation travels in the request, like permanent deletion's: the
+     server refuses automatic outward writes nobody agreed to. Release
+     attestation is deliberately absent from this ordinary browser client. */
   setAutomaticPromotion: (body: AutomaticPromotionAction, confirmedExternalWrites = false) =>
     request<ActionItemPolicySetting>("/api/action-item-promotion", {
       method: "PUT",

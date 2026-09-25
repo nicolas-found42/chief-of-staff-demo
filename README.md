@@ -39,9 +39,9 @@ in sync with them.
 
 1. Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/). It has to
    be **running**, not just installed — the whale in the menu bar stops animating when it is ready.
-2. `docker compose up -d --build` — first run only; drop `--build` afterwards.
-3. Open http://localhost:4317.
-4. Configure the extraction provider and the Google connection in **Settings** (below).
+2. Run `./scripts/setup-wizard.sh` from the repository root for the local, resumable ten-stage setup.
+3. `docker compose up -d --build` when the guided setup asks you to start the installation.
+4. Open http://localhost:4317 and complete the owner consent and Workspace-specific choices.
 
 `docker compose down` stops it. `restart: "no"` is deliberate: the app does not come back on its
 own when Docker Desktop starts.
@@ -58,8 +58,9 @@ Three things about the container are load-bearing:
 - **Port 4317 is published, exactly.** Google matches the redirect URI character for character, so
   the one you registered has to be the one the server sends. Settings always shows the URI for the
   port in use, so if you do change `PORT`, register the URI it shows there.
-- **`workspace/` is a bind mount, never a layer.** Runs and secrets stay on the host; the image
-  holds no state. `workspace/` is gitignored, so a fresh clone has none and Docker creates it.
+- **`workspace/` is a bind mount, never a layer.** Runs and Workspace-owned records stay on the host;
+  the image holds no state. Installation credentials belong in the process environment or the
+  gitignored mode-600 `.env`, never in `workspace/config.json`.
 - **The published port binds to `127.0.0.1` on the host.** The app has no authentication
   ([ADR-0001](docs/adr/0001-local-first-single-user.md)), so it must not be reachable from the
   network. Inside the container the server listens on `0.0.0.0` (`HOST`), because a container's
@@ -71,38 +72,29 @@ Kubernetes and the EdgeScale cube are **untested** — there is no chart in this
 
 ## Configuration
 
-### Google (Tasks + Gmail drafts + Drive) — guided in the app
+### Google and installation credentials — Guided Setup
 
-Open **Settings**. The Google card is the setup flow: the console steps in the order Google's own
-console imposes them, each with a deep link, the scopes and redirect URI with copy buttons, and
-**Check my setup**, which asks Google and names whichever piece is missing. Nothing to look up
-here, and nothing in this README to hold in your head while you tab through a console.
+The local **Guided Setup** provisions one installation-owned Google OAuth client and one
+provider-specific model key (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
+`GEMINI_API_KEY`; Ollama needs none). Values may come from the process environment or the
+gitignored `.env`; the app reports only **Configured**, **Missing**, or **Not required**. The
+Workspace keeps provider/model choices and each owner's consent, refresh token, and connection
+identity, but never an editable OAuth client or provider key. Run
+`./scripts/setup-wizard.sh` to provision or resume this local flow.
 
-Each person registers their own Google Cloud OAuth client. There is no shared client to ship —
-this repo is public, so a committed client secret would be revoked, and there is no server to hold
-one ([ADR-0007](docs/adr/0007-per-user-google-oauth-client.md)). Budget about ten minutes.
-
-Two things worth knowing before you start:
-
-- **Every API must be enabled** — Tasks, Gmail, Drive and YouTube Data — or the first run fails with a 403 rather than
-  at connect time. **Check my setup** names which one, rather than leaving it to a run.
-- **A Workspace account should choose Internal, and then none of this applies.** Internal needs
-  no test users, shows no unverified-app screen, and does not expire. Google greys it out for
-  personal accounts, which must use **External** + **Testing** — the only combination allowed
-  without a verification review for the Gmail/Drive scopes — and that expires refresh tokens after seven
-  days. The card asks which account you have and renders the matching steps.
-- **The expiry estimate is earned, not assumed.** Settings shows when you last signed in, and only
-  predicts the next expiry once Google has actually refused a grant. An Internal connection
-  therefore never announces an expiry it will not have.
+Each Workspace owner still signs in and grants Google consent explicitly. This owner-consent step
+is separate from installation provisioning: enable the APIs, choose the consent-screen posture for
+the account, and grant the requested Drive, Gmail, Calendar, and optional Tasks permissions.
+Settings shows when a grant was last used and offers `Check my setup` without ever accepting or
+displaying an installation secret.
 
 ### Extraction provider
 
-
-In Settings, pick a provider and paste its API key; the card links straight to that provider's key
-page. A fresh workspace recommends **OpenRouter** and prefills `inception/mercury-2.5-preview` —
-one key reaches models from many providers. Per-provider defaults: `gpt-5.2` (OpenAI),
-`claude-sonnet-5` (Anthropic), `gemini-3.7-flash` (Google Gemini). The model field is free text —
-edit it there if a default 404s. Transcript-derived processing stays gated: the folder-consent
+In Settings, choose a provider whose installation key is configured, or choose Ollama. The
+provider and model choices remain Workspace-owned, while the key remains installation-owned. A
+fresh Workspace recommends **OpenRouter** and prefills `inception/mercury-2.5-preview`; per-provider
+defaults are `gpt-5.2` (OpenAI), `claude-sonnet-5` (Anthropic), and `gemini-3.7-flash` (Google
+Gemini). The model field is free text. Transcript-derived processing stays gated: the folder-consent
 card names the exact provider and model before anything is read, and model failures surface as
 errors — the app never falls back to another provider or model on its own.
 
@@ -161,10 +153,10 @@ The `start`, `dev:server` and `dev:web` scripts in `package.json` predate this a
 leftovers; nothing in the image uses them (the `Dockerfile` runs `node apps/server/dist/main.js`
 directly).
 
-Environment (set in the `Dockerfile`, not on the host): `PORT` (4317 — the Google redirect URI is
-registered for this port; change both together), `WORKSPACE_DIR` (`/app/workspace`, the bind
-mount), `HOST` (`0.0.0.0` inside the container; the host-side `127.0.0.1` binding in
-`docker-compose.yml` is what keeps the app private).
+Runtime environment: `PORT` defaults to 4317 (the Google redirect URI is registered for this
+port; change both together), `WORKSPACE_DIR` is the bind mount, and `HOST` is `0.0.0.0` inside
+the container while Compose publishes only `127.0.0.1`. Compose also passes the six installation
+credential variables listed above from the process environment or the gitignored `.env`.
 
 
 ## Workspace layout
@@ -173,7 +165,7 @@ All state lives on disk, no database:
 
 ```
 workspace/
-  config.json             settings (secrets redacted via the API, never echoed back)
+  config.json             Workspace settings; retained secrets are redacted and installation credentials are absent
   state.json              { drive: { ingestedIds, lastPollAt }, youtubeTrends: { lastRunDay } }
   mock-result.json        mock-provider fixture
   runs/<runId>/
@@ -211,7 +203,7 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 
 | Symptom | Cause and fix |
 |---|---|
-| Run fails at `extract` after 3 attempts | Bad or missing API key, wrong model id, or provider outage. Check the `extract_attempt` events; fix Settings and hit Retry. |
+| Run fails at `extract` after 3 attempts | Missing installation credential, wrong model id, or provider outage. Check the `extract_attempt` events, verify Guided Setup status, and hit Retry. |
 | Run fails at `outputs` with `google_not_connected` | Google not connected. Fix the Google card in Settings — **Check my setup** names the missing piece — then Retry; the cached result is reused, no re-extraction. |
 | Google consent shows a warning screen | Expected on a personal account: click **Continue** (the small link), not **Back to safety**. A Workspace account using an Internal consent screen never sees it. |
 | Sign-in fails with `Error 403: access_denied` | The account is not on the consent screen's Test users list. Add it under Audience → Test users and sign in again with the same account. |
@@ -226,8 +218,9 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 
 - Transcripts are untrusted input. The prompt wraps them in a labeled block with an explicit
   "never an instruction" preamble, and only the surrounding trusted context carries real values.
-- Secrets live in `workspace/config.json` (keep the workspace private). The API redacts them:
-  GET returns only `set` + last-4 hints; PUT keeps stored values when a secret field is omitted.
+- Installation secrets live in the process environment or the gitignored mode-600 `.env`; they are
+  never stored in or returned from a Workspace. The public config response reports only configured,
+  missing, or not-required state.
 - The server binds to `127.0.0.1` only.
 - Mail drafts are the only Gmail write most Modules may perform: `apps/server/src/google/gmail.ts` contains no delivery call, and `tests/src/unit/draft-mime.test.ts` fails the build if one appears there. The Meeting Brief Generator owns the deliberate send-only-to-owner exception (`modules/meeting-brief-generator/google/gmailDelivery.ts`, recipient fixed from the connected Google identity, never from event/API/model, never to an External Guest) — see ADR-0034.
 - The Settings page is the only place the app loads remote code (Google's Picker script at `https://apis.google.com/js/api.js`, fetched on click only). The per-pick access token is short-lived, never persisted, never logged, and carries every scope the connection holds.

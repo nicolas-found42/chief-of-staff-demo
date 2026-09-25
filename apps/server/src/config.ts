@@ -11,6 +11,46 @@ import {
   DEFAULT_OLLAMA_BASE_URL,
 } from "@chief-of-staff-demo/shared";
 import { writeJsonVerifiedSync } from "./engine/commit.js";
+import { installationGoogleClient, installationProviderKey } from "./installation.js";
+
+function assertCleanWorkspaceDocument(source: Record<string, unknown>): void {
+  const google =
+    source.google && typeof source.google === "object" && !Array.isArray(source.google)
+      ? (source.google as Record<string, unknown>)
+      : null;
+  if (
+    Object.hasOwn(source, "apiKey") ||
+    Object.hasOwn(google ?? {}, "clientId") ||
+    Object.hasOwn(google ?? {}, "clientSecret")
+  ) {
+    throw new Error("legacy-installation-credentials-require-explicit-migration");
+  }
+}
+
+function withoutInstallationFields(config: AppConfig): Record<string, unknown> {
+  const document = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+  delete document.apiKey;
+  if (document.google && typeof document.google === "object") {
+    const google = document.google as Record<string, unknown>;
+    delete google.clientId;
+    delete google.clientSecret;
+  }
+  return document;
+}
+
+function effectiveConfig(config: AppConfig): AppConfig {
+  const client = installationGoogleClient();
+  const providerKey = installationProviderKey(config.provider);
+  return {
+    ...config,
+    apiKey: providerKey,
+    google: {
+      ...config.google,
+      clientId: client.clientId,
+      clientSecret: client.clientSecret,
+    },
+  };
+}
 
 /** Recursively merge `patch` over `base`; missing keys keep the base value. */
 function deepMerge(base: unknown, patch: unknown): unknown {
@@ -198,7 +238,12 @@ export class ConfigStore {
         );
       }
     }
-    const merged = deepMerge(defaultConfig(), stored) as Record<string, unknown>;
+    const source =
+      stored && typeof stored === "object" && !Array.isArray(stored)
+        ? (stored as Record<string, unknown>)
+        : {};
+    assertCleanWorkspaceDocument(source);
+    const merged = deepMerge(defaultConfig(), source) as Record<string, unknown>;
     // Old configs had fireflies/watch — strictObject would reject them; drop before parse.
     // The consolidation (#133) retired the content-scout Notion calendar block the same way.
     delete merged.fireflies;
@@ -218,7 +263,7 @@ export class ConfigStore {
       delete (modules["content-scout"] as Record<string, unknown>).notion;
     }
     const parsed = ConfigSchema.parse(merged);
-    this.config = normalize(parsed);
+    this.config = effectiveConfig(normalize(parsed));
     if (options.persist ?? this.persistOnLoad) {
       this.persist();
     }
@@ -229,6 +274,7 @@ export class ConfigStore {
     if (!this.config) {
       throw new Error("ConfigStore.load() must run before get()");
     }
+    this.config = effectiveConfig(this.config);
     return this.config;
   }
 
@@ -245,10 +291,10 @@ export class ConfigStore {
     };
   }
 
-  /** Merge a partial update. Absent secret fields keep their stored values. */
+  /** Merge a Workspace-only partial update; installation credentials never enter here. */
   update(patch: ConfigUpdate): AppConfig {
     const merged = deepMerge(this.get(), patch);
-    this.config = normalize(ConfigSchema.parse(merged));
+    this.config = effectiveConfig(normalize(ConfigSchema.parse(merged)));
     this.persist();
     return this.config;
   }
@@ -366,7 +412,7 @@ export class ConfigStore {
    * configuration must never be readable as a valid one.
    */
   private persist(): void {
-    writeJsonVerifiedSync(this.configFile, this.get());
+    writeJsonVerifiedSync(this.configFile, withoutInstallationFields(this.get()));
   }
 }
 
@@ -380,11 +426,6 @@ export function redactConfig(config: AppConfig): RedactedConfig {
     model: config.model,
     models: config.models ?? {},
     tasklistName: config.tasklistName,
-    apiKey: secretHint(config.apiKey),
-    google: {
-      clientId: config.google.clientId,
-      clientSecret: secretHint(config.google.clientSecret),
-    },
     notion: {
       token: secretHint(config.notion.token),
       lastVerifiedAt: config.notion.lastVerifiedAt,

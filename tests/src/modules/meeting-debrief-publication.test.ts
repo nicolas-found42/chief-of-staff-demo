@@ -7,7 +7,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEBRIEF_SECTIONS,
   MEETING_DEBRIEF_MODULE_ID,
+  validatedDebriefSections,
   type DebriefSectionAvailability,
+  type DebriefSectionName,
   type MeetingDebriefDetail,
   type MeetingDebriefExtraction,
   type MeetingDebriefReviewState,
@@ -26,6 +28,7 @@ import type {
 } from "../../../apps/server/src/modules/meeting-debrief/module";
 import {
   completionFailures,
+  finalizeDebriefRevision,
   reconcileDebrief,
 } from "../../../apps/server/src/modules/meeting-debrief/publication";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
@@ -93,6 +96,27 @@ function extractionWith(
   };
 }
 
+/**
+ * One produced revision under the production finalizer. Controlled adapter
+ * tests no longer hand-write a partial produced object: they produce through
+ * the same contract real producers use, then override only the core they
+ * inject.
+ */
+function producedRevision(
+  record: TranscriptRecord,
+  overrides: Partial<Parameters<typeof finalizeDebriefRevision>[0]> = {},
+) {
+  return finalizeDebriefRevision({
+    transcriptId: record.id,
+    record,
+    identity: { mentions: [], decisions: [], organizations: [] },
+    extraction: extractionWith(),
+    sections: validatedDebriefSections(),
+    finishedAt: new Date(BASE_TIME).toISOString(),
+    ...overrides,
+  });
+}
+
 type Materializer = NonNullable<MeetingDebriefHostDeps["materializeActionItems"]>;
 type Handover = Parameters<Materializer>[0];
 
@@ -111,6 +135,8 @@ interface Harness {
   /** What the provider answers with next; generation-numbered by default. */
   answerWith: (extraction: MeetingDebriefExtraction) => void;
   setPolicy: (policy: "stage-all" | "auto-create-mine" | null) => void;
+  failSections: (names: readonly DebriefSectionName[]) => void;
+  clearSectionFailures: () => void;
 }
 
 function makeHarness(): Harness {
@@ -124,6 +150,7 @@ function makeHarness(): Harness {
   let dropNext = false;
   let extraction = extractionWith();
   let policy: "stage-all" | "auto-create-mine" | null = null;
+  let sectionFailures: Set<DebriefSectionName> = new Set();
 
   const catalogReader: DebriefCatalogReader = { getTranscript: (id) => catalog.get(id) ?? null };
   const identityReader: DebriefIdentityReviewReader = {
@@ -173,6 +200,12 @@ function makeHarness(): Harness {
     runs,
     catalog: catalogReader,
     identity: identityReader,
+    sections: () =>
+      DEBRIEF_SECTIONS.map((name) => ({
+        name,
+        state: sectionFailures.has(name) ? ("failed" as const) : ("validated" as const),
+        reason: sectionFailures.has(name) ? "the section provider refused this request" : null,
+      })),
     materializeActionItems: materialize,
     now: () => new Date(BASE_TIME),
     policy: () => ({
@@ -217,6 +250,12 @@ function makeHarness(): Harness {
     },
     setPolicy: (next) => {
       policy = next;
+    },
+    failSections: (names) => {
+      sectionFailures = new Set(names);
+    },
+    clearSectionFailures: () => {
+      sectionFailures = new Set();
     },
   };
 }
@@ -445,6 +484,202 @@ describe("Debrief publication (#358)", () => {
   });
 });
 
+describe("checked Debrief finalization parity (#493)", () => {
+  it("gives complete injected and model-backed extractions the same checked contract", async () => {
+    const injectedRun = await start(makeRecord({ id: "drive_final_injected_r1" }));
+    const injected = readJson<MeetingDebriefRunResult>(injectedRun, "result.json");
+    const injectedDetail = (
+      await h.app.inject(`/api/meeting-debrief/${injectedRun}`)
+    ).json<MeetingDebriefDetail>();
+
+    const workspaceDir = mkdtempSync(join(tmpdir(), "debrief-final-model-"));
+    const runs = openRuns(workspaceDir);
+    const modelRecord = makeRecord({ id: "drive_final_model_r1" });
+    const model = accountedHandoffModel({
+      ...extractionWith(),
+      actionItems: [
+        {
+          title: "Follow up on the billing fix",
+          evidence: "Bob: I will own the follow-up.",
+          owner: "Alice",
+          handoff: operationalHandoff({
+            evidence: [
+              { quote: "I will share the plan tomorrow", speaker: "Alice", timestamp: "00:00" },
+            ],
+          }),
+        },
+      ],
+    });
+    const host = new MeetingDebriefHost({
+      runs,
+      catalog: { getTranscript: (id) => (id === modelRecord.id ? modelRecord : null) },
+      identity: { reviewFor: () => ({ mentions: [], decisions: [], organizations: [] }) },
+      getCompleteJson: () => async (request) => model(request),
+      materializeActionItems: (handover) =>
+        handover.actionItems.map((_, index) => ({
+          key: `materialization:v1:${handover.debriefRunId}:ce_${index}`,
+          debriefRunId: handover.debriefRunId,
+          outputEntryId: `ce_${index}`,
+          candidateAlias: handover.candidateAliases?.[index] ?? null,
+          payloadChecksum: `sha256:checked-${index}`,
+          actionItemId: `ai_${handover.debriefRunId}_${index}`,
+          proposalRevision: 1,
+          allocatedAt: new Date(BASE_TIME).toISOString(),
+          dependencies: [],
+        })),
+      log: () => {},
+    });
+    await host.process(modelRecord);
+    await host.idle();
+    const modelRun = runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs[0].id;
+    const app = fastify();
+    host.routes(app);
+    const checked = JSON.parse(runs.open(modelRun)!.readArtifact("result.json")!);
+    const modelDetail = (
+      await app.inject(`/api/meeting-debrief/${modelRun}`)
+    ).json<MeetingDebriefDetail>();
+
+    expect(injected.sections).toEqual(
+      DEBRIEF_SECTIONS.map((name) => ({
+        name,
+        state: name === "suggestedRecipients" ? "validated-empty" : "validated",
+        reason: null,
+      })),
+    );
+    expect(injected.candidateAliases).toEqual([null]);
+    expect(checked.sections).toEqual(injected.sections);
+    expect(checked.candidateAliases).toHaveLength(checked.debrief.actionItems.length);
+    expect(
+      injectedDetail.extraction?.actionItems.map((item) => [item.title, item.ownerProfileId]),
+    ).toEqual(modelDetail.extraction?.actionItems.map((item) => [item.title, item.ownerProfileId]));
+    expect(injectedDetail.review?.roster).toEqual(modelDetail.review?.roster);
+    expect(injectedDetail.revision).toMatchObject({ completeness: "complete", reviewOnly: false });
+    expect(modelDetail.revision).toMatchObject({ completeness: "complete", reviewOnly: false });
+    await app.close();
+  });
+
+  it("refuses a present availability vector with an unknown, duplicate, or missing section", async () => {
+    const cases = [
+      [{ name: "summary", state: "validated", reason: null }],
+      [{ name: "notASection", state: "validated", reason: null }],
+      [],
+    ] as const;
+    for (const [index, sections] of cases.entries()) {
+      h.dropNextMaterialize();
+      const runId = await start(makeRecord({ id: `drive_bad_sections_${index}` }));
+      const run = h.runs.open(runId)!;
+      const resultArtifact = "revision-r1.result.json";
+      const result = JSON.parse(artifact(runId, resultArtifact)!) as MeetingDebriefRunResult;
+      result.sections = sections as unknown as NonNullable<MeetingDebriefRunResult["sections"]>;
+      run.writeArtifact(resultArtifact, `${JSON.stringify(result)}\n`);
+      run.failed("extract", "damaged checked result", "damaged checked result");
+      await h.host.retryRun(runId);
+      await h.host.idle();
+      expect(h.runs.open(runId)!.read().status).toBe("failed");
+    }
+  });
+
+  it("refuses a present candidate vector whose length or entry type disagrees with Action Items", async () => {
+    const cases = [[], [42]] as const;
+    for (const [index, candidateAliases] of cases.entries()) {
+      h.dropNextMaterialize();
+      const runId = await start(makeRecord({ id: `drive_bad_aliases_${index}` }));
+      const run = h.runs.open(runId)!;
+      const resultArtifact = "revision-r1.result.json";
+      const result = JSON.parse(artifact(runId, resultArtifact)!) as MeetingDebriefRunResult;
+      result.candidateAliases = candidateAliases as unknown as (string | null)[];
+      run.writeArtifact(resultArtifact, `${JSON.stringify(result)}\n`);
+      run.failed("extract", "damaged checked result", "damaged checked result");
+      await h.host.retryRun(runId);
+      await h.host.idle();
+      expect(h.runs.open(runId)!.read().status).toBe("failed");
+    }
+  });
+
+  it("adopts legacy checked bytes that omit availability and candidate accounting", async () => {
+    const record = makeRecord({ id: "drive_final_legacy_r1" });
+    h.catalog.set(record.id, record);
+    const orphan = h.runs.create({
+      module: MEETING_DEBRIEF_MODULE_ID,
+      moduleVersion: 1,
+      intake: "transcript-catalog",
+      fileName: record.source.fileName,
+      sourceUrl: null,
+      externalId: record.id,
+    });
+    const legacy = {
+      version: 1 as const,
+      transcriptId: record.id,
+      extractedAt: new Date(BASE_TIME).toISOString(),
+      debrief: extractionWith(),
+    } satisfies MeetingDebriefRunResult;
+    orphan.writeArtifact("revision-r1.result.json", `${JSON.stringify(legacy)}\n`);
+    orphan.failed("extract", "interrupted before manifest", "interrupted before manifest");
+
+    await h.host.retryRun(orphan.id);
+    await h.host.idle();
+
+    expect(h.runs.open(orphan.id)!.read().status).toBe("done");
+    const detail = (
+      await h.app.inject(`/api/meeting-debrief/${orphan.id}`)
+    ).json<MeetingDebriefDetail>();
+    expect(detail.extraction).toEqual(legacy.debrief);
+    expect(detail.revision).toMatchObject({ completeness: "complete", reviewOnly: false });
+    expect(h.extractInputs).toHaveLength(0);
+  });
+
+  it("keeps an incomplete injected revision review-only and preserves Action Item identity on retry", async () => {
+    h.failSections(["coachingAdvice"]);
+    const runId = await start(makeRecord({ id: "drive_final_incomplete_r1" }));
+    const first = h.runs.open(runId)!.read();
+    const firstDetail = (
+      await h.app.inject(`/api/meeting-debrief/${runId}`)
+    ).json<MeetingDebriefDetail>();
+    expect(first.status).toBe("failed");
+    expect(firstDetail.revision).toMatchObject({ completeness: "incomplete", reviewOnly: true });
+    /* The gate is still closed for this harness: no confirmed owner and no
+       confirmed roster. Review-only exposure itself is not approval. */
+    expect(firstDetail.review?.approvalBlockers).toEqual([
+      "owner-identity-unconfirmed",
+      "roster-unconfirmed",
+    ]);
+    expect(h.handovers[0]?.candidateAliases).toEqual([null]);
+
+    h.clearSectionFailures();
+    await h.host.retryRun(runId);
+    await h.host.idle();
+    const secondDetail = (
+      await h.app.inject(`/api/meeting-debrief/${runId}`)
+    ).json<MeetingDebriefDetail>();
+    expect(h.runs.open(runId)!.read().status).toBe("done");
+    expect(secondDetail.revision).toMatchObject({ completeness: "complete", reviewOnly: true });
+    expect(h.handovers).toHaveLength(2);
+    expect(secondDetail.review?.approvalBlockers).toEqual([
+      "owner-identity-unconfirmed",
+      "roster-unconfirmed",
+    ]);
+    expect(h.handovers[1]?.actionItems[0]?.title).toBe(h.handovers[0]?.actionItems[0]?.title);
+    expect(h.handovers[1]?.candidateAliases).toEqual([null]);
+  });
+
+  it("adopts an injected checked revision without re-extraction and keeps its Action Item identity", async () => {
+    h.failNextMaterialize();
+    const runId = await start(makeRecord({ id: "drive_final_injected_adopt_r1" }));
+    const resultBytes = artifact(runId, "revision-r1.result.json");
+    expect(resultBytes).not.toBeNull();
+    const calls = h.extractInputs.length;
+    const mappings = h.handovers[0].actionItems.map((item) => item.title);
+
+    await h.host.retryRun(runId);
+    await h.host.idle();
+
+    expect(h.runs.open(runId)!.read().status).toBe("done");
+    expect(h.extractInputs).toHaveLength(calls);
+    expect(artifact(runId, "revision-r1.result.json")).toBe(resultBytes);
+    expect(h.handovers[1]?.actionItems.map((item) => item.title)).toEqual(mappings);
+    expect(h.handovers[1]?.candidateAliases).toEqual([null]);
+  });
+});
 describe("Debrief recovery through one reconciler (#358)", () => {
   it("finishes intact prepared work with zero model calls after an interrupted commit", async () => {
     h.failNextMaterialize();
@@ -715,11 +950,7 @@ describe("Debrief final-write faults (#358)", () => {
     };
   }
 
-  function reconcileInput(
-    io: MemoryIo,
-    produce: () => Promise<string>,
-    modelCalls: { count: number },
-  ) {
+  function reconcileInput(io: MemoryIo, modelCalls: { count: number }) {
     return {
       io,
       names: () => io.names(),
@@ -747,7 +978,7 @@ describe("Debrief final-write faults (#358)", () => {
       now: () => new Date(BASE_TIME),
       produce: async () => {
         modelCalls.count += 1;
-        return { text: await produce() };
+        return producedRevision(reconcileRecord);
       },
       materialize: () => [
         {
@@ -776,20 +1007,10 @@ describe("Debrief final-write faults (#358)", () => {
   it("commits the result before the manifest, so a refused marker is not a publication", async () => {
     const refused = memoryIo((name) => name.endsWith(".manifest.json"));
     const modelCalls = { count: 0 };
-    const producedText = `${JSON.stringify(
-      {
-        version: 1,
-        transcriptId: reconcileRecord.id,
-        extractedAt: new Date(BASE_TIME).toISOString(),
-        debrief: extractionWith(),
-      } satisfies MeetingDebriefRunResult,
-      null,
-      2,
-    )}\n`;
+    const produced = producedRevision(reconcileRecord);
+    const producedText = produced.text;
 
-    await expect(
-      reconcileDebrief(reconcileInput(refused, async () => producedText, modelCalls)),
-    ).rejects.toThrow(/refused/);
+    await expect(reconcileDebrief(reconcileInput(refused, modelCalls))).rejects.toThrow(/refused/);
 
     // The checked bytes reached the Run; the marker that would have made them
     // a preparation did not, and nothing was published.
@@ -802,15 +1023,7 @@ describe("Debrief final-write faults (#358)", () => {
     // The next reconciliation adopts exactly those bytes: zero model calls.
     const writable = memoryIo();
     for (const [name, text] of refused.files) writable.files.set(name, text);
-    const outcome = await reconcileDebrief(
-      reconcileInput(
-        writable,
-        async () => {
-          throw new Error("the model must not be asked again");
-        },
-        modelCalls,
-      ),
-    );
+    const outcome = await reconcileDebrief(reconcileInput(writable, modelCalls));
 
     expect(modelCalls.count).toBe(1);
     expect(outcome.reconciled).toBe("recovered");
@@ -864,18 +1077,7 @@ describe("Debrief dependency map (MWR-048)", () => {
       },
       intent: "publish" as const,
       now: () => new Date(BASE_TIME),
-      produce: async () => ({
-        text: `${JSON.stringify(
-          {
-            version: 1,
-            transcriptId: record.id,
-            extractedAt: new Date(BASE_TIME).toISOString(),
-            debrief: extractionWith(),
-          } satisfies MeetingDebriefRunResult,
-          null,
-          2,
-        )}\n`,
-      }),
+      produce: async () => producedRevision(record),
       materialize: () => [
         {
           key: "materialization:v1:run_pubD_1:ce_0",
@@ -984,24 +1186,6 @@ describe("Incomplete Debrief publication (MWR-035, MWR-038)", () => {
     };
   }
 
-  function resultText(
-    sections?: Array<{ name: string; state: string; reason: string | null }>,
-  ): string {
-    return `${JSON.stringify(
-      {
-        version: 1,
-        transcriptId: record.id,
-        extractedAt: new Date(BASE_TIME).toISOString(),
-        debrief: extractionWith(),
-        ...(sections && sections.some((section) => section.state !== "validated")
-          ? { sections: sections as DebriefSectionAvailability[] }
-          : {}),
-      } satisfies MeetingDebriefRunResult,
-      null,
-      2,
-    )}\n`;
-  }
-
   const corePayload = {
     sourceChecksum: "source-1",
     candidates: [],
@@ -1048,11 +1232,17 @@ describe("Incomplete Debrief publication (MWR-035, MWR-038)", () => {
       },
       intent: input.intent ?? "publish",
       now: () => new Date(BASE_TIME),
-      produce: async () => ({
-        text: resultText(input.sections),
-        sections: input.sections,
-        ...(input.core ? { core: input.core } : {}),
-      }),
+      produce: async () => {
+        const finalized = finalizeDebriefRevision({
+          transcriptId: record.id,
+          record,
+          identity: { mentions: [], decisions: [], organizations: [] },
+          extraction: extractionWith(),
+          sections: input.sections,
+          finishedAt: new Date(BASE_TIME).toISOString(),
+        });
+        return input.core ? { ...finalized, core: input.core } : finalized;
+      },
       materialize: () => [
         {
           key: "materialization:v1:run_pubI_1:ce_0",
@@ -1092,7 +1282,12 @@ describe("Incomplete Debrief publication (MWR-035, MWR-038)", () => {
   }));
   const coachingFailed: DebriefSectionAvailability[] = DEBRIEF_SECTIONS.map((name) => ({
     name,
-    state: name === "coachingAdvice" ? "failed" : "validated",
+    state:
+      name === "coachingAdvice"
+        ? "failed"
+        : name === "suggestedRecipients"
+          ? "validated-empty"
+          : "validated",
     reason: name === "coachingAdvice" ? "the coaching provider refused" : null,
   }));
 

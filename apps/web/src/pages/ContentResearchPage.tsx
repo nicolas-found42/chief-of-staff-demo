@@ -236,9 +236,14 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
           )}{" "}
           <Link to="/settings">Open Settings</Link>
           {" · "}
-          <Link to="/content-scout">Open Content Scout</Link>
+          <Link to="/content-scout">Open Content Engine</Link>
         </div>
       )}
+      <p className="muted">
+        A Person Profile is an identity signal, not a LinkedIn watch source. LinkedIn is
+        intentionally not watched. Watched surfaces are RSS, websites, YouTube, Reddit, Hacker News,
+        and News.
+      </p>
 
       <div aria-live="polite" aria-atomic="true">
         {error && (
@@ -258,9 +263,9 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         <button
           type="button"
           className="primary"
-          aria-disabled={busy}
+          aria-disabled={busy || Boolean(index.waiting?.research)}
           onClick={() => {
-            if (busy) return;
+            if (busy || index.waiting?.research) return;
             void act(() => client.runContentResearch(), "Content Research run started.");
           }}
         >
@@ -268,9 +273,9 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         </button>
         <button
           type="button"
-          aria-disabled={busy}
+          aria-disabled={busy || Boolean(index.waiting?.research)}
           onClick={() => {
-            if (busy) return;
+            if (busy || index.waiting?.research) return;
             void act(() => client.backfillContentResearch(7), "Backfill 7d started.");
           }}
         >
@@ -278,9 +283,9 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         </button>
         <button
           type="button"
-          aria-disabled={busy}
+          aria-disabled={busy || Boolean(index.waiting?.research)}
           onClick={() => {
-            if (busy) return;
+            if (busy || index.waiting?.research) return;
             void act(() => client.backfillContentResearch(30), "Backfill 30d started.");
           }}
         >
@@ -288,9 +293,9 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         </button>
         <button
           type="button"
-          aria-disabled={busy}
+          aria-disabled={busy || Boolean(index.waiting?.research)}
           onClick={() => {
-            if (busy) return;
+            if (busy || index.waiting?.research) return;
             void act(() => client.backfillContentResearch(90), "Backfill 90d started.");
           }}
         >
@@ -298,9 +303,9 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         </button>
         <button
           type="button"
-          aria-disabled={busy}
+          aria-disabled={busy || Boolean(index.waiting?.discovery)}
           onClick={() => {
-            if (busy) return;
+            if (busy || index.waiting?.discovery) return;
             void act(() => client.discoverContentResearchPeople(), "People discovery started.");
           }}
         >
@@ -406,17 +411,19 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
               onChange={(event) => setNewSite(event.target.value)}
             />
             <input
-              aria-label="YouTube channel id"
-              placeholder="YouTube channel id — e.g. UC…"
+              aria-label="YouTube channel URL or @handle"
+              aria-describedby="youtube-help"
+              placeholder="YouTube channel URL or @handle — e.g. youtube.com/@name"
               value={newYoutube}
               onChange={(event) => setNewYoutube(event.target.value)}
             />
             <input
-              aria-label="Hacker News username"
-              placeholder="HN username"
+              aria-label="Hacker News profile"
+              placeholder="Hacker News profile username"
               value={newHn}
               onChange={(event) => setNewHn(event.target.value)}
             />
+
             <button type="submit" aria-disabled={busy}>
               Add person
             </button>
@@ -426,10 +433,10 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
               {addError}
             </p>
           )}
-          <p className="muted field-hint">
-            People-first watchlist — no LinkedIn. Every hint is optional: paste a feed to watch it
-            directly, or a site and its declared feeds are discovered; a channel id and an HN
-            username add those surfaces. With none, Reddit, HN and News are searched by name.
+          <p id="youtube-help" className="muted field-hint">
+            People-first watchlist — no LinkedIn. A Person Profile is an identity signal; watched
+            surfaces are RSS, websites, YouTube, Reddit, Hacker News, and News. YouTube accepts a
+            channel URL or @handle; Hacker News accepts a profile username.
           </p>
         </form>
       </section>

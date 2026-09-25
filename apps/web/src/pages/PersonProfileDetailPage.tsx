@@ -258,6 +258,21 @@ function described(profile: PersonProfile): string {
   return [combinedRole, profile.currentEmployer].filter((value) => value !== null).join(" — ");
 }
 
+/** A concise typed signal while researched facts are still unresolved. */
+function identitySignalSummary(profile: PersonProfile): string {
+  for (const [platform, values] of Object.entries(profile.handles)) {
+    const value = values[0];
+    if (value) {
+      const label = platform === "linkedin" ? "LinkedIn" : platform;
+      return `Identity signal: ${label}: ${value}`;
+    }
+  }
+  const email = profile.primaryEmail ?? profile.emails[0];
+  if (email) return `Identity signal: Email: ${email}`;
+  const url = profile.profileUrls[0];
+  return url ? `Identity signal: Profile URL: ${url}` : "";
+}
+
 /**
  * The stable Profile detail route (spec #117 IA, /people/:profileId). It shows
  * the current facts, identity signals, sites, publications, evidence with
@@ -748,7 +763,9 @@ function PersonProfileDetail({
             ))}
         </p>
       )}
-      <p className="muted">{described(profile) || "No resolved facts yet."}</p>
+      <p className="muted">
+        {described(profile) || identitySignalSummary(current) || "No resolved facts yet."}
+      </p>
       {/* PROTOTYPE — dev-only entry point to ?variant=a|b|c|d; null in prod. */}
       <PrototypeSwitcher current={variant} variants={PROFILE_VARIANTS} />
 

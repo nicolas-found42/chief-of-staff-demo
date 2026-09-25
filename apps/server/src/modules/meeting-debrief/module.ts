@@ -2,7 +2,6 @@ import type {
   DebriefSectionAvailability,
   DebriefSectionName,
   MeetingDebriefExtraction,
-  MeetingDebriefRunResult,
   MeetingDebriefReviewState,
   ExtractionContextSnapshot,
   ActionItemMaterializationMapping,
@@ -38,7 +37,6 @@ import {
   serializeReviewState,
   type DebriefApprovalGateDeps,
 } from "./review.js";
-import { resolveActionItemOwners, stripUnverifiedRecipientEmails } from "./extraction.js";
 import { emailOptions, emailPreview, type DebriefActionItemReader } from "./email.js";
 import {
   extractDebriefCore,
@@ -52,6 +50,7 @@ import {
   DebriefUnavailableError,
   debriefChecksum,
   debriefTextChecksum,
+  finalizeDebriefRevision,
   nextRevisionTarget,
   readOperation,
   readPublishedDebrief,
@@ -262,34 +261,6 @@ function unavailableSections(outcome: DebriefReconcileOutcome): DebriefSectionNa
 }
 
 /**
- * Blank the sections a revision could not validate (#345). The stored result
- * keeps the extraction's shape — the model-result contract is not this
- * module's to widen — so a failed section is emptied here *and* named
- * unavailable in the revision's availability. Nothing may read the empty
- * value without reading the availability beside it.
- */
-function applySectionOutcomes(
-  extraction: MeetingDebriefExtraction,
-  sections: readonly DebriefSectionAvailability[],
-): MeetingDebriefExtraction {
-  const resolved = (name: DebriefSectionName): boolean => {
-    const state = sections.find((section) => section.name === name)?.state ?? "validated";
-    return debriefSectionResolved(state);
-  };
-  return {
-    ...extraction,
-    summary: resolved("summary") ? extraction.summary : "",
-    decisions: resolved("decisions") ? extraction.decisions : [],
-    openQuestions: resolved("openQuestions") ? extraction.openQuestions : [],
-    effectivenessEvidence: resolved("effectivenessEvidence")
-      ? extraction.effectivenessEvidence
-      : "",
-    coachingAdvice: resolved("coachingAdvice") ? extraction.coachingAdvice : "",
-    suggestedRecipients: resolved("suggestedRecipients") ? extraction.suggestedRecipients : [],
-  };
-}
-
-/**
  * The availability a new revision reports: every section keeps the state the
  * previously published revision established for it, except the one this
  * regeneration asked for, which takes its own new outcome (#345, MWR-042).
@@ -421,37 +392,6 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     };
   };
 
-  /**
-   * The checked result as one revision is addressed by: serialized bytes, not
-   * a file. A revision whose sections did not all validate carries that fact
-   * with its bytes (#345): an interrupted manifest write is later adopted
-   * without asking the model again, and the adopted revision must still read
-   * as the incomplete revision it is.
-   */
-  const resultText = (
-    debrief: MeetingDebriefExtraction,
-    transcriptId: string,
-    sections?: readonly DebriefSectionAvailability[],
-    aliases?: readonly (string | null)[],
-  ): string =>
-    `${JSON.stringify(
-      {
-        version: 1,
-        transcriptId,
-        extractedAt: now().toISOString(),
-        debrief,
-        ...(sections?.some((section) => !debriefSectionResolved(section.state))
-          ? { sections: sections.map((section) => ({ ...section })) }
-          : {}),
-        /* The candidate accounting rides with the checked bytes (#385), so a
-           revision adopted after an interrupted manifest write still
-           materializes under the aliases its extraction produced. */
-        ...(aliases && aliases.length > 0 ? { candidateAliases: [...aliases] } : {}),
-      } satisfies MeetingDebriefRunResult,
-      null,
-      2,
-    )}\n`;
-
   /** The frozen context's checksum, or undefined while none has been captured. */
   const contextChecksum = (ctx: RunContext): string | undefined => {
     const frozen = ctx.readFile("context-snapshot.json");
@@ -515,14 +455,17 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     const identity = deps.identity.reviewFor(record.id);
     const extracted = await deps.extract({ record, identity });
     const sections = deps.sections?.({ transcriptId: record.id }) ?? validatedDebriefSections();
-    const resolved = resolveActionItemOwners(applySectionOutcomes(extracted, sections), identity);
-    const debrief = stripUnverifiedRecipientEmails(resolved, record);
-    return {
-      extraction: debrief,
-      text: resultText(debrief, record.id, sections),
-      aliases: [],
-      sections: sections.map((section) => ({ ...section })),
-    };
+    /* The deterministic seam has no candidate accounting: the finalizer gives
+       the checked Action Items the null aliases its absence means, rather than
+       inventing candidate identities. */
+    return finalizeDebriefRevision({
+      transcriptId: record.id,
+      record,
+      identity,
+      extraction: extracted,
+      sections,
+      finishedAt: now().toISOString(),
+    });
   };
 
   /**
@@ -597,19 +540,23 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         core.record.payload,
         extractionOptions,
       );
-      const resolved = resolveActionItemOwners(extraction, identity);
-      const debrief = stripUnverifiedRecipientEmails(resolved, record);
+      const finalized = finalizeDebriefRevision({
+        transcriptId: record.id,
+        record,
+        identity,
+        extraction,
+        sections,
+        candidateAliases: core.record.payload.retainedIds,
+        finishedAt: now().toISOString(),
+      });
       ctx.event("extract_ok", {
         attempt,
-        actionItems: debrief.actionItems.length,
-        decisions: debrief.decisions.length,
-        openQuestions: debrief.openQuestions.length,
+        actionItems: finalized.extraction.actionItems.length,
+        decisions: finalized.extraction.decisions.length,
+        openQuestions: finalized.extraction.openQuestions.length,
       });
       return {
-        extraction: debrief,
-        text: resultText(debrief, record.id, sections, core.record.payload.retainedIds),
-        aliases: core.record.payload.retainedIds,
-        sections,
+        ...finalized,
         core: { artifact: core.artifact, checksum: core.checksum },
       };
     } catch (error) {
@@ -750,7 +697,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
               : await produceModelRevision(ctx, record, {
                   useCheckpoints: false,
                   /* Every other field is re-asked from the checked core: a
-                     summary regeneration must not rediscover the meeting. */
+                   summary regeneration must not rediscover the meeting. */
                   reuseCore: !regeneratingActions,
                 });
             const current = currentDebrief(ctx);
@@ -760,11 +707,23 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
                about coaching (#345, MWR-042). */
             const sections = mergeSectionAvailability(
               held?.availability?.sections ?? null,
-              produced.sections ?? validatedDebriefSections(),
+              produced.sections,
               request.field,
             );
+            /* The merged field set is a new revision under the same producer
+               rules; it gets the same finalization, never a second way to
+               build the checked result. */
+            const finalized = finalizeDebriefRevision({
+              transcriptId,
+              record,
+              identity: deps.identity.reviewFor(record.id),
+              extraction: regenerated,
+              sections,
+              candidateAliases: produced.aliases,
+              finishedAt: now().toISOString(),
+            });
             return {
-              text: resultText(regenerated, transcriptId, sections, produced.aliases),
+              ...finalized,
               /* A regenerated Action Item list is this Run's own checked
                  output, so it carries this Run's candidate accounting. Entries
                  the regeneration kept unchanged still materialize under their

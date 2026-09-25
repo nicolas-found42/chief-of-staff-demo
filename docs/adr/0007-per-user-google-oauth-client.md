@@ -1,4 +1,8 @@
 # Each person registers their own Google OAuth client
+**Amended by [ADR-0104](0104-installation-owned-guided-setup.md).** The installation now owns one
+Google OAuth client; each Workspace Owner still performs explicit consent and retains only its
+Workspace-local refresh token and connection identity.
+
 
 Every consumer app ships one OAuth client and offers a Sign in with Google button that just works,
 so that is what a new user expects here. We cannot do it: this repository is public, a committed

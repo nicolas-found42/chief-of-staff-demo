@@ -305,6 +305,7 @@ describe("executeWorkspaceMigration", () => {
     expect(receipt).toEqual({
       schemaVersion: 1,
       migratedAt: expect.any(String),
+      origin: "migrated",
       durationMs: expect.any(Number),
       categories: expectedCategories,
     });

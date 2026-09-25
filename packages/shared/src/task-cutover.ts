@@ -2,8 +2,10 @@ import { z } from "zod/v3";
 
 /** Content-free authorization and receipt for the canonical Tasks cutover. */
 const count = z.number().int().nonnegative();
+const origin = z.enum(["pristine", "migrated"]);
 const preview = z.object({
   kind: z.literal("canonical-tasks"),
+  origin: origin.default("migrated"),
   workspace: z.string().min(1),
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   counts: z.object({

@@ -354,16 +354,16 @@ export interface AutomaticPromotionAuthorizationFacts {
 }
 
 /**
- * What the policy surface answers about automatic promotion (issue #360). The
- * saved preference and the release restriction are reported separately so the
- * interface can say which one is holding automation back.
+ * The public automatic-promotion view beside the saved Action Item Policy.
+ * Internal release evidence and authorization history stay behind the server
+ * interface; a normal Tasks surface needs only effective authorization, a
+ * plain availability state, and the owner's next available action.
  */
 export interface AutomaticPromotionStatus {
   /** True only when the preference is `auto-create-mine`, released and enabled. */
   effective: boolean;
-  /** Why automatic promotion is unavailable right now; empty when effective. */
-  reason: string;
-  release: AutomaticPromotionRelease;
-  /** When the owner explicitly enabled after the release; null while disabled. */
-  enabledAt: string | null;
+  state: "unavailable" | "available" | "active";
+  /** Plain-language availability, suitable for the ordinary Tasks surface. */
+  message: string;
+  nextAction: "enable" | "disable" | null;
 }

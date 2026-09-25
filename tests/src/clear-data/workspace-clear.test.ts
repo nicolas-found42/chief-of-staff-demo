@@ -39,7 +39,7 @@ function seedWorkspace(label: string): string {
   for (const file of Object.keys(WHOLE_FILES)) {
     writeFileSync(join(workspaceDir, file), "{}");
   }
-  writeFileSync(join(workspaceDir, "config.json"), JSON.stringify({ apiKey: SECRET }));
+  writeFileSync(join(workspaceDir, "config.json"), JSON.stringify({}));
   writeFileSync(join(workspaceDir, "relay.json"), JSON.stringify({ secret: SECRET }));
   mkdirSync(join(workspaceDir, "migration"), { recursive: true });
   writeFileSync(

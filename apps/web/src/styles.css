@@ -1571,6 +1571,11 @@ summary {
 
 .disclosure-body {
   padding: 0.75rem 1rem;
+  overflow-wrap: anywhere;
+}
+
+.disclosure-body fieldset {
+  min-width: 0;
 }
 
 code {

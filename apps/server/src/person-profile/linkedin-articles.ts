@@ -64,16 +64,27 @@ export function linkedInDeclaredAuthor(
   return null;
 }
 
+export interface LinkedInProfileRead {
+  text: string;
+  name: string | null;
+  articles: { kind: "article"; url: string; title: string; publishedAt: string | null }[];
+}
+
 /** Only the public profile's attributed article section, never activity or suggestions. */
-export function linkedInProfileText(document: Document, url: string): string {
-  if (!linkedInProfileIdentity(url)) return "";
+export function linkedInProfileText(document: Document, url: string): LinkedInProfileRead {
+  const empty: LinkedInProfileRead = { text: "", name: null, articles: [] };
+  if (!linkedInProfileIdentity(url)) return empty;
   const section = document.querySelector('section[data-section="articles"]');
   const heading = section?.querySelector("h2")?.textContent.trim();
   const author = document.querySelector("h1")?.textContent.trim().replace(/\s+/g, " ");
-  if (!author) return "";
+  if (!author) return empty;
   const identity = `Public profile name: ${author}`;
-  if (!section || !heading?.startsWith("Articles by ")) return identity;
-  const records = new Map<string, string>();
+  if (!section || !heading?.startsWith("Articles by "))
+    return { ...empty, name: author, text: identity };
+  const records = new Map<
+    string,
+    { kind: "article"; url: string; title: string; publishedAt: string | null }
+  >();
   for (const card of section.querySelectorAll(".main-article-card")) {
     const title = card.querySelector("h3")?.textContent.trim().replace(/\s+/g, " ");
     const link = card.querySelector('a[href*="/pulse/"]')?.getAttribute("href");
@@ -93,15 +104,30 @@ export function linkedInProfileText(document: Document, url: string): string {
       continue;
     target.search = "";
     target.hash = "";
-    records.set(
-      target.href,
-      `Article listed by ${author}\nTitle: ${title}\nDate: ${date}\nURL: ${target.href}`,
-    );
+    records.set(target.href, {
+      kind: "article",
+      url: target.href,
+      title,
+      publishedAt: linkedInArticleDate(date),
+    });
     if (records.size === 20) break;
   }
-  return records.size
-    ? `${identity}\n\nPublic profile article metadata (self-report; article contents not retrieved):\n${[...records.values()].join("\n\n")}`
-    : `${identity}\n\nArticle capture limitation: this public profile has an Articles by section but no readable attributed article cards were captured. Article availability is unknown.`;
+  return {
+    name: author,
+    articles: [...records.values()],
+    text: records.size
+      ? `${identity}\n\nPublic profile article metadata (self-report; article contents not retrieved):\n${[...records.values()].map((article) => `Article listed by ${author}\nTitle: ${article.title}\nDate: ${article.publishedAt ?? ""}\nURL: ${article.url}`).join("\n\n")}`
+      : `${identity}\n\nArticle capture limitation: this public profile has an Articles by section but no readable attributed article cards were captured. Article availability is unknown.`,
+  };
+}
+
+function linkedInArticleDate(value: string): string | null {
+  const parsed = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}), (\d{4})$/.exec(
+    value,
+  );
+  return parsed
+    ? `${parsed[3]}-${String(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(parsed[1]!) + 1).padStart(2, "0")}-${parsed[2]!.padStart(2, "0")}`
+    : null;
 }
 
 /** Recovery after valid extraction, only for the identity-matched subject's own page. */
@@ -150,12 +176,7 @@ export function retainLinkedInArticles(
     const existing = works.findIndex((work) => work.url === url);
     const existingId = existing >= 0 ? works[existing]!.id : undefined;
     if (existing >= 0) works.splice(existing, 1);
-    const parsed = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}), (\d{4})$/.exec(
-      rawDate!,
-    );
-    const date = parsed
-      ? `${parsed[3]}-${String(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(parsed[1]!) + 1).padStart(2, "0")}-${parsed[2]!.padStart(2, "0")}`
-      : null;
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate!) ? rawDate! : linkedInArticleDate(rawDate!);
     const id = `article-${match.index}`;
     claims.push({
       id,

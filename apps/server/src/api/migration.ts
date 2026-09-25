@@ -1,13 +1,17 @@
 import type { TaskCutover } from "../tasks/cutover.js";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   executeWorkspaceMigration,
   previewWorkspaceMigration,
+  readMigrationOrigin,
   readMigrationReceipt,
   readMigrationState,
 } from "../migration/workspace.js";
-import { buildOnboardingStatus, type OnboardingStatusDeps } from "./onboarding.js";
-
+import {
+  buildOnboardingStatus,
+  type OnboardingGoal,
+  type OnboardingStatusDeps,
+} from "./onboarding.js";
 /**
  * The one-time Workspace migration's API namespace (issue #144, spec
  * §Migration and Cutover). Mounted always: while the gate holds the Workspace
@@ -35,17 +39,26 @@ export interface MigrationRouteDeps extends OnboardingStatusDeps {
 export function registerMigrationRoutes(app: FastifyInstance, deps: MigrationRouteDeps): void {
   /* Always mounted, never gated — the gate page reads it while every other
      namespace rejects with 503. */
-  app.get("/api/migration/status", async () => ({
-    state: deps.taskCutover
+  app.get("/api/migration/status", async (request: FastifyRequest) => {
+    const query = request.query as { goal?: string };
+    const goal: OnboardingGoal = query.goal === "meetings" ? "meetings" : "general";
+    const state = deps.taskCutover
       ? deps.gate.isActive()
         ? "required"
         : deps.taskCutover.receipt()
           ? "completed"
           : "fresh"
-      : readMigrationState(deps.workspaceDir),
-    kind: deps.taskCutover ? "canonical-tasks" : "legacy-reset",
-    onboarding: await buildOnboardingStatus(deps),
-  }));
+      : readMigrationState(deps.workspaceDir);
+    const origin = deps.taskCutover
+      ? (deps.taskCutover.receipt()?.origin ?? "pristine")
+      : readMigrationOrigin(deps.workspaceDir);
+    return {
+      state,
+      origin,
+      kind: deps.taskCutover ? "canonical-tasks" : "legacy-reset",
+      onboarding: await buildOnboardingStatus(deps, goal),
+    };
+  });
 
   app.get("/api/migration/inventory", async (_request, reply) => {
     if (deps.taskCutover) return deps.taskCutover.preview();

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import type { MeetingDebriefDetail } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
 import { meetingsApi, type MeetingsClient } from "../clients/meetings";
@@ -90,6 +90,11 @@ function IdentitySection({ detail }: { detail: MeetingDebriefDetail }) {
 export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: MeetingsClient }) {
   const { runId } = useParams<{ runId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  /* Retained navigation is explicit. A current Meeting may own its Debrief and
+     redirect normally; a link from retained recovery stays mounted on the
+     standalone artifact so its run-scoped review never reports a zero. */
+  const retainedContext = searchParams.get("retained") === "1";
   const [earlier, setEarlier] = useState(false);
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [detail, setDetail] = useState<MeetingDebriefDetail | null>(null);
@@ -113,7 +118,7 @@ export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: Me
   }, [client, runId]);
 
   useEffect(() => {
-    if (!detail?.meetingId) return;
+    if (retainedContext || !detail?.meetingId) return;
     let live = true;
     void client
       .meetingRead(detail.meetingId)
@@ -131,7 +136,7 @@ export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: Me
     return () => {
       live = false;
     };
-  }, [client, detail?.meetingId, detail?.runId, navigate]);
+  }, [client, retainedContext, detail?.meetingId, detail?.runId, navigate]);
 
   useEffect(() => {
     void refresh();
@@ -188,6 +193,12 @@ export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: Me
       )}
       {detail && (
         <>
+          {retainedContext && (
+            <p role="status">
+              Retained Debrief · this readable extraction stays bound to its run; the retained
+              Action Items remain a separate review.
+            </p>
+          )}
           {earlier && (
             <p role="status">Earlier version · this link retains the original Debrief.</p>
           )}
@@ -228,12 +239,19 @@ export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: Me
               </p>
             </div>
           )}
-          {/* The Meeting is where this retrospective belongs, and the Debrief
-              already knows which one — the page just never said so. */}
-          {detail.meetingId && (
+          {/* The normal standalone Debrief still resolves to its owning
+              Meeting; retained context keeps this run scoped instead. */}
+          {detail.meetingId && !retainedContext && (
             <p>
               <Link to={`/meetings/${encodeURIComponent(detail.meetingId)}`}>
                 Open this meeting
+              </Link>
+            </p>
+          )}
+          {retainedContext && (
+            <p>
+              <Link to={`/meetings/recovery/${encodeURIComponent(detail.runId)}?retained=1`}>
+                Review retained Action Items
               </Link>
             </p>
           )}

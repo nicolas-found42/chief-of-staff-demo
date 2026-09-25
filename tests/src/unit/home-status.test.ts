@@ -235,8 +235,8 @@ describe("Home's activity feed", () => {
       {
         id: "r1",
         text: "Pricing call could not finish because Google needs reconnecting",
+        to: "/onboarding?goal=meetings",
         cta: "Reconnect",
-        to: "/settings",
       },
     ]);
   });
@@ -333,7 +333,7 @@ describe("Home's attention rail", () => {
         id: "mock-provider",
         text: "Runs are using the mock provider, so nothing real is extracted",
         cta: "Choose a provider",
-        to: "/settings",
+        to: "/onboarding?goal=meetings",
       },
     ]);
   });

@@ -89,7 +89,7 @@ test("the complete product surface is reachable — five areas, Shell Runs, Sett
   // has no tab by design (ADR-0014: a Shell page, not a Module tab) — Home's
   // feed links into it — so its reachability is proven by the h1 it serves.
   for (const [route, heading] of [
-    ["/content-scout", "Content Scout"],
+    ["/content-scout", "Content Engine"],
     ["/content-research", "Content Research — what is resonating, for whom, and why"],
     ["/meetings", "Meeting Wizard"],
     ["/people", "Person Profiles"],

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
   MODEL_PURPOSES,
   type AppConfig,
   type DriveIntakeStatus,
+  type InstallationStatus,
   type ProviderId,
   type SetupCheck,
 } from "@chief-of-staff-demo/shared";
@@ -51,63 +52,21 @@ const PROVIDER_SHORT: Record<ProviderId, string> = {
   ollama: "Ollama",
 };
 
-/**
- * Where each provider issues API keys. Without this a beginner has to work out
- * which of a provider's several consoles holds them, from a Settings page that
- * only says "Provider API key". `ollama` and `mock` need no key, so they have
- * no entry and the line does not render.
- */
-const PROVIDER_KEY_URLS: Partial<Record<ProviderId, string>> = {
-  openai: "https://platform.openai.com/api-keys",
-  anthropic: "https://console.anthropic.com/settings/keys",
-  openrouter: "https://openrouter.ai/keys",
-  gemini: "https://aistudio.google.com/apikey",
-};
+type InstallationProvider = Exclude<ProviderId, "mock" | "ollama">;
 
-/**
- * The prerequisite a save cannot fix, said next to the save control (UX audit
- * F3: a bare "Saved." with no key set reads as "setup complete", and the
- * symptom — a research gate or an empty result — is far from its cause).
- *
- * `mock` and `ollama` need no key, and a stored key covers the field staying
- * blank, which is exactly how the API-key field is meant to be left once a
- * secret exists. Saving stays allowed either way — a partially configured
- * Workspace is legitimate — so this returns the warning rather than blocking.
- *
- * Exported as a pure function so the unit spec can read the decision without
- * mounting this page; nothing but the spec imports it.
- */
-// oxlint-disable-next-line react/only-export-components
-export function providerSaveWarning(
+function providerCredentialState(
+  installation: InstallationStatus,
   provider: ProviderId,
-  apiKey: string,
-  keyStored: boolean,
-  providerChanged = false,
-): string | null {
-  if (provider === "mock" || provider === "ollama") return null;
-  if (apiKey.trim() !== "") return null;
-  if (!keyStored)
-    return "No API key set — research and extraction will not run until one is added.";
-  /* A stored key authenticates its own provider only (CodeRabbit, PR #458):
-     switching providers with a blank field must not read as settled — the
-     save removes the stale key rather than authenticating the new provider
-     with the previous one's key. */
-  if (providerChanged)
-    return (
-      "The stored API key belongs to the previous provider — saving now removes it, and " +
-      "research and extraction will not run for this provider until its own key is added."
-    );
-  return null;
+): InstallationStatus["providerKeys"][InstallationProvider]["state"] | "not-required" {
+  if (provider === "mock" || provider === "ollama") return "not-required";
+  return installation.providerKeys[provider as InstallationProvider].state;
 }
 
 interface FormState {
   provider: ProviderId;
   model: string;
   models: NonNullable<AppConfig["models"]>;
-  apiKey: string;
   tasklistName: string;
-  googleClientId: string;
-  googleClientSecret: string;
   driveEnabled: boolean;
   driveFolderId: string;
   driveFolderName: string;
@@ -133,7 +92,6 @@ export function SettingsPage() {
   const [signingIn, setSigningIn] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [checkingGoogle, setCheckingGoogle] = useState(false);
-  const [jsonNotice, setJsonNotice] = useState<string | null>(null);
   const [modelNotice, setModelNotice] = useState("");
   const [picking, setPicking] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
@@ -152,6 +110,7 @@ export function SettingsPage() {
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
+  const location = useLocation();
 
   useEffect(() => {
     const load = async () => {
@@ -162,10 +121,7 @@ export function SettingsPage() {
           provider: fetched.config.provider,
           model: fetched.config.model,
           models: fetched.config.models ?? {},
-          apiKey: "",
           tasklistName: fetched.config.tasklistName,
-          googleClientId: fetched.config.google.clientId,
-          googleClientSecret: "",
           driveEnabled: fetched.config.drive.enabled,
           driveFolderId: fetched.config.drive.folderId,
           driveFolderName: fetched.config.drive.folderName,
@@ -190,25 +146,30 @@ export function SettingsPage() {
     }
   }, [payload, refreshGoogle]);
 
-  /* UX audit F13: the research gate links to /settings#group-provider, and this
-     page is long enough that the link otherwise lands on the top heading and
-     reads as broken. The card only exists once config has loaded, so the effect
-     waits for that rather than reading the DOM on the loading render — and runs
-     once, because `form` changes on every keystroke. */
-  const deepLinkHandled = useRef(false);
+  /* Setup links name the exact control they need. The target appears after the
+     config load; opening any containing disclosure first makes both settled
+     and unconfigured provider states reachable without another click. */
+  const deepLinkHandled = useRef<string | null>(null);
   useEffect(() => {
-    if (deepLinkHandled.current || !form || !payload) return;
-    deepLinkHandled.current = true;
-    const id = window.location.hash.slice(1);
-    const target = id ? document.getElementById(id) : null;
+    if (!form || !payload) return;
+    const hash = location.hash;
+    if (deepLinkHandled.current === hash) return;
+    const id = hash.slice(1);
+    const target = id ? document.getElementById(decodeURIComponent(id)) : null;
     if (!target) return;
-    // jsdom has no layout, so scrollIntoView is absent in tests (the same
-    // guard the panel uses).
+    deepLinkHandled.current = hash;
+    for (
+      let disclosure = target.closest<HTMLDetailsElement>("details");
+      disclosure;
+      disclosure = disclosure.parentElement?.closest<HTMLDetailsElement>("details") ?? null
+    ) {
+      disclosure.open = true;
+    }
     if (typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "start" });
     if (target.matches("a[href], button, input, select, textarea, [tabindex]")) {
       target.focus({ preventScroll: true });
     }
-  }, [form, payload]);
+  }, [form, payload, location.hash, intake]);
 
   /* Above the loading gate: hooks cannot sit behind an early return. */
   const loadIntake = useCallback(() => {
@@ -252,6 +213,14 @@ export function SettingsPage() {
   };
 
   const changeProvider = (provider: ProviderId) => {
+    if (
+      provider !== "ollama" &&
+      provider !== "mock" &&
+      providerCredentialState(payload.installation, provider) !== "configured"
+    ) {
+      setError("Choose a provider whose installation credential is configured, or use Ollama.");
+      return;
+    }
     const defaults = payload.defaults;
     const previousDefault = Object.values(defaults).includes(form.model);
     const model = form.model === "" || previousDefault ? (defaults[provider] ?? "") : form.model;
@@ -283,7 +252,6 @@ export function SettingsPage() {
         model: form.model,
         models: form.models,
         tasklistName: form.tasklistName,
-        google: { clientId: form.googleClientId },
         drive: {
           enabled: form.driveEnabled,
           folderId: form.driveFolderId,
@@ -295,18 +263,6 @@ export function SettingsPage() {
         // also clears a stored URL, matching how the Ollama field behaves.
         search: { searxngUrl: form.searxngUrl },
       };
-      if (form.apiKey !== "") {
-        update.apiKey = form.apiKey;
-      } else if (providerChanged && providerNeedsKey && payload.config.apiKey.set) {
-        /* A blank field otherwise keeps whatever is stored (an absent field
-           keeps secrets by contract), and a stored key authenticates its own
-           provider only: switching with no new key removes it rather than
-           authenticating the new provider with the previous one's key. */
-        update.apiKey = "";
-      }
-      if (form.googleClientSecret !== "") {
-        update.google = { clientId: form.googleClientId, clientSecret: form.googleClientSecret };
-      }
       const savedPayload = await configApi.saveConfig(update);
       setPayload(savedPayload);
       setForm((current) =>
@@ -317,14 +273,12 @@ export function SettingsPage() {
               model: savedPayload.config.model,
               models: savedPayload.config.models ?? {},
               tasklistName: savedPayload.config.tasklistName,
-              googleClientId: savedPayload.config.google.clientId,
               driveEnabled: savedPayload.config.drive.enabled,
               driveFolderId: savedPayload.config.drive.folderId,
               driveFolderName: savedPayload.config.drive.folderName,
               pollIntervalMinutes: String(savedPayload.config.drive.pollIntervalMinutes),
               ollamaBaseUrl: savedPayload.config.ollama.baseUrl,
               searxngUrl: savedPayload.config.search.searxngUrl ?? "",
-              googleClientSecret: "",
             }
           : current,
       );
@@ -336,25 +290,11 @@ export function SettingsPage() {
     }
   };
 
-  /* Saves the client credentials on its own rather than through the form-wide
-     Save: signing in must not be blocked by an unrelated invalid field, and the
-     server can only build the consent URL from credentials it has stored. On
-     success the browser leaves for Google, so the busy flag is never cleared. */
   const signInGoogle = async () => {
-    if (signingIn) {
-      return;
-    }
+    if (signingIn) return;
     setSigningIn(true);
     setError(null);
     try {
-      setPayload(
-        await configApi.saveConfig({
-          google:
-            form.googleClientSecret === ""
-              ? { clientId: form.googleClientId }
-              : { clientId: form.googleClientId, clientSecret: form.googleClientSecret },
-        }),
-      );
       const { authUrl } = await googleApi.connect();
       window.location.assign(authUrl);
     } catch (err) {
@@ -462,58 +402,68 @@ export function SettingsPage() {
     }
   };
 
-  // Persistent hint text rather than a placeholder: this is the instruction
-  // that stops someone from wiping a stored secret, and placeholders vanish
-  // on the first keystroke (3.3.2).
-  const secretHint = (set: boolean, hint: string) =>
-    set ? `Stored (${hint}). Leave blank to keep it.` : "No value stored yet.";
+  /* Installation credentials are provisioned by the local operator; this page
+     only reports their state and never offers an editable value. */
 
-  const keyUrl = PROVIDER_KEY_URLS[form.provider];
+  /* Render the polling state from the last saved config, not the stale intake
+     response. Catalog consent and backfill are independent facts below. */
+  const savedPollingEnabled = payload.config.drive.enabled;
+  const savedPollingFolder =
+    payload.config.drive.folderName || intake?.folderName || "your Drive folder";
+  const savedPollingMinutes = payload.config.drive.pollIntervalMinutes;
+  const savedPollingSummary = savedPollingEnabled
+    ? `Automatic Drive polling is enabled for ${savedPollingFolder} every ${savedPollingMinutes} ${
+        savedPollingMinutes === 1 ? "minute" : "minutes"
+      } when Google is connected.`
+    : "Automatic Drive polling is paused. New transcripts are not checked for automatically.";
+  const backfillSummary =
+    intake?.catalog.backfill === "running"
+      ? "Catalog backfill is catching up…"
+      : intake?.catalog.backfill === "paused"
+        ? "Catalog backfill is paused."
+        : null;
 
-  /**
-   * Reads the client JSON the console offers on the one screen that shows the
-   * secret. Parsed here and never sent anywhere: the file's only job is to get
-   * two values into the fields, and transcribing a 35-character secret by hand
-   * is the one irreversible mistake in the whole setup.
-   */
-  const loadClientJson = async (file: File) => {
-    setJsonNotice(null);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(await file.text());
-    } catch {
-      setJsonNotice("That file is not valid JSON — pick the one the console downloaded.");
-      return;
-    }
-    const web = (parsed as { web?: { client_id?: unknown; client_secret?: unknown } } | null)?.web;
-    if (!web || typeof web.client_id !== "string" || typeof web.client_secret !== "string") {
-      /* A Desktop app client arrives under `installed`, and a service-account
-         key has neither shape. Both would store credentials that cannot work
-         against this redirect URI, and would fail much later. */
-      setJsonNotice(
-        "That is not a Web application client. Create the client with application type Web application, then download its JSON.",
-      );
-      return;
-    }
-    setField("googleClientId", web.client_id);
-    setField("googleClientSecret", web.client_secret);
-    setJsonNotice("Client ID and secret read from the file. Press Save and sign in with Google.");
-  };
+  const installation = payload.installation;
+  const availableProviders = PROVIDER_OPTIONS.filter(
+    (option) => providerCredentialState(installation, option.value) === "configured",
+  );
+  const providerOptions = [
+    ...availableProviders,
+    ...(payload.mockAvailable || form.provider === "mock" ? [MOCK_OPTION] : []),
+    OLLAMA_OPTION,
+  ];
 
-  /* D11: two sections. Settled connections shrink to one line plus a Manage
-     disclosure; fresh or broken things keep their full weight. */
   const googleSettled = googleStatus?.state === "connected";
-  const providerNeedsKey = form.provider !== "mock" && form.provider !== "ollama";
-  const providerSettled = !providerNeedsKey || payload.config.apiKey.set;
-  const providerChanged = form.provider !== payload.config.provider;
-  const saveWarning = providerSaveWarning(
-    form.provider,
-    form.apiKey,
-    payload.config.apiKey.set,
-    providerChanged,
+  const installationCard = (
+    <section id="api-key" tabIndex={-1} className="card" aria-labelledby="api-key-heading">
+      <h3 id="api-key-heading">Installation credentials</h3>
+      <dl>
+        <dt>Google OAuth client</dt>
+        <dd>{installation.googleClient.state === "configured" ? "Configured" : "Missing"}</dd>
+        {PROVIDER_OPTIONS.map((option) => (
+          <div key={option.value}>
+            <dt>{PROVIDER_SHORT[option.value]} key</dt>
+            <dd>
+              {providerCredentialState(installation, option.value) === "configured"
+                ? "Configured"
+                : "Missing"}
+            </dd>
+          </div>
+        ))}
+        <dt>Ollama</dt>
+        <dd>Not required</dd>
+      </dl>
+      <p className="muted">
+        Installation credentials are held by the local Guided Setup, not editable Workspace
+        configuration. Run <code>./scripts/setup-wizard.sh</code> to provision or resume them.
+      </p>
+      <Link className="action-button" to="/onboarding?goal=meetings">
+        Open Guided Setup
+      </Link>
+    </section>
   );
 
-  const providerFields = (
+  const providerFields = () => (
     <>
       <div className="form-grid">
         <div className="field">
@@ -523,14 +473,7 @@ export function SettingsPage() {
             value={form.provider}
             onChange={(event) => changeProvider(event.target.value as ProviderId)}
           >
-            {/* A provider the owner can no longer choose is still the truth
-                about this Workspace, so a current mock or Ollama stays listed
-                even where the server would refuse it fresh (issue #198). */}
-            {[
-              ...PROVIDER_OPTIONS,
-              ...(payload.mockAvailable || form.provider === "mock" ? [MOCK_OPTION] : []),
-              ...(form.provider === "ollama" ? [OLLAMA_OPTION] : []),
-            ].map((option) => (
+            {providerOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -555,65 +498,51 @@ export function SettingsPage() {
             {modelNotice}
           </p>
         </div>
-        <fieldset>
-          <legend>Models by purpose</legend>
-          <p className="muted">
-            These models use the selected provider and API key. Leave a field blank to use the
-            default model above.{" "}
-          </p>
-          {Object.entries(MODEL_PURPOSES).map(([purpose, label]) => (
-            <div className="field" key={purpose}>
-              <label htmlFor={`model-${purpose}`}>{label}</label>
-              <input
-                id={`model-${purpose}`}
-                value={form.models[form.provider]?.[purpose as keyof typeof MODEL_PURPOSES] ?? ""}
-                placeholder={form.model || payload.defaults[form.provider]}
-                onChange={(event) =>
-                  setField("models", {
-                    ...form.models,
-                    [form.provider]: {
-                      ...form.models[form.provider],
-                      [purpose]: event.target.value,
-                    },
-                  })
-                }
-              />
-              {purpose === "researchPlanning" && (
-                <p className="muted field-hint">
-                  Plans each further batch of person research from the evidence collected so far.
-                </p>
-              )}
-              {purpose === "evaluationJudge" && (
-                <p className="muted field-hint">
-                  Judges the developer Person Research Benchmark. Keep it independent of the
-                  research model so the judge is not marking its own work.
-                </p>
-              )}
-            </div>
-          ))}
-        </fieldset>
-        <div className="field">
-          <label htmlFor="api-key">Provider API key</label>
-          <input
-            id="api-key"
-            aria-describedby={keyUrl ? "api-key-hint api-key-source" : "api-key-hint"}
-            type="password"
-            value={form.apiKey}
-            autoComplete="off"
-            onChange={(event) => setField("apiKey", event.target.value)}
-          />
-          <p id="api-key-hint" className="muted field-hint">
-            {secretHint(payload.config.apiKey.set, payload.config.apiKey.hint)}
-          </p>
-          {keyUrl && (
-            <p id="api-key-source" className="muted field-hint">
-              Sign in and create an API key at{" "}
-              <a className="step-link" href={keyUrl} target="_blank" rel="noreferrer">
-                {keyUrl.replace("https://", "")}
-              </a>
-            </p>
-          )}
-        </div>
+        <details className="disclosure">
+          <summary>Advanced: choose models per task</summary>
+          <div className="disclosure-body">
+            <fieldset>
+              <legend>Models by purpose</legend>
+              <p className="muted">
+                These models use the selected provider and its installation credential. Leave a
+                field blank to use the default model above.{" "}
+              </p>
+              {Object.entries(MODEL_PURPOSES).map(([purpose, label]) => (
+                <div className="field" key={purpose}>
+                  <label htmlFor={`model-${purpose}`}>{label}</label>
+                  <input
+                    id={`model-${purpose}`}
+                    value={
+                      form.models[form.provider]?.[purpose as keyof typeof MODEL_PURPOSES] ?? ""
+                    }
+                    placeholder={form.model || payload.defaults[form.provider]}
+                    onChange={(event) =>
+                      setField("models", {
+                        ...form.models,
+                        [form.provider]: {
+                          ...form.models[form.provider],
+                          [purpose]: event.target.value,
+                        },
+                      })
+                    }
+                  />
+                  {purpose === "researchPlanning" && (
+                    <p className="muted field-hint">
+                      Plans each further batch of person research from the evidence collected so
+                      far.
+                    </p>
+                  )}
+                  {purpose === "evaluationJudge" && (
+                    <p className="muted field-hint">
+                      Judges the developer Person Research Benchmark. Keep it independent of the
+                      research model so the judge is not marking its own work.
+                    </p>
+                  )}
+                </div>
+              ))}
+            </fieldset>
+          </div>
+        </details>
       </div>
       {/* Local models are a deliberate, advanced choice (issue #198): they
           never crowd the first-run decision between cloud providers. */}
@@ -681,26 +610,14 @@ export function SettingsPage() {
     </>
   );
 
-  /* The connection's own card — sign-in state, disconnect, client replacement,
-     check — exactly as before, only sometimes behind Manage (D11). */
   const googleCard = (
     <GoogleConnect
       status={googleStatus}
-      clientId={form.googleClientId}
-      clientSecret={form.googleClientSecret}
-      secretHint={secretHint(
-        payload.config.google.clientSecret.set,
-        payload.config.google.clientSecret.hint,
-      )}
-      onChange={(field, value) =>
-        setField(field === "clientId" ? "googleClientId" : "googleClientSecret", value)
-      }
+      installationConfigured={installation.googleClient.state === "configured"}
       onSignIn={() => void signInGoogle()}
       onDisconnect={() => void disconnectGoogle()}
       onCheck={() => void checkGoogle()}
       check={googleCheck}
-      onClientJson={(file) => void loadClientJson(file)}
-      jsonNotice={jsonNotice}
       signingIn={signingIn}
       disconnecting={disconnecting}
       checking={checkingGoogle}
@@ -806,7 +723,9 @@ export function SettingsPage() {
           <h2 id="section-connections">Connections</h2>
 
           <div className="card" role="group" aria-labelledby="group-google">
-            <h3 id="group-google">Google</h3>
+            <h3 id="group-google" tabIndex={-1}>
+              Google
+            </h3>
             {googleSettled ? (
               <>
                 <p className="connection-summary" role="status">
@@ -819,32 +738,18 @@ export function SettingsPage() {
                 </details>
               </>
             ) : (
-              /* Fresh or broken: the full card keeps its weight, because the
-                 fix is on it. */
               googleCard
             )}
           </div>
 
           {/* Owner onboarding (issue #123): identity proposal and confirmation. */}
           <OwnerOnboardingCard googleConnectionState={googleStatus?.state ?? null} />
-          <div className="card" role="group" aria-labelledby="group-provider">
-            <h3 id="group-provider">Extraction provider</h3>
-            {providerSettled ? (
-              <>
-                <p className="connection-summary">
-                  {PROVIDER_SHORT[form.provider]}
-                  {form.model ? ` · ${form.model}` : ""}
-                </p>
-                <details className="disclosure">
-                  <summary>Manage provider</summary>
-                  <div className="disclosure-body">{providerFields}</div>
-                </details>
-              </>
-            ) : (
-              /* A provider that needs a key and has none stored is not settled:
-                 the fields stay out where they can be filled. */
-              providerFields
-            )}
+          <div id="guided-setup" tabIndex={-1}>
+            <div className="card" role="group" aria-labelledby="group-provider">
+              <h3 id="group-provider">Extraction provider</h3>
+              {installationCard}
+              {providerFields()}
+            </div>
           </div>
         </section>
 
@@ -930,20 +835,33 @@ export function SettingsPage() {
                   One minute or longer.
                 </p>
               </div>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={form.driveEnabled}
-                  onChange={(event) => setField("driveEnabled", event.target.checked)}
-                />
-                Enable Drive polling
-              </label>
+              <div className="field">
+                <label className="checkbox-label" htmlFor="drive-polling">
+                  <input
+                    id="drive-polling"
+                    type="checkbox"
+                    checked={form.driveEnabled}
+                    onChange={(event) => setField("driveEnabled", event.target.checked)}
+                  />
+                  Enable Drive polling
+                </label>
+              </div>
             </div>
+            <p className="muted" role="status">
+              {intake?.catalog.consent
+                ? `${savedPollingSummary} ${intake.catalog.transcriptCount} transcript${
+                    intake.catalog.transcriptCount === 1 ? "" : "s"
+                  } ${savedPollingEnabled ? "catalogued" : "already catalogued"}. You gave permission to read ${
+                    intake.catalog.consent.folderName
+                  } on ${new Date(intake.catalog.consent.consentedAt).toLocaleDateString()}.`
+                : `Drive polling is ${
+                    savedPollingEnabled ? "enabled" : "paused"
+                  }, but reading this folder still needs your permission. Nothing will be read until you allow it.`}
+              {backfillSummary ? ` ${backfillSummary}` : ""}
+            </p>
             <div className="field-row">
-              {/* Always available: `aria-disabled` means "busy" here, so an
-                  un-consented folder must not borrow it. The card below is the
-                  fix, and a sync attempted without consent says so. */}
               <button
+                id="transcript-sync"
                 type="button"
                 className="action-button"
                 onClick={() => void syncDrive()}
@@ -951,6 +869,7 @@ export function SettingsPage() {
               >
                 Sync now
               </button>
+              <span className="muted">Sync now runs one manual pass.</span>
               <span role="status">{syncResult && <span className="ok">{syncResult}</span>}</span>
             </div>
 
@@ -959,15 +878,10 @@ export function SettingsPage() {
                 grant it was an API call, so the whole Debrief half of the
                 Meeting Wizard was unreachable from the app. */}
             {intake?.catalog.consent ? (
-              <p className="muted">
-                Reading <strong>{intake.catalog.consent.folderName}</strong> since{" "}
-                {new Date(intake.catalog.consent.consentedAt).toLocaleDateString()} ·{" "}
-                {intake.catalog.transcriptCount} transcript
-                {intake.catalog.transcriptCount === 1 ? "" : "s"} catalogued
-                {intake.catalog.backfill === "running" ? " · catching up…" : ""}
-              </p>
-            ) : (
-              <div className="card">
+              <span id="transcript-consent" className="visually-hidden" tabIndex={-1} />
+            ) : null}
+            {intake?.catalog.consent ? null : (
+              <div className="card" id="transcript-consent" tabIndex={-1}>
                 <h3>Reading this folder needs your permission</h3>
                 <p className="muted">
                   Transcripts are read from Drive, kept locally, and sent to your configured model
@@ -1038,15 +952,6 @@ export function SettingsPage() {
           </div>
         </section>
 
-        {/* UX audit F3: "Saved." with no key must not read as "setup complete".
-            The save stays allowed — a partially configured Workspace is
-            legitimate — but the missing prerequisite belongs beside the control
-            that just succeeded, not three surfaces away at first use. */}
-        {saveWarning ? (
-          <div className="banner banner-warn" role="status">
-            {saveWarning}
-          </div>
-        ) : null}
         <div className="field-row">
           <button type="submit" className="primary action-button" aria-disabled={saving}>
             {saving ? "Saving…" : "Save settings"}

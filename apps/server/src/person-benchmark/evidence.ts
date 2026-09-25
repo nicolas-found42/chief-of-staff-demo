@@ -1,22 +1,22 @@
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
+  type PersonDossier,
   PersonSourceDocumentSchema,
   TRANSCRIPT_EVIDENCE_SOURCE,
 } from "@chief-of-staff-demo/shared";
-
 const ENTRIES = [
   "person-profiles",
   "person-dossiers",
-  "person-dossier-revisions",
   "person-source-documents",
   "person-source-families",
   "person-research.json",
@@ -129,9 +129,20 @@ export function retainEvidence(
   source: string,
   destination: string,
   operationIds: string[],
+  publicDossier: (profileId: string) => PersonDossier | null,
 ): string {
-  mkdirSync(destination);
+  mkdirSync(destination, { mode: 0o700 });
   copyEvidence(source, destination);
+  const dossiers = join(destination, "person-dossiers");
+  if (existsSync(dossiers)) {
+    for (const file of readdirSync(dossiers)) {
+      if (!file.endsWith(".json")) continue;
+      const profileId = basename(file, ".json");
+      const projection = publicDossier(profileId);
+      if (!projection) throw new Error(`Retained evidence is missing public Profile ${profileId}.`);
+      writeFileSync(join(dossiers, file), `${JSON.stringify(projection)}\n`);
+    }
+  }
   writeFileSync(
     join(destination, "snapshot-manifest.json"),
     JSON.stringify(

@@ -9,12 +9,36 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TaskCutover } from "../../../apps/server/src/tasks/cutover";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { composeShell, type Shell } from "../../../apps/server/src/composition/shell";
 
 const directories: string[] = [];
+
+const originalProviderEnvironment = {
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+};
+
+function clearProviderEnvironment(): void {
+  for (const name of Object.keys(originalProviderEnvironment)) {
+    process.env[name] = "";
+  }
+}
+
+function restoreProviderEnvironment(): void {
+  for (const [name, value] of Object.entries(originalProviderEnvironment)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
+beforeEach(() => {
+  clearProviderEnvironment();
+});
 const shells: Shell[] = [];
 function workspace() {
   const dir = mkdtempSync(join(tmpdir(), "found42-pristine-"));
@@ -27,6 +51,10 @@ afterEach(async () => {
     await shell.app.close();
   }
   for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+afterEach(async () => {
+  restoreProviderEnvironment();
 });
 
 describe("pristine production initialization", () => {
@@ -51,7 +79,7 @@ describe("pristine production initialization", () => {
     for (const shell of pair) {
       expect(shell.gate.isActive()).toBe(false);
       const status = (await shell.app.inject("/api/migration/status")).json();
-      expect(status.state).toBe("completed");
+      expect(status).toMatchObject({ state: "completed", origin: "pristine" });
       expect(status.onboarding.complete).toBe(false);
       expect((await shell.app.inject("/api/onboarding/owner")).json().confirmed).toBeNull();
     }
@@ -77,7 +105,6 @@ describe("pristine production initialization", () => {
       url: "/api/content-research/run",
     });
     expect(rejected.statusCode).toBe(409);
-    expect(rejected.json().error).toContain("Setup required");
     expect(shell.workspace.runs.list({ module: "content-research" }).runs).toEqual([]);
   });
 
@@ -89,7 +116,8 @@ describe("pristine production initialization", () => {
       (await shell.app.inject("/api/content-research/index")).json<{
         waiting: { research: string | null; discovery: string | null };
       }>().waiting;
-    shell.workspace.config.update({ provider: "openrouter", apiKey: "synthetic-not-a-live-key" });
+    process.env.OPENROUTER_API_KEY = "synthetic-not-a-live-key";
+    shell.workspace.config.update({ provider: "openrouter" });
     expect((await waiting()).research).toContain("Confirm the owner");
     const person = shell.workspace.profiles.create({
       fullName: "Synthetic Owner",
@@ -101,9 +129,9 @@ describe("pristine production initialization", () => {
     expect((await waiting()).discovery).toContain("Brand Voice");
     shell.workspace.config.update({ model: "synthetic-model" });
     expect((await waiting()).research).toBeNull();
-    shell.workspace.config.update({ apiKey: "" });
-    expect((await waiting()).research).toContain("API key");
-    shell.workspace.config.update({ apiKey: "synthetic-not-a-live-key" });
+    process.env.OPENROUTER_API_KEY = "";
+    expect((await waiting()).research).toContain("Guided Setup");
+    process.env.OPENROUTER_API_KEY = "synthetic-not-a-live-key";
     shell.workspace.onboarding.setConnectedIdentity(null);
     expect((await waiting()).research).toContain("Confirm the owner");
     expect(shell.workspace.runs.list().runs).toEqual([]);

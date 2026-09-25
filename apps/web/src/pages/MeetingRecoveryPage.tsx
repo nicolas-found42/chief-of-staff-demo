@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import type { ActionItemIndex } from "@chief-of-staff-demo/shared";
+import { currentReconciliation } from "@chief-of-staff-demo/shared";
 import { tasksApi } from "../clients/tasks";
 import { errorMessage } from "../client";
 import { MeetingActionItems } from "../components/MeetingActionItems";
@@ -30,8 +31,25 @@ export function MeetingRecoveryPage() {
       live = false;
     };
   }, [runId]);
+  /* Redirect only when every canonical Action Item in the run resolves to the
+     same current Meeting, and no retained or unresolved relationship keeps the
+     run-scoped view authoritative. A source that is unavailable does not
+     redirect even though a Transcript may later carry a different Meeting. */
   const meeting =
-    index && Object.values(index.context ?? {}).find((context) => context.meeting)?.meeting;
+    index &&
+    index.items.length > 0 &&
+    !index.items.some(
+      (item) =>
+        currentReconciliation(item)?.disposition === "unresolved" || item.reconciledInto !== null,
+    ) &&
+    index.items
+      .map((item) => index.context?.[item.id]?.meeting ?? null)
+      .every(
+        (current): current is NonNullable<typeof current> =>
+          current !== null && current.id === index.context?.[index.items[0]!.id]?.meeting?.id,
+      )
+      ? index.context?.[index.items[0]!.id]?.meeting
+      : null;
   if (meeting)
     return (
       <Navigate
@@ -58,7 +76,10 @@ export function MeetingRecoveryPage() {
             original source identity and review decisions.
           </p>
           <p>
-            <Link to={`/meeting-debrief/${encodeURIComponent(runId)}`}>
+            {/* The explicit retained context tells the standalone Debrief to
+                stay bound to this run-scoped review, never to redirect into a
+                current Meeting that cannot count these canonical records. */}
+            <Link to={`/meeting-debrief/${encodeURIComponent(runId)}?retained=1`}>
               Try the retained Debrief
             </Link>
           </p>

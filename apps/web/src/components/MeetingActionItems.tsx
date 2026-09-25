@@ -165,6 +165,19 @@ export function MeetingActionItems({
         : [...held, actionItemId],
     );
   const reviewed = index?.items.filter((item) => item.state !== "pending") ?? [];
+  /* Repeated legacy refusals are explained once, at the section level; the
+     reason on each row remains the record's own exact verdict. Other codes,
+     reconciliation questions and incomplete acknowledgments never join this
+     summary. */
+  const declinedReasons = pending
+    .map((item) => index?.automation?.[item.id])
+    .filter(
+      (view): view is NonNullable<typeof view> =>
+        !!view && !view.eligible && view.code === "legacy-import",
+    )
+    .map((view) => view.reason);
+  const sharedLegacyRefusal =
+    declinedReasons.length > 1 && new Set(declinedReasons).size === 1 ? declinedReasons[0]! : null;
   return (
     <section tabIndex={-1} aria-labelledby="meeting-action-items-heading" id="action-items">
       <h3 id="meeting-action-items-heading">Action Items</h3>
@@ -189,6 +202,12 @@ export function MeetingActionItems({
         </p>
       )}
       {index && pending.length === 0 && <p className="muted">No pending Action Items.</p>}
+      {sharedLegacyRefusal && (
+        <p role="note" className="muted">
+          Repeated legacy status: {sharedLegacyRefusal}. Each proposal below keeps its exact reason
+          and its own review decision.
+        </p>
+      )}
       {tasks && (
         <ul className="card-list">
           {(expanded ? pending : pending.slice(0, 5)).map((item) => (

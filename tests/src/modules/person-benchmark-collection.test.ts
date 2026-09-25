@@ -6,6 +6,7 @@ import { expect, it } from "vitest";
 import { composePersonProfiles } from "../../../apps/server/src/person-profile/composition";
 import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus";
 import { evaluateCollection } from "../../../apps/server/src/person-benchmark/collection";
+import { publishCanonicalDossier } from "./person-dossier-fixture.js";
 
 it("reports a supported capability intersection with the full selected population and sparse coverage", async () => {
   const root = mkdtempSync(join(tmpdir(), "benchmark-collection-"));
@@ -35,7 +36,7 @@ it("reports a supported capability intersection with the full selected populatio
       access: "retrieved",
       acquisition: "fixture",
     });
-    people.dossiers.publish(bong.id, 0, {
+    publishCanonicalDossier(people.dossiers, bong.id, 0, {
       claims: [
         {
           id: "credit",
@@ -77,7 +78,6 @@ it("reports a supported capability intersection with the full selected populatio
         claimIds: ["credit"],
       })),
       connections: [],
-      sections: [],
     });
     const references = loadCorpus(
       fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),

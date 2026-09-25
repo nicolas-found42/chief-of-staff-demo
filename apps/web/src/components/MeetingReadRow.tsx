@@ -56,6 +56,11 @@ export function MeetingArtifactStatus({
       {artifact.status === "ready" && artifact.latestAttempt ? (
         <span> · Latest attempt {artifact.latestAttempt}</span>
       ) : null}
+      {artifact.status === "no-transcript" && artifact.nextAction ? (
+        <Link className="step-link" to={artifact.nextAction.href}>
+          {artifact.nextAction.label}
+        </Link>
+      ) : null}
       {artifact.explanation ? <span className="muted"> {artifact.explanation}</span> : null}
       {artifact.retryRunId ? (
         <>

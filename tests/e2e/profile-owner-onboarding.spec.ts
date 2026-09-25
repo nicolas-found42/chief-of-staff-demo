@@ -67,7 +67,7 @@ test("owner onboarding journey — propose → create → confirm → correct �
   await page.getByText("Manage Google connection").click();
   await page
     .getByRole("group", { name: "Google" })
-    .getByRole("button", { name: "Disconnect", exact: true })
+    .getByRole("button", { name: "Disconnect Google", exact: true })
     .click();
   await expect(ownerCard.getByText("Confirmed", { exact: true })).toHaveCount(0);
   await expect(ownerCard).toContainText("Connect a Google account to propose the owner Profile.");

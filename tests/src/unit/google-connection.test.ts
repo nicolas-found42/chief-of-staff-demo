@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GOOGLE_SCOPES } from "../../../apps/server/src/google/oauth";
 import {
   googleFailureHint,
@@ -30,11 +30,33 @@ const REJECTED = Object.assign(new Error("invalid_grant"), {
 let configStore: ConfigStore;
 let probeCalls: number;
 
+const originalGoogleEnvironment = {
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+};
+
+function setGoogleCredentials(clientId = "", clientSecret = ""): void {
+  process.env.GOOGLE_CLIENT_ID = clientId;
+  process.env.GOOGLE_CLIENT_SECRET = clientSecret;
+}
+
+function restoreGoogleEnvironment(): void {
+  for (const [name, value] of Object.entries(originalGoogleEnvironment)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
 beforeEach(() => {
+  setGoogleCredentials();
   const workspaceDir = mkdtempSync(join(tmpdir(), "cos-connection-"));
   configStore = new ConfigStore(join(workspaceDir, "config.json"));
   configStore.load();
   probeCalls = 0;
+});
+
+afterEach(() => {
+  restoreGoogleEnvironment();
 });
 
 /** A connection whose token-spending step answers however the test needs it to. */
@@ -55,7 +77,7 @@ const rejected = (): GoogleConnection =>
   });
 
 function withCredentials(): void {
-  configStore.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
+  setGoogleCredentials("id.apps", "secret");
 }
 
 function withToken(): void {
@@ -77,7 +99,7 @@ describe("state — the states decided before a token is spent", () => {
     const google = signedIn();
     await expect(google.state()).resolves.toMatchObject({ state: "unconfigured", email: null });
 
-    configStore.update({ google: { clientId: "id.apps" } });
+    setGoogleCredentials("id.apps");
     await expect(google.state()).resolves.toMatchObject({ state: "unconfigured" });
     expect(probeCalls).toBe(0);
   });

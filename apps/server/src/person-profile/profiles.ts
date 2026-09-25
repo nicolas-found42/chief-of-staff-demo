@@ -403,7 +403,12 @@ export class WorkspacePersonProfiles {
       : current;
   }
 
-  ensureIdentifier(value: string): PersonProfile {
+  /**
+   * Reuse or create the canonical Profile for one typed Identity Signal. A
+   * submitted name belongs in the initial revision when this call creates the
+   * Profile; callers still correct an existing unnamed Profile explicitly.
+   */
+  ensureIdentifier(value: string, fullName?: string): PersonProfile {
     const signals = parsePersonIdentifier(value);
     const wanted = normalizedSignals(signals);
     const holders = this.store.list().filter((profile) => holdsIdentity(profile, wanted));
@@ -431,6 +436,7 @@ export class WorkspacePersonProfiles {
     return this.create({
       ...(signals.emails[0] ? { primaryEmail: signals.emails[0] } : {}),
       profileUrls: signals.profileUrls,
+      ...(fullName ? { fullName } : {}),
     });
   }
 
@@ -440,6 +446,14 @@ export class WorkspacePersonProfiles {
         (input.profileUrls ?? []).flatMap((url) => parsePersonIdentifier(url).profileUrls),
       ),
     ];
+    const handles: Record<string, string[]> = {};
+    for (const url of profileUrls) {
+      const social = socialUrl(url);
+      if (social?.kind !== "profile" || !social.handle) continue;
+      const values = handles[social.platform] ?? [];
+      if (!values.includes(social.handle)) values.push(social.handle);
+      handles[social.platform] = values;
+    }
     const fullName = trimmed(input.fullName);
     const primaryEmail = trimmed(input.primaryEmail)?.toLowerCase() ?? null;
     if (!fullName && !primaryEmail && profileUrls.length === 0)
@@ -487,7 +501,7 @@ export class WorkspacePersonProfiles {
       fullName,
       primaryEmail,
       emails: primaryEmail ? [primaryEmail] : [],
-      handles: {},
+      handles,
       profileUrls,
       employerHints: [],
       role: trimmed(input.role),

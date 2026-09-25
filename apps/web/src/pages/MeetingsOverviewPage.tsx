@@ -7,7 +7,7 @@ import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { tasksApi, type TasksClient } from "../clients/tasks";
 import { MeetingWizardTabs } from "../components/MeetingWizardTabs";
 import { MeetingReadRow } from "../components/MeetingReadRow";
-import { meetingDate } from "../meetingDisplay";
+import { meetingDate, meetingIntakeMessage } from "../meetingDisplay";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 import "./meetingWizard.css";
@@ -78,6 +78,13 @@ export function MeetingsOverviewPage({
       empty: "No meetings in the upcoming range.",
     },
   ];
+  const intakeReadiness =
+    view !== null && (view.historyBeginsAt === null || view.intakeReadiness.verdict !== "ready")
+      ? view.intakeReadiness
+      : null;
+  const showIntake = intakeReadiness !== null;
+  const visibleGroupCount = view?.historyBeginsAt === null ? 0 : 3;
+  const workSectionNumber = String(1 + (showIntake ? 1 : 0) + visibleGroupCount).padStart(2, "0");
   return (
     <div className="page">
       <header className="wizard-head">
@@ -98,70 +105,90 @@ export function MeetingsOverviewPage({
           {message}
         </p>
       ))}
-      {groups.map(({ id, title, rows, empty }, index) => (
-        <section key={id} className="wizard-section" aria-labelledby={`wizard-${id}-heading`}>
+      {intakeReadiness ? (
+        <section className="wizard-section" aria-labelledby="wizard-intake-heading">
           <div className="wizard-section-head">
             <span className="wizard-num" aria-hidden="true">
-              0{index + 1}
+              01
             </span>
-            <h2 id={`wizard-${id}-heading`}>{title}</h2>
-            <span className="wizard-count">
-              {rows ? `${rows.length} meeting${rows.length === 1 ? "" : "s"}` : "Count unavailable"}
-            </span>
+            <h2 id="wizard-intake-heading">Transcript Intake</h2>
           </div>
-          {id === "today" && rows ? (
-            <p className="wizard-note">
-              {rows.some((m) => m.brief.status === "unavailable")
-                ? "Brief count unavailable"
-                : `${rows.filter((m) => m.brief.status === "ready").length} Briefs ready`}{" "}
-              ·{" "}
-              {rows.some((m) => m.debrief.status === "unavailable")
-                ? "Debrief count unavailable"
-                : `${rows.filter((m) => m.debrief.status === "ready").length} Debriefs ready`}{" "}
-              ·{" "}
-              {rows.some(
-                (m) => m.brief.status === "unavailable" || m.debrief.status === "unavailable",
-              )
-                ? "Failed-attempt count unavailable"
-                : `${rows.filter((m) => m.brief.latestAttempt === "failed" || m.debrief.latestAttempt === "failed").length} meeting${rows.filter((m) => m.brief.latestAttempt === "failed" || m.debrief.latestAttempt === "failed").length === 1 ? "" : "s"} with a failed attempt`}
-            </p>
+          <p>{meetingIntakeMessage(intakeReadiness)}</p>
+          {intakeReadiness.nextAction ? (
+            <Link className="action-button" to={intakeReadiness.nextAction.href}>
+              {intakeReadiness.nextAction.label}
+            </Link>
           ) : null}
-          {id === "recent" ? (
-            <p className="wizard-note">
-              The five most recently completed Meetings, across week boundaries.{" "}
-              <Link to="/meetings/history">View meeting history</Link>
-            </p>
-          ) : null}
-          {id === "upcoming" && view ? (
-            <p className="wizard-note">
-              {meetingDate(view.upcomingFrom)}–{meetingDate(view.upcomingTo)} ({view.timezone}).{" "}
-              <Link to="/meetings/weekly">This week</Link> covers Sunday–Saturday, which may differ
-              from this range.
-            </p>
-          ) : null}
-          {!rows ? (
-            <p role="status">{error ? "Meeting data unavailable." : "Loading meetings…"}</p>
-          ) : rows.length ? (
-            <ul className="wizard-ledger">
-              {rows.map((meeting) => (
-                <MeetingReadRow
-                  key={meeting.id}
-                  meeting={meeting}
-                  timezone={view!.timezone}
-                  refresh={refresh}
-                  excerpt={id === "recent"}
-                />
-              ))}
-            </ul>
-          ) : (
-            <p className="wizard-empty">{empty}</p>
-          )}
         </section>
-      ))}
+      ) : null}
+      {view?.historyBeginsAt !== null
+        ? groups.map(({ id, title, rows, empty }, index) => (
+            <section key={id} className="wizard-section" aria-labelledby={`wizard-${id}-heading`}>
+              <div className="wizard-section-head">
+                <span className="wizard-num" aria-hidden="true">
+                  0{index + (showIntake ? 2 : 1)}
+                </span>
+                <h2 id={`wizard-${id}-heading`}>{title}</h2>
+                <span className="wizard-count">
+                  {rows
+                    ? `${rows.length} meeting${rows.length === 1 ? "" : "s"}`
+                    : "Count unavailable"}
+                </span>
+              </div>
+              {id === "today" && rows ? (
+                <p className="wizard-note">
+                  {rows.some((m) => m.brief.status === "unavailable")
+                    ? "Brief count unavailable"
+                    : `${rows.filter((m) => m.brief.status === "ready").length} Briefs ready`}{" "}
+                  ·{" "}
+                  {rows.some((m) => m.debrief.status === "unavailable")
+                    ? "Debrief count unavailable"
+                    : `${rows.filter((m) => m.debrief.status === "ready").length} Debriefs ready`}{" "}
+                  ·{" "}
+                  {rows.some(
+                    (m) => m.brief.status === "unavailable" || m.debrief.status === "unavailable",
+                  )
+                    ? "Failed-attempt count unavailable"
+                    : `${rows.filter((m) => m.brief.latestAttempt === "failed" || m.debrief.latestAttempt === "failed").length} meeting${rows.filter((m) => m.brief.latestAttempt === "failed" || m.debrief.latestAttempt === "failed").length === 1 ? "" : "s"} with a failed attempt`}
+                </p>
+              ) : null}
+              {id === "recent" ? (
+                <p className="wizard-note">
+                  The five most recently completed Meetings, across week boundaries.{" "}
+                  <Link to="/meetings/history">View meeting history</Link>
+                </p>
+              ) : null}
+              {id === "upcoming" && view ? (
+                <p className="wizard-note">
+                  {meetingDate(view.upcomingFrom)}–{meetingDate(view.upcomingTo)} ({view.timezone}).{" "}
+                  <Link to="/meetings/weekly">This week</Link> covers Sunday–Saturday, which may
+                  differ from this range.
+                </p>
+              ) : null}
+              {!rows ? (
+                <p role="status">{error ? "Meeting data unavailable." : "Loading meetings…"}</p>
+              ) : rows.length ? (
+                <ul className="wizard-ledger">
+                  {rows.map((meeting) => (
+                    <MeetingReadRow
+                      key={meeting.id}
+                      meeting={meeting}
+                      timezone={view!.timezone}
+                      refresh={refresh}
+                      excerpt={id === "recent"}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="wizard-empty">{empty}</p>
+              )}
+            </section>
+          ))
+        : null}
       <section className="wizard-section" aria-labelledby="wizard-work-heading">
         <div className="wizard-section-head">
           <span className="wizard-num" aria-hidden="true">
-            04
+            {workSectionNumber}
           </span>
           <h2 id="wizard-work-heading">Your work</h2>
         </div>

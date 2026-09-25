@@ -15,6 +15,7 @@ import {
   type WorkspaceMigrationPreview,
 } from "../../../apps/server/src/migration/workspace";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store";
+import { publishCanonicalDossier } from "../modules/person-dossier-fixture.js";
 import { PersonResearchQueue } from "../../../apps/server/src/person-profile/research-queue";
 import type { PersonResearch } from "../../../apps/server/src/person-profile/research";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
@@ -712,7 +713,7 @@ describe("Workspace migration preview", () => {
       access: "retrieved",
       acquisition: "public-search/website",
     });
-    dossiers.publish(person.id, 0, {
+    publishCanonicalDossier(dossiers, person.id, 0, {
       claims: [
         {
           id: "ledger",
@@ -732,7 +733,6 @@ describe("Workspace migration preview", () => {
       works: [],
       expertise: [],
       connections: [],
-      sections: [],
     });
     // Detaching writes the rejection record and a scrubbed revision; deleting writes the tombstone.
     dossiers.detach(person.id, source.id);

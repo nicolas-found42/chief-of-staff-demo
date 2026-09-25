@@ -274,7 +274,7 @@ export function RunDetailPage() {
               </button>
             )}
             {failure.showReconnect && (
-              <Link to="/settings" className="action-button step-link">
+              <Link to="/settings#group-google" className="action-button step-link">
                 Reconnect
               </Link>
             )}

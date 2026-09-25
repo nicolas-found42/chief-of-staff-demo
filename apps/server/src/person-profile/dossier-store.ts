@@ -31,9 +31,10 @@ import {
 type PersonDossierSection = PersonDossierContent["sections"][number];
 
 /**
- * Sections are derived accounts, never stored truth: they are rebuilt from the
- * claims on every publish, merge included, so a merged survivor reads the
- * merged record instead of waiting for the next research run.
+ * Sections are the readable account stored with the exact Person Evidence
+ * selected in the same dossier revision. Publication compares every
+ * evidence-bearing field with this canonical derivation; only `updatedAt`
+ * remains store-owned.
  */
 export function synthesizeSections(claims: PersonClaim[]): PersonDossierSection[] {
   return PersonDossierSectionSchema.options.map((key) => {
@@ -52,6 +53,24 @@ export function synthesizeSections(claims: PersonClaim[]): PersonDossierSection[
         : ["No grounded evidence collected in this section yet."],
     };
   });
+}
+
+function assertReadableAccount(content: PersonDossierContent): void {
+  const canonical = synthesizeSections(content.claims);
+  if (content.sections.length !== canonical.length)
+    throw new Error("Readable account must contain every canonical Person Profile section");
+  for (const [position, expected] of canonical.entries()) {
+    const actual = content.sections[position];
+    if (!actual || actual.key !== expected.key)
+      throw new Error("Readable account Person Evidence sections are missing or out of order");
+    if (
+      actual.summary !== expected.summary ||
+      JSON.stringify(actual.claimIds) !== JSON.stringify(expected.claimIds) ||
+      actual.state !== expected.state ||
+      JSON.stringify(actual.gaps) !== JSON.stringify(expected.gaps)
+    )
+      throw new Error("Readable account does not match its Person Evidence");
+  }
 }
 
 /** Source versions live separately so consumers and revisions never duplicate raw text. */
@@ -236,6 +255,10 @@ export class PersonDossierStore {
     if (existsSync(this.path("person-dossier-tombstones", profileId)))
       throw new Error("Profile was deleted");
     const content = PersonDossierContentSchema.parse(input);
+    /* Validate the complete account before any revision is written. A source-only
+       publication still carries the canonical empty account, keeping every stored
+       revision readable and making the no-evidence case explicit. */
+    assertReadableAccount(content);
     if ((this.get(profileId)?.revision ?? 0) !== expectedRevision)
       throw new Error("Dossier changed during research");
     content.sourceIds = [
@@ -412,17 +435,7 @@ export class PersonDossierStore {
       connections: dossier.connections.filter(
         (c) => valid(c.claimIds) && c.workIds.every((id) => workIds.has(id)),
       ),
-      sections: dossier.sections.map((s) =>
-        valid(s.claimIds)
-          ? s
-          : {
-              ...s,
-              summary: "",
-              claimIds: [],
-              state: "incomplete",
-              gaps: ["Supporting evidence was removed or is outside this view."],
-            },
-      ),
+      sections: synthesizeSections(claims),
     };
   }
 

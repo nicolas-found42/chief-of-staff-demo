@@ -16,9 +16,9 @@ import { openGoogleConnection } from "../../../apps/server/src/google/connection
 
 /**
  * Model-provider onboarding (issue #198): what a fresh customer configuration
- * recommends, how the BYO key crosses the credential boundary, and where the
- * mock provider may exist at all. The seam is the assembled config API over a
- * real temporary Workspace.
+ * recommends, how Workspace-owned model choices persist, and where the mock
+ * provider may exist at all. The seam is the assembled config API over a real
+ * temporary Workspace.
  */
 
 const PORT = 4317;
@@ -99,13 +99,12 @@ describe("GET /api/config — the fresh customer recommendation", () => {
   });
 });
 
-describe("the BYO key across the credential boundary", () => {
-  it("persists independent purpose models without duplicating or exposing the provider key", async () => {
+describe("Workspace-owned model choices", () => {
+  it("persists independent purpose models without exposing installation credentials", async () => {
     const put = await app.inject({
       method: "PUT",
       url: "/api/config",
       payload: {
-        apiKey: "private-openrouter-key",
         models: {
           openrouter: {
             personResearch: "research-model",
@@ -132,7 +131,6 @@ describe("the BYO key across the credential boundary", () => {
         },
       },
     });
-    expect(get.body).not.toContain("private-openrouter-key");
     const restarted = new ConfigStore(join(workspaceDir, "config.json"));
     expect(restarted.load()).toMatchObject({
       models: {
@@ -147,27 +145,6 @@ describe("the BYO key across the credential boundary", () => {
     expect(restarted.getForPurpose("meetingBrief").model).toBe("inception/mercury-2.5");
     restarted.update({ provider: "anthropic", model: "another-provider-model" });
     expect(restarted.getForPurpose("evaluationJudge").model).toBe("another-provider-model");
-  });
-
-  it("stores the key through the config store and never echoes it back", async () => {
-    const put = await app.inject({
-      method: "PUT",
-      url: "/api/config",
-      payload: {
-        provider: "openrouter",
-        model: "inception/mercury-2.5-preview",
-        apiKey: "sk-or-v1-abc123def4567890",
-      },
-    });
-    expect(put.statusCode).toBe(200);
-
-    const get = await app.inject({ method: "GET", url: "/api/config" });
-    expect(get.statusCode).toBe(200);
-    const body = get.json<Record<string, unknown>>();
-    expect(body.config).toMatchObject({ apiKey: { set: true, hint: "…7890" } });
-    /* The whole payload — defaults included — is swept, not just the key field:
-       the criterion is that the key appears nowhere in what the UI receives. */
-    expect(JSON.stringify(body)).not.toContain("sk-or-v1-abc123def4567890");
   });
 });
 
