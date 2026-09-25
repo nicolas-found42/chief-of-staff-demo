@@ -904,6 +904,7 @@ the oldest Transcript. */
     installationStatus,
     ownerOnboarding,
     brandProfiles,
+    runs,
   });
 
   /* The repeatable generated-data clear (Settings' danger zone): deletes the

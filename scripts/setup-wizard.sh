@@ -187,16 +187,34 @@ finish() {
 # Guided Setup is operator-driven and resumable. It never edits Workspace
 # credential fields and never runs a migration without an accepted backup.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="${APP:-http://127.0.0.1:4317}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-$REPO_ROOT/workspace}"
+if [[ "$WORKSPACE_DIR" == "$REPO_ROOT/workspace" ]]; then
+  APP="${APP:-http://127.0.0.1:4317}"
+  COMPOSE_OPTIONS=(-f "$REPO_ROOT/docker-compose.yml")
+  DEFAULT_ENV_FILE="$REPO_ROOT/.env"
+else
+  APP="${APP:-http://127.0.0.1:44317}"
+  SETUP_PROJECT="chief-setup-$(python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:10])' "$WORKSPACE_DIR")"
+  COMPOSE_OPTIONS=(-p "$SETUP_PROJECT" -f "$REPO_ROOT/docker-compose.yml")
+  DEFAULT_ENV_FILE="$WORKSPACE_DIR.installation.env"
+fi
+[[ "$APP" =~ ^http://127[.]0[.]0[.]1:([0-9]+)$ ]] || { warn "APP must be a local loopback URL with a port"; exit 1; }
+APP_PORT="${BASH_REMATCH[1]}"
+(( APP_PORT >= 1024 && APP_PORT < 65535 )) || { warn "APP port is out of range"; exit 1; }
+if [[ "$WORKSPACE_DIR" != "$REPO_ROOT/workspace" && "$APP_PORT" == 4317 ]]; then
+  warn "an alternate Workspace needs an app port other than the normal 4317"
+  exit 1
+fi
+RELAY_PORT=$((APP_PORT + 1))
 # The reusable wizard library supplies ".env" before these stages run.
-[[ "$ENV_FILE" == ".env" ]] && ENV_FILE="$REPO_ROOT/.env"
-BACKUP_DESTINATION="${BACKUP_DESTINATION:-$HOME/.local/share/chief-of-staff-demo/guided-setup-backup}"
+[[ "$ENV_FILE" == ".env" ]] && ENV_FILE="$DEFAULT_ENV_FILE"
+BACKUP_DESTINATION="${BACKUP_DESTINATION:-$HOME/.local/share/chief-of-staff-demo/${SETUP_PROJECT:-guided-setup-backup}}"
 BACKUP_RESULT="${BACKUP_RESULT:-$BACKUP_DESTINATION/result.json}"
-STOPPED_CONTAINER="${STOPPED_CONTAINER:-chief-of-staff-demo-app-1}"
+STOPPED_CONTAINER="${STOPPED_CONTAINER:-${SETUP_PROJECT:-chief-of-staff-demo}-app-1}"
 MIGRATION_SCRIPT="$REPO_ROOT/scripts/migrate-installation-credentials.mts"
 
 TOTAL_STAGES=10
+stage_result() { say "Stage $_STAGE_INDEX status: $1"; }
 
 banner "Chief of Staff — Guided Setup"
 
@@ -214,8 +232,15 @@ if [[ ! -f "$WORKSPACE_DIR/config.json" ]]; then
     exit 1
   fi
   FRESH_WORKSPACE=true
+  MIGRATION_REQUIRED=false
 else
   FRESH_WORKSPACE=false
+  jq -e . "$WORKSPACE_DIR/config.json" >/dev/null || { warn "Workspace config.json is unreadable"; exit 1; }
+  if jq -e 'has("apiKey") or ((.google // {}) | has("clientId") or has("clientSecret"))' "$WORKSPACE_DIR/config.json" >/dev/null; then
+    MIGRATION_REQUIRED=true
+  else
+    MIGRATION_REQUIRED=false
+  fi
 fi
 
 api_get() {
@@ -250,11 +275,13 @@ say "Workspace: $WORKSPACE_DIR"
 say "Installation environment: $ENV_FILE"
 say "The Workspace keeps provider/model choices, Google consent, and records; it does not keep installation secret values."
 confirm "Continue with the local Guided Setup?" || { warn "setup cancelled"; exit 1; }
+stage_result "confirmed"
 
 # ── 2 · Required Workspace backup ─────────────────────────────────────────
 stage "Required Workspace backup"
-if [[ "$FRESH_WORKSPACE" == true ]]; then
-  say "No Workspace records exist yet; there is nothing to back up or migrate."
+if [[ "$MIGRATION_REQUIRED" == false ]]; then
+  say "No legacy Workspace credentials need transfer; backup and migration are not required."
+  stage_result "not required"
 else
   say "The app must be stopped before the private backup is captured."
   say "Choose a new private backup destination; it must not be inside the Workspace or repository."
@@ -274,14 +301,15 @@ else
     }
   fi
   [[ -f "$BACKUP_RESULT" ]] || { warn "backup result is missing; setup stops safely"; exit 1; }
-  say "Accepted backup evidence is available. Keep it private for recovery."
+  say "Backup evidence is available. Keep it private for recovery; Stage 3 verifies it."
+  stage_result "available; verification pending"
 fi
 
 # ── 3 · Check migration and confirm ───────────────────────────────────────
 stage "Check migration and confirm"
 say "The read-only check verifies the accepted backup and reports whether legacy fields need transfer."
-if [[ "$FRESH_WORKSPACE" == true ]]; then
-  say "Fresh installation: no legacy credentials require transfer."
+if [[ "$MIGRATION_REQUIRED" == false ]]; then
+  say "No legacy credentials require transfer."
 else
   migration_check || { warn "migration check failed; source and destination remain unchanged"; exit 1; }
 fi
@@ -289,6 +317,7 @@ confirm "Continue to provision the checked installation values?" || {
   warn "setup paused before any migration; resume later"
   exit 1
 }
+if [[ "$MIGRATION_REQUIRED" == true ]]; then stage_result "confirmed"; else stage_result "not required"; fi
 
 # ── 4 · Installation Google client ────────────────────────────────────────
 stage "Installation Google client"
@@ -298,6 +327,7 @@ if [[ "$FRESH_WORKSPACE" == false ]] && jq -e '.google.clientId and .google.clie
 fi
 if [[ "$LEGACY_GOOGLE" == true ]]; then
   say "The existing Workspace Google client will transfer at stage 6 without re-entry."
+  stage_result "ready for transfer"
 else
   for credential in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do
     if [[ -n "${!credential:-}" || -n "$(_existing "$credential" || true)" ]]; then
@@ -310,6 +340,7 @@ else
     [[ -n "${!credential}" ]] || { warn "$credential is required"; exit 1; }
     write_env "$credential" "${!credential}"
   done
+  stage_result "provisioned"
 fi
 
 # ── 5 · Installation provider key ─────────────────────────────────────────
@@ -350,16 +381,19 @@ case "$PROVIDER" in
   ollama) say "Ollama selected; no installation key is required." ;;
   *) warn "choose a listed provider"; exit 1 ;;
 esac
+if [[ "$LEGACY_PROVIDER_KEY" == true ]]; then stage_result "ready for transfer"; else stage_result "provisioned"; fi
 
 # ── 6 · Apply migration and verify destination ───────────────────────────
 stage "Apply migration and verify destination"
-if [[ "$FRESH_WORKSPACE" == true ]]; then
-  say "Fresh installation: no Workspace credential fields need removal."
+if [[ "$MIGRATION_REQUIRED" == false ]]; then
+  say "No legacy Workspace credential fields need removal."
+  stage_result "not required"
 else
   say "The app remains stopped. The command verifies exact values and mode 600 before removing source fields."
   confirm "Run the backup-gated credential migration now?" || { warn "migration not applied"; exit 1; }
   migration_apply || { warn "migration failed; retain the backup and inspect the recovery state"; exit 1; }
   say "Migration applied. The backup remains available for recovery."
+  stage_result "confirmed"
 fi
 
 # ── 7 · Restart installation ──────────────────────────────────────────────
@@ -367,7 +401,9 @@ stage "Restart installation"
 step "Start the same app container so it loads the installation environment."
 touch "$ENV_FILE"
 chmod 600 "$ENV_FILE"
-docker compose -f "$REPO_ROOT/docker-compose.yml" --env-file "$ENV_FILE" up -d --force-recreate app
+mkdir -p "$WORKSPACE_DIR"
+WORKSPACE_DIR="$WORKSPACE_DIR" APP_PORT="$APP_PORT" RELAY_PORT="$RELAY_PORT" \
+  docker compose "${COMPOSE_OPTIONS[@]}" --env-file "$ENV_FILE" up -d --force-recreate app
 wait_for_health 90 || { warn "app did not become healthy; keep the backup and resume"; exit 1; }
 api_get /api/config.installation
 printf '%s' "$_API_BODY" | jq -e --arg provider "$PROVIDER" \
@@ -376,45 +412,65 @@ printf '%s' "$_API_BODY" | jq -e --arg provider "$PROVIDER" \
   exit 1
 }
 say "Installation status is Configured/Missing/Not required only; no values are returned."
+stage_result "confirmed"
 
 # ── 8 · Owner Google consent ──────────────────────────────────────────────
 stage "Owner Google consent"
-open_url "$APP/settings#group-google"
-step "Sign in with the Google account that owns this Workspace and grant the requested permissions."
-step "Return here after the app reports Connected. The installation client is shared; consent and refresh tokens stay in this Workspace."
-pause "Google consent completed for this Workspace"
 api_get /api/google/status
+if ! printf '%s' "$_API_BODY" | jq -e '.state == "connected"' >/dev/null; then
+  open_url "$APP/settings#group-google"
+  step "Sign in with the Google account that owns this Workspace and grant the requested permissions."
+  step "Return here after the app reports Connected. The installation client is shared; consent and refresh tokens stay in this Workspace."
+  pause "Google consent completed for this Workspace"
+  api_get /api/google/status
+else
+  say "This Workspace is already connected; keeping its owner consent."
+fi
 printf '%s' "$_API_BODY" | jq -e '.state == "connected"' >/dev/null || {
   warn "Google consent is not connected yet; resume when the owner has completed it"
   exit 1
 }
+stage_result "confirmed"
 
 # ── 9 · Provider, model, and Transcript Intake ───────────────────────────
 stage "Provider, model, and Transcript Intake"
-open_url "$APP/settings#api-key"
-step "Confirm the provider and model in Settings. Only providers with an installed key, or Ollama, are selectable."
-step "Choose the transcript Drive folder, enable Drive polling, and allow the app to read and process that folder."
-step "Use the selected Google Drive folder and its existing intake controls; no manual upload step is part of this path."
-pause "Provider, model, folder, polling, and consent are saved"
 api_get "/api/migration/status?goal=meetings"
+if ! printf '%s' "$_API_BODY" | jq -e '.onboarding.complete == true' >/dev/null; then
+  open_url "$APP/settings#api-key"
+  step "Confirm the provider and model in Settings. Only providers with an installed key, or Ollama, are selectable."
+  step "Choose the transcript Drive folder, enable Drive polling, and allow the app to read and process that folder."
+  step "Use the selected Google Drive folder and its existing intake controls; no manual upload step is part of this path."
+  pause "Provider, model, folder, polling, and consent are saved"
+  api_get "/api/migration/status?goal=meetings"
+else
+  say "The five Meeting prerequisites are already complete."
+fi
 printf '%s' "$_API_BODY" | jq -e '.onboarding.complete == true' >/dev/null || {
   warn "Meeting prerequisites are unfinished; follow the five controls and resume"
   exit 1
 }
+stage_result "confirmed"
 
 # ── 10 · Verify the first result ─────────────────────────────────────────
 stage "Verify the first result"
 api_get "/api/migration/status?goal=meetings"
 say "Meeting setup status: $(printf '%s' "$_API_BODY" | jq -r '.onboarding.complete // false')"
+FIRST_RESULT_STATE="$(printf '%s' "$_API_BODY" | jq -r '.onboarding.guidedSetup.stages[]? | select(.id == "first-result") | .state')"
 api_get /api/meetings/workspace
 say "Meeting Intake status: $(printf '%s' "$_API_BODY" | jq -r '.intakeReadiness.verdict // "unavailable"')"
 step "Open Meeting Wizard and follow the next truthful Transcript Intake action."
 open_url "$APP/meetings"
-if ! printf '%s' "$_API_BODY" | jq -e \
-  '[.today[]?, .recent[]?, .upcoming[]?] | any(.debrief.status == "ready")' >/dev/null; then
+if [[ "$FIRST_RESULT_STATE" == "unavailable" || -z "$FIRST_RESULT_STATE" ]]; then
+  warn "First Debrief status is unavailable; inspect the app and resume setup"
+  stage_result "unavailable"
+  exit 1
+fi
+if [[ "$FIRST_RESULT_STATE" != "confirmed" ]]; then
   say "Meeting setup is ready, but the first Debrief is still waiting for a Transcript and extraction."
   say "Use the selected Drive folder and Sync now, then re-run this stage to verify the result."
+  stage_result "waiting for first Debrief"
   exit 0
 fi
 
+stage_result "confirmed"
 finish

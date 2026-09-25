@@ -1327,6 +1327,82 @@ test("audit F9: a dispatched slice bills at most the allowance, never its own ov
   }
 });
 
+test("a queued cancellation can be explicitly resumed without discarding its result", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queued-cancel-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "resume@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+
+  queue.enqueue(person.id, "created");
+  expect(queue.cancel(person.id)).toBe(true);
+  expect(queue.job(person.id)?.state).toBe("interrupted");
+  expect(queue.enqueue(person.id, "explicit").kind).toBe("accepted");
+  await queue.tick();
+
+  const job = queue.job(person.id);
+  expect(job?.state).not.toBe("researching");
+  expect(job?.operation).toBeDefined();
+});
+
+test("an in-flight cancellation followed by immediate explicit requeue keeps the new result", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-cancel-requeue-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "requeue@example.com" });
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let searches = 0;
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => {
+      searches += 1;
+      if (searches === 1) {
+        entered.resolve();
+        await release.promise;
+      }
+      return [];
+    },
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    readiness: () => ({ state: "ready" as const, reason: "ready" as const }),
+  });
+
+  queue.enqueue(person.id, "created");
+  const first = queue.tick();
+  await entered.promise;
+  expect(queue.cancel(person.id)).toBe(true);
+  expect(queue.enqueue(person.id, "explicit").kind).toBe("accepted");
+  release.resolve();
+  await first;
+  await queue.tick();
+
+  const job = queue.job(person.id);
+  expect(searches).toBe(2);
+  expect(job?.operation).toBeDefined();
+  expect(job?.state).not.toBe("researching");
+});
+
 test("audit F9: an owner's stop caps the in-flight slice's billing at the stop time", async () => {
   vi.useFakeTimers({ now: 0 });
   try {

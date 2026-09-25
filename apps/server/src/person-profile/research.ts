@@ -276,7 +276,7 @@ export interface ResearchCancellation {
   operationId: string;
   state: "interrupted";
   detail: string;
-  billedThrough: number;
+  elapsedMilliseconds: number;
 }
 
 const EMPTY: PersonDossierContent = {
@@ -339,7 +339,14 @@ export class PersonResearch {
   private readonly sourceWork = new SourceScheduler();
   private readonly active = new Map<
     string,
-    { generation: number; operationId: string; cancelledAt: number | null }
+    {
+      generation: number;
+      operationId: string;
+      cancelledAt: number | null;
+      started: number;
+      spentMilliseconds: number;
+      limitMilliseconds: number;
+    }
   >();
   private generation = 0;
   constructor(
@@ -422,7 +429,14 @@ export class PersonResearch {
         : undefined;
     const started = Date.now();
     const generation = ++this.generation;
-    this.active.set(command.profile.id, { generation, operationId, cancelledAt: null });
+    this.active.set(command.profile.id, {
+      generation,
+      operationId,
+      cancelledAt: null,
+      started,
+      spentMilliseconds: command.spent.milliseconds,
+      limitMilliseconds: command.limits.milliseconds,
+    });
     command.saveStart({
       operationId,
       operationRevision,
@@ -527,7 +541,10 @@ export class PersonResearch {
       state: "interrupted",
       detail:
         "Research was stopped by an owner; retained evidence and pending leads are preserved.",
-      billedThrough: active.cancelledAt,
+      elapsedMilliseconds: Math.min(
+        active.limitMilliseconds,
+        active.spentMilliseconds + Math.max(0, active.cancelledAt - active.started),
+      ),
     };
   }
 

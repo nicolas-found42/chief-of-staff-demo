@@ -328,12 +328,20 @@ function installationTransfers(values: LegacyValues): Record<string, string> {
   return transfers;
 }
 
+function assertProcessEnvCompatible(transfers: Record<string, string>): void {
+  for (const [name, value] of Object.entries(transfers)) {
+    const installed = process.env[name];
+    if (installed !== undefined && installed !== value) fail("destination-credential-conflict");
+  }
+}
+
 function applyMigration(
   workspace: string,
   envPath: string,
   values: LegacyValues,
 ): { transferred: number; changed: boolean } {
   const transfers = installationTransfers(values);
+  assertProcessEnvCompatible(transfers);
   const originalEnv = existsSync(envPath) ? readFileSync(envPath, "utf8") : null;
   const merged = mergeEnv(originalEnv, transfers);
   const transferCount = Object.keys(transfers).length;
@@ -434,6 +442,7 @@ try {
   }
   if (args.operation === "check") {
     const transfers = installationTransfers(values);
+    assertProcessEnvCompatible(transfers);
     mergeEnv(existsSync(args.env) ? readFileSync(args.env, "utf8") : null, transfers);
     process.stdout.write(
       `${JSON.stringify({ operation: "check", ready: true, transfers: Object.keys(transfers).length })}\n`,

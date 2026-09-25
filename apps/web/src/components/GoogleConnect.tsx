@@ -54,8 +54,10 @@ export function GoogleConnect({
       {!installationConfigured && (
         <p id="google-installation-missing">
           The installation Google OAuth client is not configured.{" "}
-          <Link to="/onboarding?goal=meetings">Open Guided Setup</Link> to provision it; this
-          Workspace will then ask each owner to consent explicitly.
+          <Link className="text-link" to="/onboarding?goal=meetings">
+            Open Guided Setup
+          </Link>{" "}
+          to provision it; this Workspace will then ask each owner to consent explicitly.
         </p>
       )}
       {status.state === "connected" ? (

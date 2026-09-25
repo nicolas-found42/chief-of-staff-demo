@@ -147,7 +147,18 @@ function runMigration(
   workspace: string,
   env: string,
   backupResult: string,
+  envOverrides: Record<string, string> = {},
 ): { status: number | null; stdout: string; stderr: string } {
+  const childEnv = { ...process.env };
+  for (const name of [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+  ])
+    delete childEnv[name];
   const result = spawnSync(
     process.execPath,
     [
@@ -162,7 +173,7 @@ function runMigration(
       "--backup-result",
       backupResult,
     ],
-    { encoding: "utf8", env: { ...process.env } },
+    { encoding: "utf8", env: { ...childEnv, ...envOverrides } },
   );
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
@@ -443,6 +454,30 @@ describe("installation credential migration command", () => {
     expect(snapshot(workspace)).toEqual(sourceBefore);
     expect(envSnapshot(env)).toBe(envBefore);
   });
+
+  it.each([
+    ["check", "different-exported-key"],
+    ["apply", "different-exported-key"],
+    ["check", ""],
+    ["apply", ""],
+  ] as const)(
+    "refuses effective process credential %s with value %j",
+    (operation, exportedValue) => {
+      const { workspace, env, backupResult } = fixture("openai");
+      const sourceBefore = snapshot(workspace);
+      const envBefore = envSnapshot(env);
+
+      const result = runMigration(operation, workspace, env, backupResult, {
+        OPENAI_API_KEY: exportedValue,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("destination-credential-conflict");
+      expectNoSecretOutput(result);
+      expect(snapshot(workspace)).toEqual(sourceBefore);
+      expect(envSnapshot(env)).toBe(envBefore);
+    },
+  );
 
   it.each(["missing", "failed", "mismatched", "receipt-mismatch"] as const)(
     "refuses %s backup evidence before changing either side",

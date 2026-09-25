@@ -6,6 +6,8 @@ import type {
   InstallationStatus,
 } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
+import type { Runs } from "../runs.js";
+import { readPublishedDebrief } from "../modules/meeting-debrief/publication.js";
 import type { WorkspaceBrandProfileStore } from "../brand-profile/store.js";
 import { OwnerOnboarding, OwnerOnboardingError } from "../onboarding/owner.js";
 
@@ -88,6 +90,14 @@ export interface OnboardingStatus {
   complete: boolean;
   steps: OnboardingStep[];
   otherSetup: OnboardingOtherSetup;
+  guidedSetup: {
+    stages: {
+      id: string;
+      label: string;
+      state: "confirmed" | "to-do" | "operator-check" | "waiting" | "unavailable";
+      href: string | null;
+    }[];
+  };
 }
 
 export interface OnboardingStatusDeps {
@@ -100,6 +110,8 @@ export interface OnboardingStatusDeps {
   transcriptCatalog?: { status(): { consent: { folderId: string } | null } };
   /** Installation status is deliberately status-only; no value crosses this seam. */
   installationStatus: () => InstallationStatus;
+  /** A finished Debrief is the first result; a Transcript alone is not. */
+  runs?: Pick<Runs, "list" | "open">;
 }
 
 function providerIsReady(
@@ -232,6 +244,39 @@ export async function buildOnboardingStatus(
   const consent = deps.transcriptCatalog?.status().consent?.folderId ?? null;
   const steps =
     goal === "meetings" ? meetingSteps(config, google.state, providerReady, consent) : general;
+  const installation = deps.installationStatus();
+  const googleClientReady = installation.googleClient.state === "configured";
+  const modelReady =
+    config.provider === "ollama" ||
+    (config.provider !== "mock" &&
+      installation.providerKeys[config.provider as InstallationProviderId].state === "configured");
+  const meetingReady = meetingSteps(config, google.state, providerReady, consent).every(
+    (step) => step.done,
+  );
+  let firstDebriefReady = false;
+  let firstDebriefUnavailable = false;
+  try {
+    firstDebriefReady =
+      deps.runs?.list({ module: "meeting-debrief" }).runs.some((summary) => {
+        if (summary.status !== "done") return false;
+        const run = deps.runs?.open(summary.id);
+        if (!run) return false;
+        const published = readPublishedDebrief({ read: (name) => run.readArtifact(name) });
+        return (
+          published !== null &&
+          (published.legacy || published.verified) &&
+          published.availability?.completeness !== "incomplete"
+        );
+      }) ?? false;
+  } catch {
+    firstDebriefUnavailable = true;
+  }
+  const operatorStage = (id: string, label: string) => ({
+    id,
+    label,
+    state: "operator-check" as const,
+    href: null,
+  });
   return {
     goal,
     complete: steps.every((step) => step.done),
@@ -239,6 +284,54 @@ export async function buildOnboardingStatus(
     otherSetup: {
       complete: general.every((step) => step.done),
       steps: general,
+    },
+    guidedSetup: {
+      stages: [
+        operatorStage("preflight", "Preflight and paths"),
+        operatorStage("backup", "Required Workspace backup when migrating"),
+        operatorStage("migration-check", "Check migration and confirm"),
+        {
+          id: "google-client",
+          label: "Installation Google client",
+          state: googleClientReady ? "confirmed" : "to-do",
+          href: "/settings#api-key",
+        },
+        {
+          id: "provider-key",
+          label: "Installation provider key or Ollama",
+          state: modelReady ? "confirmed" : "to-do",
+          href: "/settings#api-key",
+        },
+        operatorStage("migration-apply", "Apply migration and verify destination"),
+        {
+          id: "restart",
+          label: "Restart and verify installation",
+          state: googleClientReady && modelReady ? "confirmed" : "to-do",
+          href: "/settings#api-key",
+        },
+        {
+          id: "owner-consent",
+          label: "Owner Google consent",
+          state: google.state === "connected" ? "confirmed" : "to-do",
+          href: "/settings#group-google",
+        },
+        {
+          id: "intake",
+          label: "Provider, model, and Transcript Intake",
+          state: meetingReady ? "confirmed" : "to-do",
+          href: "/onboarding?goal=meetings",
+        },
+        {
+          id: "first-result",
+          label: "Verify the first Debrief",
+          state: firstDebriefReady
+            ? "confirmed"
+            : firstDebriefUnavailable
+              ? "unavailable"
+              : "waiting",
+          href: "/meetings",
+        },
+      ],
     },
   };
 }

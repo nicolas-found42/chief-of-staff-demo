@@ -326,6 +326,33 @@ describe("GET /api/migration/status", () => {
     expect((await read()).complete).toBe(true);
   });
 
+  it("reports ten Guided Setup stages without claiming private operator checks are complete", async () => {
+    setOpenRouterKey("synthetic-stage-key");
+    const response = await h.app.inject({ method: "GET", url: "/api/migration/status" });
+    expect(response.statusCode).toBe(200);
+    const stages = response.json().onboarding.guidedSetup.stages as {
+      id: string;
+      state: string;
+      href: string | null;
+    }[];
+    expect(stages.map((stage) => stage.id)).toEqual([
+      "preflight",
+      "backup",
+      "migration-check",
+      "google-client",
+      "provider-key",
+      "migration-apply",
+      "restart",
+      "owner-consent",
+      "intake",
+      "first-result",
+    ]);
+    expect(stages.filter((stage) => stage.state === "operator-check")).toHaveLength(4);
+    expect(stages.find((stage) => stage.id === "google-client")?.state).toBe("to-do");
+    expect(stages.find((stage) => stage.id === "first-result")?.state).toBe("waiting");
+    expect(response.body).not.toContain("synthetic-stage-key");
+  });
+
   it("keeps a truthful general goal when unrelated product setup remains incomplete", async () => {
     const response = await h.app.inject({ method: "GET", url: "/api/migration/status" });
     const onboarding = response.json<{

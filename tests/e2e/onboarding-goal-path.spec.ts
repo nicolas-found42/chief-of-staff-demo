@@ -14,6 +14,18 @@ const MEETING_STEPS = [
 
 test.use({ freshWorkspace: true });
 
+test("general onboarding exposes ten truthful local Guided Setup stage states", async ({
+  page,
+}) => {
+  await page.goto("/onboarding");
+  const guided = page.locator("details").filter({ hasText: "Ten local Guided Setup stages" });
+  await guided.locator("summary").click();
+  await expect(guided.getByRole("listitem")).toHaveCount(10);
+  await expect(guided).toContainText("Check in local setup");
+  await expect(guided).toContainText("Waiting");
+  await expect(guided).toContainText("./scripts/setup-wizard.sh");
+});
+
 test("Meeting setup exposes five independent steps and each lands on its named control", async ({
   page,
 }) => {

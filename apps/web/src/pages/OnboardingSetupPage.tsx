@@ -122,6 +122,37 @@ export function OnboardingSetupPage() {
           ) : null}
         </>
       )}
+
+      {goal === "general" && onboarding?.guidedSetup && (
+        <details className="disclosure">
+          <summary>Ten local Guided Setup stages</summary>
+          <div className="disclosure-body">
+            <p>
+              Run <code>./scripts/setup-wizard.sh</code> on this installation. Backup and migration
+              stages are verified by the local command; the app cannot inspect the operator's
+              private backup.
+            </p>
+            <ol className="setup-check-list">
+              {onboarding.guidedSetup.stages.map((stage) => (
+                <li key={stage.id}>
+                  {stage.href ? <Link to={stage.href}>{stage.label}</Link> : stage.label}{" "}
+                  <span className={stage.state === "confirmed" ? "ok" : "muted"}>
+                    {stage.state === "operator-check"
+                      ? "Check in local setup"
+                      : stage.state === "to-do"
+                        ? "To do"
+                        : stage.state === "waiting"
+                          ? "Waiting"
+                          : stage.state === "unavailable"
+                            ? "Unavailable"
+                            : "Confirmed"}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </details>
+      )}
     </div>
   );
 }

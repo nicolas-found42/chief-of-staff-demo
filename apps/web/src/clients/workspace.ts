@@ -211,6 +211,14 @@ export interface OnboardingStatus {
   complete: boolean;
   steps: OnboardingStep[];
   otherSetup?: { complete: boolean; steps: OnboardingStep[] };
+  guidedSetup?: {
+    stages: {
+      id: string;
+      label: string;
+      state: "confirmed" | "to-do" | "operator-check" | "waiting" | "unavailable";
+      href: string | null;
+    }[];
+  };
 }
 
 export interface MigrationStatus {

@@ -25,9 +25,10 @@ commit `.env` or a Workspace backup.
 ## The ten Guided Setup stages
 
 1. **Preflight and paths** — confirm the repository, Workspace, and installation environment paths.
-2. **Required Workspace backup** — for an existing Workspace, stop the app and all writers, then
-   capture and verify a private backup. A fresh empty Workspace has no records to back up.
-3. **Check migration and confirm** — for an existing Workspace, run the backup-gated read-only
+2. **Required Workspace backup** — when legacy Workspace credential fields need transfer, stop the
+   app and all writers, then capture and verify a private backup. A fresh Workspace and a resumed
+   setup after transfer do not repeat this step.
+3. **Check migration and confirm** — when legacy fields remain, run the backup-gated read-only
    credential check. No source or destination changes occur at this stage.
 4. **Installation Google client** — provision one Google OAuth client for the installation and
    store its ID and secret in the process environment or `.env`.
@@ -49,8 +50,15 @@ commit `.env` or a Workspace backup.
     status until a Debrief is ready.
 
 You can leave at any point. Re-run the wizard with the same private paths; it reuses an accepted
-backup and existing installation values. Existing secrets are kept without re-entry. Stage 10
-reports a waiting state until a Debrief is ready; rerun the wizard to verify the first result.
+backup and existing installation values, and checks the owner consent and Meeting prerequisites
+again. Existing secrets are kept without re-entry. Stage 10 reports a waiting state until a
+Debrief is ready, or an unavailable state if the app cannot verify it; rerun the wizard to verify
+the first result. An absolute `WORKSPACE_DIR` override
+uses a separate Compose project and loopback ports (44317/44318 by default) so it cannot replace
+the normal Workspace's running container. If you use Google consent in that isolated project,
+register its `http://localhost:44317/api/google/callback` redirect URI with the installation OAuth
+client as well. The override keeps its installation environment in a sibling
+`<WORKSPACE_DIR>.installation.env` file and uses a separate private backup destination by default.
 
 ## Credential custody
 

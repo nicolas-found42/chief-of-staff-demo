@@ -39,7 +39,7 @@ export class PersonResearchQueue {
   private readonly file: string;
   private state: PersonResearchStatus;
   private running = new Set<string>();
-  private readonly cancelledBilling = new Map<string, number | null>();
+  private readonly cancelledBilling = new Set<string>();
   private readonly removed = new Set<string>();
   /** Profiles the file already held when this instance loaded it. */
   private readonly loaded = new Set<string>();
@@ -116,13 +116,6 @@ export class PersonResearchQueue {
     this.rollDay();
     return structuredClone(this.state);
   }
-  /**
-   * The operation record for one Profile.
-   *
-   * Four consumers used to reach through `status().jobs` to find this, and
-   * `status()` deep-clones every job in the queue — so reading one Profile's
-   * coverage cloned all of them. The lookup is named here instead (#231).
-   */
   /**
    * Truthful readiness for the automatic/queued research pipeline (issue
    * #418, T3): what the caller reports about the Workspace, provider and
@@ -445,16 +438,10 @@ export class PersonResearchQueue {
       (wasResearching
         ? "Research was stopped by an owner; retained evidence and pending leads are preserved."
         : "Research was stopped before it started. Prioritise research to run it.");
-    if (cancellation)
-      job.elapsedMilliseconds = Math.min(
-        this.state.settings.profileMilliseconds,
-        (job.elapsedMilliseconds ?? 0) +
-          Math.max(
-            0,
-            cancellation.billedThrough - Date.parse(job.currentOperationStartedAt ?? this.now()),
-          ),
-      );
-    this.cancelledBilling.set(profileId, cancellation?.billedThrough ?? null);
+    if (cancellation) {
+      job.elapsedMilliseconds = cancellation.elapsedMilliseconds;
+      this.cancelledBilling.add(profileId);
+    }
     job.nextAt = new Date(
       Date.parse(this.now()) + this.state.settings.refreshHours * 3600000,
     ).toISOString();
@@ -493,6 +480,7 @@ export class PersonResearchQueue {
     this.loaded.clear();
     this.running.clear();
     this.cancelledBilling.clear();
+    this.explicitDispatches.clear();
     this.removed.clear();
     this.state = existsSync(this.file)
       ? PersonResearchStatusSchema.parse(JSON.parse(readFileSync(this.file, "utf8")))
@@ -748,6 +736,9 @@ export class PersonResearchQueue {
         job.nextAt = new Date(Date.parse(this.now()) + 3600000).toISOString();
       }
     } finally {
+      // An explicit requeue can replace currentOperationId before the cancelled
+      // run settles. Clear its billing marker even when that result was skipped.
+      this.cancelledBilling.delete(job.profileId);
       delete job.startedAt;
       this.running.delete(job.profileId);
       job.updatedAt = this.now();

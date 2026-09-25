@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -19,12 +20,12 @@ const REPO = fileURLToPath(new URL("../../..", import.meta.url));
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 
-function fixture(legacy = false) {
+function fixture(legacy = false, workspaceName = "workspace") {
   const root = mkdtempSync(join(tmpdir(), "guided-setup-command-"));
   roots.push(root);
   const scripts = join(root, "scripts");
   const bin = join(root, "bin");
-  const workspace = join(root, "workspace");
+  const workspace = join(root, workspaceName);
   const envFile = join(root, "installation.env");
   const backup = join(root, "backup");
   mkdirSync(scripts);
@@ -37,7 +38,10 @@ function fixture(legacy = false) {
   copyFileSync(join(REPO, "scripts/start-workspace.py"), join(scripts, "start-workspace.py"));
   writeFileSync(join(scripts, "workspace-backup.mts"), "");
   writeFileSync(join(root, "docker-compose.yml"), "services: {}\n");
-  writeFileSync(join(bin, "docker"), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALL_LOG"\n');
+  writeFileSync(
+    join(bin, "docker"),
+    '#!/bin/sh\nprintf "%s | workspace=%s app_port=%s relay_port=%s\\n" "$*" "$WORKSPACE_DIR" "$APP_PORT" "$RELAY_PORT" >> "$CALL_LOG"\n',
+  );
   writeFileSync(join(bin, "open"), "#!/bin/sh\nexit 0\n");
   writeFileSync(join(bin, "sleep"), "#!/bin/sh\nexit 0\n");
   writeFileSync(
@@ -48,13 +52,16 @@ case "$url" in
   */api/health) [ "\${HEALTH_FAIL:-0}" = 0 ] ;;
   */api/config.installation) printf '%s' '{"googleClient":{"state":"configured"},"providerKeys":{"openai":{"state":"configured"}}}' ;;
   */api/google/status) printf '%s' '{"state":"connected"}' ;;
-  */api/migration/status*) printf '%s' '{"onboarding":{"complete":true}}' ;;
-  */api/meetings/workspace)
-    if [ "\${RESULT_READY:-0}" = 1 ]; then
-      printf '%s' '{"intakeReadiness":{"verdict":"ready"},"today":[{"debrief":{"status":"ready"}}],"recent":[],"upcoming":[]}'
+  */api/migration/status*)
+    if [ "\${RESULT_UNAVAILABLE:-0}" = 1 ]; then
+      printf '%s' '{"onboarding":{"complete":true,"guidedSetup":{"stages":[{"id":"first-result","state":"unavailable"}]}}}'
+    elif [ "\${RESULT_READY:-0}" = 1 ]; then
+      printf '%s' '{"onboarding":{"complete":true,"guidedSetup":{"stages":[{"id":"first-result","state":"confirmed"}]}}}'
     else
-      printf '%s' '{"intakeReadiness":{"verdict":"waiting"},"today":[],"recent":[],"upcoming":[]}'
+      printf '%s' '{"onboarding":{"complete":true,"guidedSetup":{"stages":[{"id":"first-result","state":"waiting"}]}}}'
     fi ;;
+  */api/meetings/workspace)
+    printf '%s' '{"intakeReadiness":{"verdict":"ready"},"today":[],"recent":[],"upcoming":[]}' ;;
   *) exit 1 ;;
 esac
 `,
@@ -105,7 +112,12 @@ esac
   const callLog = join(root, "calls.log");
   const run = (
     input: string,
-    options: { defaultEnv?: boolean; healthFail?: boolean; ready?: boolean } = {},
+    options: {
+      defaultEnv?: boolean;
+      healthFail?: boolean;
+      ready?: boolean;
+      unavailable?: boolean;
+    } = {},
   ) => {
     const env = {
       ...process.env,
@@ -116,6 +128,7 @@ esac
       CALL_LOG: callLog,
       HEALTH_FAIL: options.healthFail ? "1" : "0",
       RESULT_READY: options.ready ? "1" : "0",
+      RESULT_UNAVAILABLE: options.unavailable ? "1" : "0",
       ...(options.defaultEnv ? {} : { ENV_FILE: envFile }),
     };
     if (options.defaultEnv) delete env.ENV_FILE;
@@ -141,12 +154,69 @@ it("starts with the documented default and reports a truthful first-result wait"
 
   expect(run.status).toBe(0);
   expect(run.stdout).toContain("Stage 10/10 · Verify the first result");
+  expect(run.stdout.match(/Stage \d+ status:/g)).toHaveLength(10);
+  expect(run.stdout).toContain("Stage 10 status: waiting for first Debrief");
   expect(run.stdout).toContain("first Debrief is still waiting");
   expect(run.stdout).not.toContain("✓ Setup complete");
   expect(readFileSync(join(f.root, ".env"), "utf8")).toContain(
     "OPENAI_API_KEY=synthetic-provider-key",
   );
-  expect(existsSync(f.workspace)).toBe(false);
+  expect(readdirSync(f.workspace)).toEqual([]);
+});
+
+it("isolates an overridden Workspace and gives its Compose stack separate ports", () => {
+  const f = fixture(false, "disposable-workspace");
+  const run = f.run(
+    "\ny\ny\nsynthetic-google-id\nsynthetic-google-secret\nopenai\nsynthetic-provider-key\n\n\n",
+    { defaultEnv: true },
+  );
+
+  expect(run.status).toBe(0);
+  const invocation = readFileSync(f.callLog, "utf8");
+  expect(invocation).toContain("-p chief-setup-");
+  expect(invocation).toContain(`workspace=${f.workspace}`);
+  expect(invocation).toContain("app_port=44317 relay_port=44318");
+  expect(readFileSync(`${f.workspace}.installation.env`, "utf8")).toContain(
+    "OPENAI_API_KEY=synthetic-provider-key",
+  );
+  expect(existsSync(join(f.root, ".env"))).toBe(false);
+  expect(run.stdout).toContain("first Debrief is still waiting");
+});
+
+it("reports an unavailable first-result check instead of claiming it is waiting", () => {
+  const f = fixture();
+  const run = f.run(
+    "\ny\ny\nsynthetic-google-id\nsynthetic-google-secret\nopenai\nsynthetic-provider-key\n\n\n",
+    { unavailable: true },
+  );
+
+  expect(run.status).toBe(1);
+  expect(run.stdout).toContain("Stage 10 status: unavailable");
+  expect(run.stdout).not.toContain("first Debrief is still waiting");
+});
+
+it("resumes fresh setup after the app created config without asking for migration", () => {
+  const f = fixture();
+  const first = f.run(
+    "\ny\ny\nsynthetic-google-id\nsynthetic-google-secret\nopenai\nsynthetic-provider-key\n",
+    { healthFail: true },
+  );
+  expect(first.status).toBe(1);
+  writeFileSync(
+    join(f.workspace, "config.json"),
+    JSON.stringify({
+      provider: "openai",
+      model: "configured-model",
+      google: { refreshToken: null },
+    }),
+  );
+
+  const resumed = f.run("\ny\ny\n\n\n", { ready: true });
+  expect(resumed.status).toBe(0);
+  expect(resumed.stdout).toContain("✓ Setup complete");
+  expect(resumed.stdout).toContain("No legacy credentials require transfer");
+  expect(resumed.stdout).not.toContain("Required Workspace backup\n  The app must be stopped");
+  expect(readFileSync(f.envFile, "utf8")).toContain("OPENAI_API_KEY=synthetic-provider-key");
 });
 
 it("transfers legacy credentials without re-entry, then resumes from the migrated state", () => {
@@ -156,6 +226,8 @@ it("transfers legacy credentials without re-entry, then resumes from the migrate
   expect(first.status).toBe(0);
   expect(first.stdout).toContain("transfer without re-entry");
   expect(first.stdout).toContain("✓ Setup complete");
+  expect(first.stdout.match(/Stage \d+ status:/g)).toHaveLength(10);
+  expect(first.stdout).toContain("Stage 10 status: confirmed");
   expect(first.stdout).not.toContain("synthetic-old-provider-key");
   expect(readFileSync(f.envFile, "utf8")).toContain("OPENAI_API_KEY=synthetic-old-provider-key");
   expect(JSON.parse(readFileSync(join(f.workspace, "config.json"), "utf8"))).toMatchObject({
@@ -167,7 +239,7 @@ it("transfers legacy credentials without re-entry, then resumes from the migrate
     "preserved unrelated record\n",
   );
 
-  const second = f.run("\ny\n\ny\n\ny\n\n\n", { ready: true });
+  const second = f.run("\ny\ny\n\n\n\n", { ready: true });
   expect(second.status).toBe(0);
   expect(second.stdout).toContain("✓ Setup complete");
   expect(second.stdout).not.toContain("Installation API key for openai:");
@@ -224,7 +296,7 @@ it("resumes after a failed health check without re-entering transferred credenti
   expect(failed.status).toBe(1);
   expect(failed.stdout).toContain("app did not become healthy");
   expect(readFileSync(f.envFile, "utf8")).toContain("OPENAI_API_KEY=synthetic-old-provider-key");
-  const resumed = f.run("\ny\n\ny\n\ny\n\n\n", { ready: true });
+  const resumed = f.run("\ny\ny\n\n\n\n", { ready: true });
   expect(resumed.status).toBe(0);
   expect(resumed.stdout).toContain("✓ Setup complete");
   expect(resumed.stdout).not.toContain("Installation API key for openai:");
