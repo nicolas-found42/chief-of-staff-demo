@@ -329,7 +329,7 @@ test("switching provider announces the model it rewrote", async ({ page }) => {
   }
   const notice = page.locator('.field p[role="status"]');
   await expect(notice).toHaveText("");
-  await page.getByLabel("Provider", { exact: true }).selectOption("anthropic");
+  await page.getByLabel("Provider", { exact: true }).selectOption("ollama");
   await expect(notice).toContainText(/^Model (changed to .+|cleared)\.$/);
   await expect(page.getByLabel("Model")).not.toHaveValue("");
 });
@@ -431,7 +431,7 @@ test("changing route moves focus into the page it opened", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
 
   await page.getByRole("link", { name: "Content Engine" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Content Scout" })).toBeFocused();
+  await expect(page.getByRole("heading", { level: 1, name: "Content Engine" })).toBeFocused();
 });
 
 test("a direct load of a run leaves the header in front of the user", async ({ page }) => {

@@ -15,7 +15,6 @@ describe("ConfigStore.load legacy tolerance", () => {
     const root = workspaceWithConfig("notion-legacy", {
       provider: "anthropic",
       model: "fixture-model",
-      apiKey: "fixture-key",
       modules: {
         "content-scout": {
           timeZone: "UTC",
@@ -60,7 +59,6 @@ describe("ConfigStore.getForPurpose", () => {
     const root = workspaceWithConfig("purpose-split", {
       provider: "openrouter",
       model: "inception/mercury-2.5",
-      apiKey: "fixture-key",
     });
     const store = new ConfigStore(join(root, "config.json"));
     store.load();
@@ -77,7 +75,6 @@ describe("ConfigStore.getForPurpose", () => {
     const root = workspaceWithConfig("purpose-split-override", {
       provider: "openrouter",
       model: "inception/mercury-2.5",
-      apiKey: "fixture-key",
     });
     const store = new ConfigStore(join(root, "config.json"));
     store.load();
@@ -92,7 +89,6 @@ describe("ConfigStore.getForPurpose", () => {
     const root = workspaceWithConfig("purpose-split-preexisting", {
       provider: "openrouter",
       model: "z-ai/glm-5.3-flash",
-      apiKey: "fixture-key",
       // Set before `personProfileClaims` existed: pre-upgrade, this model
       // answered both dossier and claim extraction.
       models: { openrouter: { personResearch: "research-model" } },
@@ -113,7 +109,6 @@ describe("ConfigStore dossier-extraction purpose migration (issue #418, T2)", ()
     const root = workspaceWithConfig("dossier-purpose-preexisting", {
       provider: "openrouter",
       model: "z-ai/glm-5.3-flash",
-      apiKey: "fixture-key",
       // Set before `personDossierExtraction` existed: pre-upgrade, this model
       // answered dossier extraction through `personResearch`.
       models: {
@@ -144,8 +139,6 @@ describe("ConfigStore dossier-extraction purpose migration (issue #418, T2)", ()
   it("inherits the shared base model for dossier extraction when personResearch was never overridden", () => {
     const root = workspaceWithConfig("dossier-purpose-inherited", {
       provider: "openrouter",
-      model: "inception/mercury-2.5",
-      apiKey: "fixture-key",
     });
     const store = new ConfigStore(join(root, "config.json"));
     store.load();
@@ -159,7 +152,6 @@ describe("ConfigStore dossier-extraction purpose migration (issue #418, T2)", ()
     const root = workspaceWithConfig("dossier-purpose-cleared", {
       provider: "openrouter",
       model: "inception/mercury-2.5",
-      apiKey: "fixture-key",
       models: {
         openrouter: {
           personResearch: "research-model",
@@ -178,8 +170,6 @@ describe("ConfigStore dossier-extraction purpose migration (issue #418, T2)", ()
   it("lets a dossier-extraction override diverge from personResearch without moving it", () => {
     const root = workspaceWithConfig("dossier-purpose-override", {
       provider: "openrouter",
-      model: "inception/mercury-2.5",
-      apiKey: "fixture-key",
     });
     const store = new ConfigStore(join(root, "config.json"));
     store.load();
@@ -195,8 +185,6 @@ describe("ConfigStore.dossierExtractionPolicy (issue #418, T2)", () => {
   it("defaults to a positive bounded output ceiling, the existing low-effort intent, the full shape, and fallback disabled", () => {
     const root = workspaceWithConfig("dossier-policy-default", {
       provider: "openrouter",
-      model: "inception/mercury-2.5",
-      apiKey: "fixture-key",
     });
     const store = new ConfigStore(join(root, "config.json"));
     const config = store.load();

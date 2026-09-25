@@ -1,5 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import type { GoogleStatus } from "@chief-of-staff-demo/shared";
+import type {
+  AppConfig,
+  GoogleStatus,
+  InstallationProviderId,
+  InstallationStatus,
+} from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import type { WorkspaceBrandProfileStore } from "../brand-profile/store.js";
 import { OwnerOnboarding, OwnerOnboardingError } from "../onboarding/owner.js";
@@ -45,21 +50,44 @@ export function registerOnboardingApi(app: FastifyInstance, ctx: OnboardingApiCo
   });
 }
 
-/* ── Post-migration onboarding status (issue #144) ──────────────────────────
+/* ── Post-migration onboarding status (issues #144, #478) ───────────────────
    The one aggregator behind GET /api/migration/status. Every step's `done` is
    a genuine read of the real store the step configures — never a flag — so
    the onboarding checklist follows the Workspace instead of the ceremony. */
 
+export type OnboardingGoal = "general" | "meetings";
+
+type OnboardingStepId =
+  | "provider-enablement"
+  | "owner-profile"
+  | "brand-voice"
+  | "internal-domains"
+  | "transcript-polling"
+  | "sheets-destinations"
+  | "workflow-bundles"
+  | "meeting-provider"
+  | "meeting-google"
+  | "meeting-folder"
+  | "meeting-polling"
+  | "meeting-consent";
+
 interface OnboardingStep {
-  id: string;
+  id: OnboardingStepId;
   label: string;
   done: boolean;
   href: string;
 }
 
-export interface OnboardingStatus {
+interface OnboardingOtherSetup {
   complete: boolean;
   steps: OnboardingStep[];
+}
+
+export interface OnboardingStatus {
+  goal: OnboardingGoal;
+  complete: boolean;
+  steps: OnboardingStep[];
+  otherSetup: OnboardingOtherSetup;
 }
 
 export interface OnboardingStatusDeps {
@@ -68,34 +96,57 @@ export interface OnboardingStatusDeps {
   googleConnection: { state(): Promise<Pick<GoogleStatus, "state">> };
   ownerOnboarding: OwnerOnboarding;
   brandProfiles: WorkspaceBrandProfileStore;
+  /** Explicit Transcript Catalog consent, not a transcript count or config flag. */
+  transcriptCatalog?: { status(): { consent: { folderId: string } | null } };
+  /** Installation status is deliberately status-only; no value crosses this seam. */
+  installationStatus: () => InstallationStatus;
 }
 
-export async function buildOnboardingStatus(deps: OnboardingStatusDeps): Promise<OnboardingStatus> {
-  const config = deps.configStore.get();
+function providerIsReady(
+  config: AppConfig,
+  installationStatus: OnboardingStatusDeps["installationStatus"],
+): boolean {
+  if (config.provider === "mock" || config.provider === "ollama") return true;
+  return (
+    installationStatus().providerKeys[config.provider as InstallationProviderId].state ===
+    "configured"
+  );
+}
+
+function generalSteps(
+  config: AppConfig,
+  googleState: GoogleStatus["state"],
+  ownerConfirmed: unknown,
+  brandVoice: unknown,
+  providerReady: boolean,
+): OnboardingStep[] {
   const briefConfig = config.modules["meeting-brief-generator"];
-  const [google, ownerConfirmed, brandVoice] = await Promise.all([
-    deps.googleConnection.state(),
-    Promise.resolve(deps.ownerOnboarding.confirmed()),
-    Promise.resolve(deps.brandProfiles.current()),
-  ]);
-  /* A provider is enabled when it needs no key (mock, Ollama) or holds one —
-     the same semantics the Settings page applies to the key field. */
-  const modelProviderEnabled =
-    config.provider === "mock" || config.provider === "ollama" || config.apiKey.trim().length > 0;
-  const steps: OnboardingStep[] = [
+  const folderSelected = config.drive.folderId.length > 0;
+  const transcriptStep: OnboardingStep = folderSelected
+    ? {
+        id: "transcript-polling",
+        label: config.drive.enabled ? "Transcript polling enabled" : "Enable transcript polling",
+        done: config.drive.enabled,
+        href: "/settings#drive-polling",
+      }
+    : {
+        id: "transcript-polling",
+        label: "Choose the Transcripts folder",
+        done: false,
+        href: "/settings#drive-folder",
+      };
+  return [
     {
       id: "provider-enablement",
       label: "Enable providers",
-      done: modelProviderEnabled && google.state === "connected",
-      href: "/settings",
+      done: providerReady && googleState === "connected",
+      href: "/onboarding?goal=meetings",
     },
     {
       id: "owner-profile",
       label: "Confirm the owner Profile",
       done: ownerConfirmed !== null,
-      /* The Owner Profile card lives in Settings; "/onboarding" would send the
-         owner back to the checklist they clicked from. */
-      href: "/settings",
+      href: "/settings#group-owner-onboarding",
     },
     {
       id: "brand-voice",
@@ -107,26 +158,87 @@ export async function buildOnboardingStatus(deps: OnboardingStatusDeps): Promise
       id: "internal-domains",
       label: "Select Internal Domains",
       done: briefConfig.internalDomains.length > 0,
-      href: "/settings",
+      href: "/settings#group-meeting-brief-domains",
     },
-    {
-      id: "transcript-folder",
-      label: "Choose the Transcripts folder",
-      done: config.drive.enabled && config.drive.folderId.length > 0,
-      href: "/settings",
-    },
+    transcriptStep,
     {
       id: "sheets-destinations",
       label: "Configure clean Sheets destinations",
       done: config.modules["youtube-trends"].spreadsheetId.length > 0,
-      href: "/settings",
+      href: "/settings#section-youtube",
     },
     {
       id: "workflow-bundles",
       label: "Configure workflow bundles",
       done: Object.keys(briefConfig.providerPolicy).length > 0,
-      href: "/settings",
+      href: "/settings#group-meeting-brief-bundles",
     },
   ];
-  return { complete: steps.every((step) => step.done), steps };
+}
+
+function meetingSteps(
+  config: AppConfig,
+  googleState: GoogleStatus["state"],
+  providerReady: boolean,
+  consentFolderId: string | null,
+): OnboardingStep[] {
+  const folderId = config.drive.folderId;
+  return [
+    {
+      id: "meeting-provider",
+      label: "Configure the model extraction provider",
+      done: providerReady,
+      href: "/settings#api-key",
+    },
+    {
+      id: "meeting-google",
+      label: "Connect Google",
+      done: googleState === "connected",
+      href: "/settings#group-google",
+    },
+    {
+      id: "meeting-folder",
+      label: "Choose the transcript Drive folder",
+      done: folderId.length > 0,
+      href: "/settings#drive-folder",
+    },
+    {
+      id: "meeting-polling",
+      label: "Enable Drive polling",
+      done: config.drive.enabled,
+      href: "/settings#drive-polling",
+    },
+    {
+      id: "meeting-consent",
+      label: "Allow the app to read and process the selected folder",
+      done: consentFolderId !== null && consentFolderId === folderId,
+      href: "/settings#transcript-consent",
+    },
+  ];
+}
+
+export async function buildOnboardingStatus(
+  deps: OnboardingStatusDeps,
+  goal: OnboardingGoal = "general",
+): Promise<OnboardingStatus> {
+  const config = deps.configStore.get();
+  const [google, ownerConfirmed, brandVoice] = await Promise.all([
+    deps.googleConnection.state(),
+    Promise.resolve(deps.ownerOnboarding.confirmed()),
+    Promise.resolve(deps.brandProfiles.current()),
+  ]);
+  const providerReady = providerIsReady(config, deps.installationStatus);
+  const general = generalSteps(config, google.state, ownerConfirmed, brandVoice, providerReady);
+  const consent = deps.transcriptCatalog?.status().consent?.folderId ?? null;
+  const steps =
+    goal === "meetings" ? meetingSteps(config, google.state, providerReady, consent) : general;
+  return {
+    goal,
+    complete: steps.every((step) => step.done),
+    steps,
+    otherSetup: {
+      complete: general.every((step) => step.done),
+      steps: general,
+    },
+  };
 }

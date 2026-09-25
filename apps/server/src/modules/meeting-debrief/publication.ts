@@ -8,6 +8,8 @@ import {
   type MeetingDebriefRevisionAvailability,
 } from "@chief-of-staff-demo/shared";
 import type {
+  DebriefSectionName,
+  MeetingDebriefExtraction,
   ActionItemMaterializationMapping,
   AutomaticPromotionAuthorizationFacts,
   HandoffDependencyTarget,
@@ -15,6 +17,8 @@ import type {
   ExtractionContextSnapshot,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
+import type { DebriefIdentityReview } from "./deps.js";
+import { resolveActionItemOwners, stripUnverifiedRecipientEmails } from "./extraction.js";
 
 /**
  * Durable Debrief publication (#358, ADR-0084, the #344 resolution).
@@ -588,12 +592,50 @@ function parseManifest(text: string, artifact: string): DebriefRevisionManifest 
   return parsed;
 }
 
+/**
+ * Present lineage fields must be structurally valid before any publication.
+ * A legacy result may omit either field; once one is present it has to agree
+ * with the exact checked contract it says it belongs to (#493).
+ */
+function validateCheckedResult(
+  result: MeetingDebriefRunResult,
+  artifact: string,
+): MeetingDebriefRunResult {
+  if (result.sections !== undefined) {
+    try {
+      canonicalDebriefSections(result.sections);
+    } catch (error) {
+      if (!(error instanceof DebriefIntegrityError)) throw error;
+      throw new DebriefIntegrityError("section-availability", `${artifact} ${error.message}`);
+    }
+  }
+  if (result.candidateAliases !== undefined) {
+    const expected = result.debrief.actionItems.length;
+    const actual = result.candidateAliases.length;
+    if (actual !== expected) {
+      throw new DebriefIntegrityError(
+        "candidate-aliases",
+        `${artifact} records ${actual} candidate aliases for ${expected} Action Items`,
+      );
+    }
+    for (const [index, alias] of result.candidateAliases.entries()) {
+      if (alias !== null && typeof alias !== "string") {
+        throw new DebriefIntegrityError(
+          "candidate-aliases",
+          `${artifact} records a non-string candidate alias at Action Item ${index}`,
+        );
+      }
+    }
+  }
+  return result;
+}
+
 function parseResult(text: string, artifact: string): MeetingDebriefRunResult {
   const parsed = parseOrThrow<unknown>(text, artifact, "unreadable-result");
   if (parsed === null || !isDebriefResult(parsed)) {
     throw new DebriefIntegrityError("unreadable-result", `${artifact} is not a Debrief result`);
   }
-  return parsed;
+  return validateCheckedResult(parsed, artifact);
 }
 
 /** Read a listed artifact and refuse it the moment its bytes disagree with the receipt. */
@@ -1025,11 +1067,183 @@ function readPublishedRevision(io: DebriefReader): {
 }
 
 /**
- * Every read of a Debrief goes through here (#344 §4): the publication pointer
- * is the authority, never `result.json`'s presence. A Run with no pointer but a
- * readable `result.json` is a pre-#358 legacy publication — readable, and
- * explicitly not evidence of the current contract.
+ * The shared checked-revision finalizer (#493). Every producer — model-backed
+ * and injected — hands it the same facts and receives the same checked
+ * result: section outcomes applied, owners resolved from Catalog review
+ * state, unverifiable recipient emails stripped, the canonical availability
+ * vector written, and candidate accounting validated against the exact
+ * Action Items it belongs beside.
  */
+export interface FinalizeDebriefRevisionInput {
+  transcriptId: string;
+  /** The immutable record this revision stands on. */
+  record: TranscriptRecord;
+  /** The Catalog review state the producer's owners resolve against. */
+  identity: DebriefIdentityReview;
+  /** The raw model or injected extraction before final validation. */
+  extraction: MeetingDebriefExtraction;
+  /** What each required section resolved to, in the producer's order. */
+  sections: readonly DebriefSectionAvailability[];
+  /** Candidate accounting when the producer has it; absent means all null. */
+  candidateAliases?: readonly (string | null)[];
+  finishedAt: string;
+}
+
+/**
+ * The finalized revision a publication will address as immutable bytes.
+ * `text` is checked here once: producers serialize no second copy.
+ */
+export interface FinalizedDebriefRevision {
+  extraction: MeetingDebriefExtraction;
+  result: MeetingDebriefRunResult;
+  text: string;
+  sections: DebriefSectionAvailability[];
+  aliases: (string | null)[];
+}
+
+/** The states a canonical availability entry may carry. */
+const ALLOWED_SECTION_STATES: readonly string[] = [
+  "validated",
+  "validated-empty",
+  "absent",
+  "pending",
+  "failed",
+  "blocked",
+  "invalid",
+];
+
+/** Reorder required sections once; a producer cannot publish its own order. */
+function canonicalDebriefSections(
+  observed: readonly DebriefSectionAvailability[],
+): DebriefSectionAvailability[] {
+  const byName = new Map<string, DebriefSectionAvailability>();
+  for (const section of observed) {
+    if (!DEBRIEF_SECTIONS.includes(section.name)) {
+      throw new DebriefIntegrityError(
+        "section-availability",
+        `${String((section as { name?: unknown }).name)} is not a required Debrief section`,
+      );
+    }
+    if (
+      !ALLOWED_SECTION_STATES.includes(section.state) ||
+      !(section.reason === null || typeof section.reason === "string")
+    ) {
+      throw new DebriefIntegrityError(
+        "section-availability",
+        `${section.name} has an unreadable availability state`,
+      );
+    }
+    if (byName.has(section.name)) {
+      throw new DebriefIntegrityError(
+        "section-availability",
+        `${section.name} appears more than once`,
+      );
+    }
+    byName.set(section.name, section);
+  }
+  return DEBRIEF_SECTIONS.map((name) => {
+    const found = byName.get(name);
+    if (!found) {
+      throw new DebriefIntegrityError("section-availability", `${name} has no availability entry`);
+    }
+    return { name, state: found.state, reason: found.reason };
+  });
+}
+
+function applySectionOutcomes(
+  extraction: MeetingDebriefExtraction,
+  sections: readonly DebriefSectionAvailability[],
+): MeetingDebriefExtraction {
+  const resolved = (name: DebriefSectionName): boolean => {
+    const state = sections.find((section) => section.name === name)?.state ?? "validated";
+    return debriefSectionResolved(state);
+  };
+  return {
+    ...extraction,
+    summary: resolved("summary") ? extraction.summary : "",
+    decisions: resolved("decisions") ? extraction.decisions : [],
+    openQuestions: resolved("openQuestions") ? extraction.openQuestions : [],
+    effectivenessEvidence: resolved("effectivenessEvidence")
+      ? extraction.effectivenessEvidence
+      : "",
+    coachingAdvice: resolved("coachingAdvice") ? extraction.coachingAdvice : "",
+    suggestedRecipients: resolved("suggestedRecipients") ? extraction.suggestedRecipients : [],
+  };
+}
+
+/**
+ * A resolved section means one thing only: whether the checked content is
+ * empty. Producers may report either complete state; the finalizer aligns it
+ * with the content actually checked so model-backed and injected zero values
+ * read the same way. Unavailable sections keep their own reason and never
+ * borrow an empty value's success.
+ */
+function alignedSectionAvailability(
+  sections: readonly DebriefSectionAvailability[],
+  debrief: MeetingDebriefExtraction,
+): DebriefSectionAvailability[] {
+  const empty = (name: DebriefSectionName): boolean | null => {
+    switch (name) {
+      case "summary":
+        return debrief.summary.trim() === "";
+      case "decisions":
+        return debrief.decisions.length === 0;
+      case "actionItems":
+        return debrief.actionItems.length === 0;
+      case "openQuestions":
+        return debrief.openQuestions.length === 0;
+      case "effectivenessEvidence":
+        return debrief.effectivenessEvidence.trim() === "";
+      case "coachingAdvice":
+        return debrief.coachingAdvice.trim() === "";
+      case "suggestedRecipients":
+        return debrief.suggestedRecipients.length === 0;
+    }
+  };
+  return sections.map((section) => {
+    if (!debriefSectionResolved(section.state) || section.name === "actionItems") return section;
+    const isEmpty = empty(section.name);
+    return isEmpty === null
+      ? section
+      : { ...section, state: isEmpty ? "validated-empty" : "validated" };
+  });
+}
+
+/** The one checked revision every producer may claim. */
+export function finalizeDebriefRevision(
+  input: FinalizeDebriefRevisionInput,
+): FinalizedDebriefRevision {
+  const sections = canonicalDebriefSections(input.sections);
+  const debrief = stripUnverifiedRecipientEmails(
+    resolveActionItemOwners(applySectionOutcomes(input.extraction, sections), input.identity),
+    input.record,
+  );
+  const alignedSections = alignedSectionAvailability(sections, debrief);
+  const aliases =
+    input.candidateAliases !== undefined
+      ? [...input.candidateAliases]
+      : Array.from({ length: debrief.actionItems.length }, () => null);
+  if (aliases.length !== debrief.actionItems.length) {
+    throw new DebriefIntegrityError(
+      "candidate-aliases",
+      `the revision records ${aliases.length} candidate aliases for ${debrief.actionItems.length} Action Items`,
+    );
+  }
+  const result: MeetingDebriefRunResult = {
+    version: 1,
+    transcriptId: input.transcriptId,
+    extractedAt: input.finishedAt,
+    debrief,
+    /* Availability and accounting are always present on bytes this build
+       finalizes; legacy readers may still find a field absent on an older
+       artifact. */
+    sections: alignedSections.map((section) => ({ ...section })),
+    candidateAliases: [...aliases],
+  };
+  const text = `${JSON.stringify(result, null, 2)}\n`;
+  return { extraction: debrief, result, text, sections: alignedSections, aliases };
+}
+
 export function readPublishedDebrief(io: DebriefReader): DebriefPublishedRead | null {
   const published = readPublishedRevision(io);
   if (published) {
@@ -1078,6 +1292,27 @@ function preparedFailures(io: DebriefReader, manifest: DebriefRevisionManifest):
     failures.push("missing-result");
   } else if (checksumOf(resultText) !== manifest.resultChecksum) {
     failures.push("result-checksum");
+  } else {
+    const result = parseResult(resultText, manifest.resultArtifact);
+    /* The result is the checked contract; the manifest cannot carry a
+       different section story or a different alias at the same output
+       position. */
+    if (result.sections !== undefined) {
+      if (manifest.completeness.availability === undefined) {
+        failures.push("section-availability");
+      } else if (
+        JSON.stringify(result.sections) !== JSON.stringify(manifest.completeness.availability)
+      ) {
+        failures.push("section-availability");
+      }
+    }
+    if (result.candidateAliases !== undefined) {
+      for (const [index, output] of manifest.materialization.outputs.entries()) {
+        if (output.candidateAlias !== (result.candidateAliases[index] ?? null)) {
+          failures.push(`mapping-alias:${output.entryId}`);
+        }
+      }
+    }
   }
   const contextText = io.read(manifest.contextArtifact);
   if (contextText === null) failures.push("missing-context");
@@ -1243,16 +1478,11 @@ function verifyCompletion(
 }
 
 /**
- * What one production run returns: the checked result bytes, whatever the
- * producer knows about how they were assembled, and what happened to each
- * required section (#345). A producer that reports sections leaves the
- * reconciler able to expose a checked core whose enrichment did not finish;
- * one that omits them is claiming a complete revision, exactly as before.
+ * What one production run returns: one finalized revision plus its core.
+ * The finalizer is the authority on its text, result, availability and alias
+ * accounting; a producer only reports the core and output reuse.
  */
-export interface DebriefProducedRevision {
-  text: string;
-  aliases?: readonly (string | null)[] | undefined;
-  sections?: readonly DebriefSectionAvailability[] | undefined;
+export interface DebriefProducedRevision extends FinalizedDebriefRevision {
   /** The checked core these bytes were assembled from, when it was committed. */
   core?: { artifact: string; checksum: string } | undefined;
   /**
@@ -1407,11 +1637,12 @@ export async function reconcileDebrief(
 
   let manifest = revision.manifest;
   if (reconciled !== "published") {
-    /* What this revision's sections resolved to: what the producer just
-       reported, what an adopted result carries, or the complete contract a
-       revision without an availability record was written under. */
+    /* The revision's own result is the checked contract. Its finalizer wrote
+       an exact availability vector; an adopted result uses it verbatim, while
+       an older result without one reads under the complete contract it was
+       written under. */
     const sections: readonly DebriefSectionAvailability[] =
-      produced?.sections ??
+      revision.result.sections ??
       (revision.manifest ? manifestSections(revision.manifest) : storedSections(revision.result));
     const unavailable = sections
       .filter((section) => !debriefSectionResolved(section.state))

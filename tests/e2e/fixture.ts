@@ -14,7 +14,7 @@ import { startHermeticServer } from "./hermetic-server";
    a time. TEST_WORKER_INDEX is set in the worker process before any spec
    module loads. */
 const workerIndex = Number(process.env.TEST_WORKER_INDEX ?? "0");
-export const serverPort = 4320 + workerIndex;
+const serverPort = 4320 + workerIndex;
 export const serverOrigin = `http://127.0.0.1:${serverPort}`;
 
 type HermeticServer = { stop(): Promise<void> };

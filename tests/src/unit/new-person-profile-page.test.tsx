@@ -133,11 +133,11 @@ describe("NewPersonProfilePage setup guidance", () => {
 
     const steps = [...container.querySelectorAll("ol li")].map((item) => item.textContent);
     expect(steps).toHaveLength(3);
-    expect(steps[0]).toContain("Add a model provider key");
+    expect(steps[0]).toContain("installation model credential");
     expect(steps[1]).toContain("Create a Person Profile for yourself");
     expect(steps[2]).toContain("Confirm your Profile in Settings → Owner Profile");
-    // The link is real: the Extraction provider card's anchor (#417/F2).
-    expect(container.querySelector("ol a")?.getAttribute("href")).toBe("/settings#group-provider");
+    // Installation setup has one stable Guided Setup destination.
+    expect(container.querySelector("ol a")?.getAttribute("href")).toBe("/onboarding?goal=meetings");
     // Guidance, not a gate: the form stays usable.
     expect(button(container, "Add and research")).toBeDefined();
     expect(button(container, "Create profile")).toBeDefined();

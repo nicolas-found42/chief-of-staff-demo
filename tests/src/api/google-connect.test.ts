@@ -22,8 +22,26 @@ let configStore: ConfigStore;
 let workspaceDir: string;
 let configChangeCompleted: boolean;
 
+const originalGoogleEnvironment = {
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+};
+
+function setGoogleCredentials(clientId = "", clientSecret = ""): void {
+  process.env.GOOGLE_CLIENT_ID = clientId;
+  process.env.GOOGLE_CLIENT_SECRET = clientSecret;
+}
+
+function restoreGoogleEnvironment(): void {
+  for (const [name, value] of Object.entries(originalGoogleEnvironment)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
 /** A workspace on disk, so the config the endpoints write is the one they read back. */
 beforeEach(async () => {
+  setGoogleCredentials();
   workspaceDir = mkdtempSync(join(tmpdir(), "cos-google-"));
   mkdirSync(join(workspaceDir, "runs"), { recursive: true });
   configStore = new ConfigStore(join(workspaceDir, "config.json"));
@@ -63,6 +81,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await app.close();
+  restoreGoogleEnvironment();
 });
 
 function status() {
@@ -86,14 +105,14 @@ describe("GET /api/google/status", () => {
   });
 
   it("reports disconnected once client credentials are saved", async () => {
-    configStore.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
+    setGoogleCredentials("id.apps", "secret");
     expect((await status()).json<GoogleStatus>().state).toBe("disconnected");
   });
 });
 
 describe("POST /api/google/disconnect", () => {
   it("clears the stored refresh token and reports disconnected", async () => {
-    configStore.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
+    setGoogleCredentials("id.apps", "secret");
     configStore.setGoogleRefreshToken("stored-refresh-token");
 
     const response = await app.inject({ method: "POST", url: "/api/google/disconnect" });
@@ -102,8 +121,8 @@ describe("POST /api/google/disconnect", () => {
     // Cleared on disk, not just in memory: the next process start must agree.
     expect(storedConfig().google.refreshToken).toBeNull();
     // The client credentials survive, so signing back in is one click.
-    expect(storedConfig().google.clientId).toBe("id.apps");
-    expect(storedConfig().google.clientSecret).toBe("secret");
+    expect(configStore.get().google.clientId).toBe("id.apps");
+    expect(configStore.get().google.clientSecret).toBe("secret");
     expect(configChangeCompleted).toBe(true);
   });
 });
@@ -116,7 +135,7 @@ describe("GET /api/google/connect", () => {
   });
 
   it("hands back a Google consent URL carrying the redirect URI and the scopes in use", async () => {
-    configStore.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
+    setGoogleCredentials("id.apps", "secret");
     const response = await app.inject({ method: "GET", url: "/api/google/connect" });
     expect(response.statusCode).toBe(200);
 
@@ -138,7 +157,7 @@ describe("GET /api/google/connect", () => {
   });
 
   it("asks for the Tasks scope once Google Tasks is enabled as a Task Destination", async () => {
-    configStore.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
+    setGoogleCredentials("id.apps", "secret");
     configStore.setGoogleTasksDestination({
       enabled: true,
       taskListId: "list-1",

@@ -121,6 +121,7 @@ import {
   type MigrationGate,
 } from "../api/migration.js";
 import { registerClearDataApi } from "../api/clear-data.js";
+import { installationStatus } from "../installation.js";
 
 /** The module id fixture Runs are attributed to in the browser suite only. */
 const SEED_FIXTURE_MODULE_ID = "seed-fixture";
@@ -330,12 +331,11 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     ...(searxngUrl !== undefined ? { searxngUrl } : {}),
   });
   /* Each gate's action names its own cure (UX audit F2): the provider gate
-     lands on the Extraction provider card, not the top of a very long
-     Settings page, and the owner gate starts the create-your-own-Profile
-     path the confirmation card itself instructs. */
+     lands on the required key control, and the owner gate starts the
+     create-your-own-Profile path the confirmation card itself instructs. */
   const providerNextAction: PersonResearchNextAction = {
-    label: "Add a provider key in Settings",
-    href: "/settings#group-provider",
+    label: "Open Guided Setup",
+    href: "/onboarding?goal=meetings",
   };
   const ownerProfileNextAction: PersonResearchNextAction = {
     label: "Create your own Profile",
@@ -579,13 +579,6 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       testContentScout?.brandProfileProposer ?? modelBrandProfileProposer(contentScoutCompleteJson),
     runtimeInspector: testContentScout?.runtimeInspector ?? new ExternalRuntimeInspector(),
     isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
-    modelReadiness: () => {
-      if (testContentScout) return null;
-      const current = configStore.getForPurpose("contentDiscovery");
-      return current.provider !== "mock" && current.provider !== "ollama" && !current.apiKey.trim()
-        ? "Add a model provider key in Settings → Extraction provider before scanning your website."
-        : null;
-    },
     log: (message) => console.log(`[content-scout] ${message}`),
   });
   const contentResearchCompleteJson = () => completeForPurpose("contentResearch");
@@ -611,7 +604,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       if (current.provider === "mock" && !demo)
         return "Choose a production model provider in Settings.";
       if (current.provider !== "mock" && current.provider !== "ollama" && !current.apiKey.trim())
-        return "Configure the model provider API key in Settings.";
+        return "Run Guided Setup to provision the model provider installation credential.";
       if (!demo && !ownerOnboarding.confirmed()) return "Confirm the owner Profile in Settings.";
       if (kind === "discovery" && !demo && !brandProfiles.current())
         return "Create Brand Voice before People Discovery.";
@@ -816,8 +809,8 @@ the oldest Transcript. */
             capturedAt: new Date().toISOString(),
             actionItemPolicy: configStore.get().tasks.actionItemPolicy,
             /* The reservation records the release restriction and the owner's
-         explicit enablement alongside the preference (#360), so a later
-         release never reopens this operation. */
+   explicit enablement alongside the preference (#360), so a later
+   release never reopens this operation. */
             authorization: taskProduct.promotion.facts(configStore.get().tasks.actionItemPolicy),
           }),
           log: (message) => console.log(`[meeting-debrief] ${message}`),
@@ -907,6 +900,8 @@ the oldest Transcript. */
     gate: migrationGate,
     configStore,
     googleConnection,
+    transcriptCatalog: transcriptCatalogRuntime.catalog,
+    installationStatus,
     ownerOnboarding,
     brandProfiles,
   });
@@ -1093,6 +1088,29 @@ the oldest Transcript. */
     timezone: () =>
       configStore.getModuleConfig("content-research").timeZone ||
       Intl.DateTimeFormat().resolvedOptions().timeZone,
+    transcriptIntake: () => {
+      const current = configStore.getForPurpose("meetingDebrief");
+      const catalogStatus = transcriptCatalogRuntime.catalog.status();
+      const google = googleConnection.auth();
+      const installed = installationStatus();
+      const installedProvider =
+        current.provider === "ollama" || current.provider === "mock"
+          ? null
+          : installed.providerKeys[current.provider];
+      return {
+        providerReady:
+          installedProvider?.state === "configured" ||
+          current.provider === "ollama" ||
+          current.provider === "mock",
+        googleState: google.ok ? "connected" : google.state,
+        folderSelected: configStore.get().drive.folderId.length > 0,
+        pollingEnabled: configStore.get().drive.enabled,
+        consentGranted: catalogStatus.consent?.folderId === configStore.get().drive.folderId,
+        backfill: catalogStatus.backfill,
+        failed: catalogStatus.failed,
+        transcriptCount: catalogStatus.transcriptCount,
+      };
+    },
   }).registerRoutes(app);
 
   /* The Transcript Catalog's intake surface (issue #142): consent, the

@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod/v3";
 import {
   BenchmarkReportSchema,
@@ -53,6 +54,15 @@ const same = (a: string[], b: string[]) =>
   new Set(a).size === a.length &&
   new Set(b).size === b.length &&
   a.every((value) => b.includes(value));
+
+function sameDossierEvidence(left: PersonDossier | null, right: PersonDossier | null): boolean {
+  if (!left || !right) return left === right;
+  const stable = (dossier: PersonDossier) => ({
+    ...dossier,
+    sections: dossier.sections.map((section) => ({ ...section, updatedAt: null })),
+  });
+  return isDeepStrictEqual(stable(left), stable(right));
+}
 
 /** One retained person's verified evidence, ready for re-judging. */
 interface ReassessmentEvidenceEntry {
@@ -232,7 +242,7 @@ export async function loadReassessmentEvidence(input: {
       dossier?.sourceIds.some((id) => !sources.some((source) => source.id === id))
     )
       throw new Error(`Reassessment dossier/source population mismatch: ${person.slug}`);
-    if (JSON.stringify(dossier) !== JSON.stringify(publicProjection))
+    if (!sameDossierEvidence(dossier, publicProjection))
       throw new Error(`Reassessment refuses private dossier evidence: ${person.slug}`);
     return { person, previous, operation, dossier, publicProjection, sources };
   });

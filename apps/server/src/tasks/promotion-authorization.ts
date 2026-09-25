@@ -119,21 +119,49 @@ export class WorkspacePromotionAuthorization {
     return authorizationAuthorizes(facts);
   }
 
-  /** What the policy surface answers: the preference, the release, and why. */
+  /**
+   * The compact public projection of the authorization facts. Release
+   * evidence and the decision timestamp remain internal; the browser learns
+   * whether the saved preference is effective and what it can do next.
+   */
   status(preference: ActionItemPolicy): AutomaticPromotionStatus {
     const facts = this.facts(preference);
-    const state = this.read();
+    const effective = this.authorizes(facts);
+    if (!facts.released) {
+      return {
+        effective: false,
+        state: "unavailable",
+        message:
+          preference === "auto-create-mine"
+            ? "Your preference is saved, but automatic creation is unavailable in this release and is not active. If a later release makes it available, you must explicitly enable it again."
+            : "Automatic creation is unavailable in this release. Stage all remains active.",
+        nextAction: null,
+      };
+    }
+    if (effective) {
+      return {
+        effective: true,
+        state: "active",
+        message: "Automatic creation is active for future eligible first extractions.",
+        nextAction: "disable",
+      };
+    }
+    if (facts.enabledAt === null) {
+      return {
+        effective: false,
+        state: "available",
+        message:
+          preference === "auto-create-mine"
+            ? "Automatic creation is available in this release, but it is not active. Enable it when you are ready."
+            : "Automatic creation is available in this release, but Stage all keeps it inactive. Choose Automatically create my Tasks when you are ready.",
+        nextAction: "enable",
+      };
+    }
     return {
-      effective: this.authorizes(facts),
-      reason: this.authorizes(facts)
-        ? ""
-        : facts.released
-          ? preference === "auto-create-mine"
-            ? "Automatic promotion is available in this release, but enabling it is still the owner's decision."
-            : "Automatic promotion is not enabled for this Workspace."
-          : `Automatic promotion is restricted in this release (${facts.basis}).`,
-      release: state.release,
-      enabledAt: facts.enabledAt,
+      effective: false,
+      state: "available",
+      message: "Stage all keeps automatic creation inactive.",
+      nextAction: "disable",
     };
   }
 

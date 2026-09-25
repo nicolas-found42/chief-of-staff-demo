@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
@@ -24,11 +24,33 @@ let store: PersonProfileStore;
 let profiles: WorkspacePersonProfiles;
 let onboarding: OwnerOnboarding;
 
+const originalGoogleEnvironment = {
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+};
+
+function setGoogleCredentials(clientId = "", clientSecret = ""): void {
+  process.env.GOOGLE_CLIENT_ID = clientId;
+  process.env.GOOGLE_CLIENT_SECRET = clientSecret;
+}
+
+function restoreGoogleEnvironment(): void {
+  for (const [name, value] of Object.entries(originalGoogleEnvironment)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
 beforeEach(() => {
+  setGoogleCredentials();
   workspaceDir = mkdtempSync(join(tmpdir(), "cos-owner-onboarding-"));
   store = new PersonProfileStore(workspaceDir);
   profiles = new WorkspacePersonProfiles({ store, lifecycle: [] });
   onboarding = new OwnerOnboarding({ people: profiles, workspaceDir });
+});
+
+afterEach(() => {
+  restoreGoogleEnvironment();
 });
 
 function createProfile(overrides: Partial<PersonProfileCreateInput> = {}) {
@@ -230,7 +252,7 @@ describe("durability across restart", () => {
     const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
     const config = new ConfigStore(join(workspaceDir, "config.json"));
     config.load();
-    config.update({ google: { clientId: "client-id", clientSecret: "client-secret" } });
+    setGoogleCredentials("client-id", "client-secret");
     config.setGoogleRefreshToken("persisted-refresh-token");
     const google = openGoogleConnection(config, 4317, {
       probe: async () => {
@@ -263,9 +285,9 @@ describe("durability across restart", () => {
     const confirmed = onboarding.confirm(profile.id);
     const config = new ConfigStore(join(workspaceDir, "config.json"));
     config.load();
-    config.update({ google: { clientId: "client-id", clientSecret: "client-secret" } });
+    setGoogleCredentials("client-id", "client-secret");
     config.setGoogleRefreshToken("persisted-refresh-token");
-    config.update({ google: { clientId: "", clientSecret: "" } });
+    setGoogleCredentials();
     const google = openGoogleConnection(config, 4317);
     const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
 

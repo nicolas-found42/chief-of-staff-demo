@@ -10,6 +10,7 @@ import {
   researchAllowance,
 } from "../../../apps/server/src/person-profile/research.js";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
+import { synthesizeSections } from "../../../apps/server/src/person-profile/dossier-store.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
 import { SourceScheduler } from "../../../apps/server/src/person-profile/source-scheduler.js";
@@ -86,7 +87,7 @@ it("resumes a legacy retained tracking alias when the pending lead names its can
     works: [],
     expertise: [],
     connections: [],
-    sections: [],
+    sections: synthesizeSections([]),
     sourceIds: [source.id],
   });
   const fetch = vi.fn(async (url: string) => read(url));
@@ -361,7 +362,7 @@ it("preserves an owner's rejection when an old tracking URL reappears as its can
     works: [],
     expertise: [],
     connections: [],
-    sections: [],
+    sections: synthesizeSections([]),
     sourceIds: [source.id],
   });
   dossiers.detach(person.id, source.id);

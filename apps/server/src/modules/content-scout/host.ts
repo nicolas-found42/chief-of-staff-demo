@@ -3,6 +3,8 @@ import type {
   BrandProfileRevision,
   BrandProfileProposal,
   BrandProfileSourceScan,
+  ContentScoutReadiness,
+  ContentScoutSetup,
   ContentShortlist,
   ContentScoutRunResult,
   RunMeta,
@@ -24,6 +26,7 @@ import {
   CANARY_INTERVAL_MS,
 } from "@chief-of-staff-demo/shared";
 import { evaluateLinkedInEvidenceGate, type LinkedInCanaryEvidence } from "./adapters/linkedin.js";
+import { assertPublicHttpUrl } from "../../source-adapters/http.js";
 import type { HostedModule } from "../../engine/host.js";
 import type { ConfigStore } from "../../config.js";
 import { Runner } from "../../engine/runner.js";
@@ -91,11 +94,6 @@ export interface ContentScoutHostDeps {
   runtimeInspector?: RuntimeInspector;
   /** Content generation requires the canonical owner Profile confirmation. */
   isOwnerProfileConfirmed?: () => boolean;
-  /**
-   * Why the model a Brand Profile scan proposes with cannot answer yet, or null
-   * once it can (#484): a scan that could only fail is refused before it crawls.
-   */
-  modelReadiness?: () => string | null;
   log: (message: string) => void;
 }
 
@@ -210,6 +208,52 @@ export class ContentScoutHost implements HostedModule {
         this.deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID].canaryDisabledAdapters ?? [],
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
     });
+  }
+  setup(): ContentScoutSetup {
+    const config = this.deps.configStore?.get();
+    const providerConfigured = config
+      ? config.provider === "mock" || config.provider === "ollama" || Boolean(config.apiKey.trim())
+      : true;
+    const brandVoiceAccepted = this.currentBrandProfile() !== null;
+    const sourceTargetCollectable = this.listSourceTargets().some((target) => {
+      if (target.state !== "active") return false;
+      const adapter = this.deps.adapters.find((candidate) => candidate.id === target.adapterId);
+      return adapter?.state === "available" && adapter.supports(target);
+    });
+    const nextAction = !providerConfigured
+      ? { label: "Open Guided Setup", href: "/onboarding?goal=meetings" }
+      : !brandVoiceAccepted
+        ? { label: "Create Brand Voice", href: "/content-scout?view=brand" }
+        : !sourceTargetCollectable
+          ? { label: "Add a source to monitor", href: "/content-scout?view=sources" }
+          : undefined;
+    return {
+      providerConfigured,
+      brandVoiceAccepted,
+      sourceTargetCollectable,
+      scoutReady: providerConfigured && brandVoiceAccepted && sourceTargetCollectable,
+      ...(nextAction ? { nextAction } : {}),
+    };
+  }
+
+  brandProfileScanReadiness(): ContentScoutReadiness {
+    const setup = this.setup();
+    return setup.providerConfigured
+      ? { state: "ready", reason: "ready" }
+      : {
+          state: "setup-required",
+          reason: "provider-not-configured",
+          nextAction: setup.nextAction ?? {
+            label: "Open Guided Setup",
+            href: "/onboarding?goal=meetings",
+          },
+        };
+  }
+
+  private refuseBrandScanWhenUnconfigured(): void {
+    if (this.brandProfileScanReadiness().state !== "ready") {
+      throw new Error("brand-profile-scan-disabled");
+    }
   }
 
   acceptBrandProfile(input: {
@@ -393,14 +437,16 @@ export class ContentScoutHost implements HostedModule {
   }
 
   scanBrandProfile(websiteUrl: string): Promise<string> {
+    this.refuseBrandScanWhenUnconfigured();
+    const normalized = normalizeBrandProfileWebsiteUrl(websiteUrl);
     return this.brandProfileRunner.startRun(
       {
         intake: CONTENT_SCOUT_BRAND_SCAN_INTAKE,
         fileName: "Content Scout Brand Profile proposal.md",
-        sourceUrl: websiteUrl,
+        sourceUrl: normalized,
         externalId: null,
       },
-      { websiteUrl },
+      { websiteUrl: normalized },
     );
   }
 
@@ -729,6 +775,8 @@ export class ContentScoutHost implements HostedModule {
         settings: this.deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID] ?? null,
         storage: this.storageUse(),
         linkedinEvidenceGate,
+        setup: this.setup(),
+        brandProfileScanReadiness: this.brandProfileScanReadiness(),
       };
     });
 
@@ -777,19 +825,19 @@ export class ContentScoutHost implements HostedModule {
         reply.code(400).send({ error: "A public company website URL is required." });
         return;
       }
+      let normalized: string;
       try {
-        const parsed = new URL(websiteUrl);
-        if (!/^https?:$/.test(parsed.protocol)) throw new Error();
+        normalized = normalizeBrandProfileWebsiteUrl(websiteUrl);
       } catch {
         reply.code(400).send({ error: "A public HTTP or HTTPS website URL is required." });
         return;
       }
-      const notReady = this.deps.modelReadiness?.() ?? null;
-      if (notReady) {
-        reply.code(409).send({ error: notReady });
+      const readiness = this.brandProfileScanReadiness();
+      if (readiness.state !== "ready") {
+        reply.code(409).send({ error: "brand-profile-scan-disabled", readiness });
         return;
       }
-      return { runId: await this.scanBrandProfile(websiteUrl) };
+      return { runId: await this.scanBrandProfile(normalized) };
     });
 
     app.post("/api/content-scout/brand-profile/proposals/:id/accept", async (request, reply) => {
@@ -1133,4 +1181,21 @@ function parseLocalTime(value: string): [number, number] {
   const hour = Number(match[1]);
   const minute = Number(match[2]);
   return hour <= 23 && minute <= 59 ? [hour, minute] : [0, 0];
+}
+
+function normalizeBrandProfileWebsiteUrl(value: string): string {
+  const trimmed = value.trim();
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const url = new URL(candidate);
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password) {
+    throw new Error("A public HTTP or HTTPS website URL is required.");
+  }
+  const host = url.hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
+    throw new Error("A public HTTP or HTTPS website URL is required.");
+  }
+  return assertPublicHttpUrl(url.toString()).toString();
 }

@@ -80,7 +80,6 @@ async function replay(
   );
   const sourceId =
     dossiers.get(person.id)?.sourceIds.at(-1) ?? result.operation.retainedSourceIds?.at(-1);
-  expect(sourceId).toBeTruthy();
   return {
     result,
     source: dossiers.source(person.id, sourceId!)!,

@@ -27,11 +27,28 @@ let exchangeCode: (
   code: string,
 ) => Promise<{ refreshToken: string; grantedScopes: string[] }>;
 
+const originalGoogleEnvironment = {
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+};
+
+function setGoogleCredentials(clientId: string, clientSecret: string): void {
+  process.env.GOOGLE_CLIENT_ID = clientId;
+  process.env.GOOGLE_CLIENT_SECRET = clientSecret;
+}
+
+function restoreGoogleEnvironment(): void {
+  for (const [name, value] of Object.entries(originalGoogleEnvironment)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
 beforeEach(async () => {
   const workspaceDir = mkdtempSync(join(tmpdir(), "cos-google-callback-"));
+  setGoogleCredentials("id.apps", "secret");
   configStore = new ConfigStore(join(workspaceDir, "config.json"));
   configStore.load();
-  configStore.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
   configStore.setGoogleRefreshToken("stored-refresh");
   probe = async () => ({ email: "nicolas@found42.com" });
   mintAccessToken = async () => ({ token: "picker-token", expiresAt: null });
@@ -86,6 +103,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await app.close();
+  restoreGoogleEnvironment();
 });
 
 describe("GET /api/google/picker-token", () => {

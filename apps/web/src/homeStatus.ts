@@ -9,6 +9,7 @@ import {
   personResearchPhaseLabel,
   runActivityLink,
   runDisplayName,
+  stageLabel,
   statusLabel,
 } from "./display";
 
@@ -139,21 +140,33 @@ export function homeStatus(
 
   /* An expiry is reconnect-fixable, so the rail names that fix instead of
      pointing at the Run. Every other failure still opens its diagnostic. */
-  const rows: RailRow[] = needsAction.slice(0, MAX_FAILED_ROWS).map((run) =>
-    isExpectedConnectionExpiry(run.connectionState)
-      ? {
-          id: run.id,
-          text: `${runDisplayName(run)} could not finish because Google needs reconnecting`,
-          cta: "Reconnect",
-          to: "/settings",
-        }
-      : {
-          id: run.id,
-          text: `${runDisplayName(run)} failed`,
-          cta: "Open",
-          to: `/runs/${run.id}`,
-        },
-  );
+  const rows: RailRow[] = needsAction.slice(0, MAX_FAILED_ROWS).map((run) => {
+    if (isExpectedConnectionExpiry(run.connectionState)) {
+      return {
+        id: run.id,
+        text: `${runDisplayName(run)} could not finish because Google needs reconnecting`,
+        cta: "Reconnect",
+        to: "/onboarding?goal=meetings",
+      };
+    }
+    /* The stage/reason is enough for triage from Home; the action still goes
+       to the product surface that owns the result, not to engine inspection
+       (ADR-0051). Runs without that triage data keep their generic row. */
+    if (run.failedStage && run.failureHint) {
+      return {
+        id: run.id,
+        text: `${runDisplayName(run)} failed at ${stageLabel(run.failedStage)}: ${run.failureHint}`,
+        cta: run.module === "meeting-brief-generator" ? "Open failed Meeting Brief" : "Open",
+        to: owningSurfaceForRun(run),
+      };
+    }
+    return {
+      id: run.id,
+      text: `${runDisplayName(run)} failed`,
+      cta: "Open",
+      to: `/runs/${run.id}`,
+    };
+  });
   /* The tail of the failed rows, not a condition of its own — so it sits with
      the rows it summarises rather than after the provider. */
   if (needsAction.length > MAX_FAILED_ROWS) {
@@ -198,7 +211,7 @@ export function homeStatus(
       id: "mock-provider",
       text: "Runs are using the mock provider, so nothing real is extracted",
       cta: "Choose a provider",
-      to: "/settings",
+      to: "/onboarding?goal=meetings",
     });
   }
 

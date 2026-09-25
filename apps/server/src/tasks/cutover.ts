@@ -54,6 +54,7 @@ export class TaskCutover {
       return false;
     mkdirSync(directory, { recursive: true });
     const receipt: TaskCutoverReceipt = {
+      origin: "pristine",
       kind: "canonical-tasks",
       workspace: realpathSync(directory),
       fingerprint: this.fingerprint(),
@@ -191,6 +192,7 @@ export class TaskCutover {
       };
       const preview: TaskCutoverPreview = {
         kind: "canonical-tasks",
+        origin: "migrated",
         workspace: realpathSync(this.deps.workspaceDir),
         fingerprint,
         counts: {

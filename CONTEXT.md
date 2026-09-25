@@ -469,28 +469,64 @@ _Status_: `upstage/solar-pro4`
 _Avoid_: Eval model, judge (the Gate Model is the model under test, not one grading another)
 
 **Google connection**:
-The Shell's authorization to act on one person's Google account. Each person registers their own
-OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —
-expiry being a weekly event rather than a fault. It is the only route to a Google surface
-(Tasks, Calendar, Gmail, Drive, YouTube, Sheets) and the only holder of client credentials and
-refresh tokens; a Module's Intake or Output Adapter reaches Google with credentials from the
-connection or not at all. Google Tasks is an optional surface: its absence does not disconnect or
-disable any other granted Google surface.
-_Avoid_: Google auth, login, OAuth (the protocol is not the connection)
+The Shell's authorization to act on one Workspace owner's Google account. The connection is
+unconfigured, disconnected, connected, or expired; expiry is a consent lifecycle event rather than
+a Workspace credential. It is the only route to a Google surface (Tasks, Calendar, Gmail, Drive,
+YouTube, Sheets), and a Module reaches Google through it or not at all. Google Tasks is optional;
+its absence does not disconnect another granted surface.
+_Avoid_: Google auth, login, OAuth client (the protocol and installation credential are not the
+Workspace connection)
+
+**Installation**:
+The local operator-managed process and environment that hosts one or more Workspaces. Installation
+configuration is shared by that installation and is not a Workspace record.
+_Avoid_: Workspace settings, hosted service
+
+**Installation Operator**:
+The trusted local person who provisions installation credentials and runs Guided Setup. The
+operator does not become a Workspace owner and does not receive another Workspace's refresh token.
+_Avoid_: Workspace owner, remote administrator
+
+**Workspace Owner**:
+The person who owns one Workspace and explicitly authenticates and consents to Google for it.
+_Avoid_: Installation Operator
+
+**Installation Credentials**:
+The installation-owned Google OAuth client pair and provider-specific model keys shared by its
+Workspaces. Public configuration exposes only Configured, Missing, or Not required, never values.
+_Avoid_: Provider API key field, OAuth client field
+
+**Google Refresh Token**:
+The Workspace-owned token produced by an owner's explicit Google consent. It remains in that
+Workspace with its connection identity and is never synchronized or brokered between Workspaces.
+_Avoid_: Installation credential, shared token
+
+**Provider Choice**:
+The Workspace-owned selection of an installed model provider (or Ollama). It survives installation
+credential migration; the selected secret does not.
+_Avoid_: Installation provider key
+
+**Model Choice**:
+The Workspace-owned model selection, including per-purpose overrides. It is independent of
+Installation Credentials and remains after a credential cutover.
+_Avoid_: API key, model credential
 
 **Workspace**:
-The directory holding all state — configuration, secrets, and every Run. There is no database.
+The directory holding Workspace configuration, product records, consent/connection identity, and
+every Run. It does not hold Installation Credentials. There is no database.
 _Avoid_: Data dir, store
 
 **Generated data**:
 The half of the Workspace the products produced — every Run, Person Profile, processed Transcript,
 Brand Profile, Content Research record and Content Project, plus the checkpoints tracking what was
-already ingested or scheduled. Not "everything in the Workspace": credentials, pointers and
-settings are the other half, and the line between them is one explicit table both the one-time
-migration reset and the repeatable clear read (ADR-0046, ADR-0048). A Task is not Generated data,
-even when promoted from an Action Item: it is the workspace owner's accepted record of work.
+already ingested or scheduled. Not "everything in the Workspace": Workspace consent records,
+pointers and settings are the other half, while Installation Credentials live outside the
+Workspace. The line between generated and retained Workspace state is one explicit table both the
+one-time migration reset and the repeatable clear read (ADR-0046, ADR-0048). A Task is not
+Generated data, even when promoted from an Action Item: it is the workspace owner's accepted record
+of work.
 _Avoid_: Workspace data, user data, app data (each reads as "everything", which is the misreading
-that would delete credentials)
+that would delete Workspace consent or settings)
 
 **Relay**:
 The third-party workflow tool Found42 is migrating off. Its export is the source list of

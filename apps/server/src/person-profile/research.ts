@@ -41,6 +41,7 @@ import {
   type PersonSourceDocument,
   type PersonSourceFamily,
   type ModelAttemptEvent,
+  type PersonResearchPreviousConclusion,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
 import { modelBoundaryDiagnostic } from "../llm/failure.js";
@@ -226,15 +227,93 @@ export interface ResearchOutcome {
   sources: number;
   detail: string;
 }
+export interface ResearchExecutionCommand {
+  profile: PersonProfile;
+  scope: "current" | "full";
+  explicit: boolean;
+  limits: {
+    modelCalls: number;
+    milliseconds: number;
+    requests: number;
+    readConcurrency: number;
+    requestTimeoutMilliseconds: number;
+    quietRounds: number;
+  };
+  currentOperationId?: string;
+  operationRevision: number;
+  spent: { modelCalls: number; milliseconds: number };
+  checkpoint?: PersonResearchCheckpoint;
+  previousOperation?: {
+    operation: PersonResearchOperationOutcome;
+    revision: number;
+  };
+  contextStatus: () => "current" | "interrupted" | "stale";
+  saveStart: (facts: {
+    operationId: string;
+    operationRevision: number;
+    startedAt: string;
+    previousConclusion?: PersonResearchPreviousConclusion;
+  }) => void;
+  saveRequest: () => void;
+  saveSpend: (modelCalls: number) => void;
+  saveCheckpoint: (checkpoint: PersonResearchCheckpoint) => void;
+}
+
+export interface ResearchExecutionResult {
+  operation: PersonResearchOperationOutcome;
+  state: PersonResearchJob["state"];
+  detail: string;
+  operationId: string;
+  operationRevision: number;
+  startedAt: string;
+  settled: boolean;
+  checkpoint?: PersonResearchCheckpoint;
+  previousConclusion?: PersonResearchPreviousConclusion;
+  elapsedMilliseconds: number;
+}
+
+export interface ResearchCancellation {
+  operationId: string;
+  state: "interrupted";
+  detail: string;
+  billedThrough: number;
+}
 
 const EMPTY: PersonDossierContent = {
   claims: [],
   works: [],
   expertise: [],
   connections: [],
-  sections: [],
+  sections: synthesizeSections([]),
 };
 
+function mergeResearchOperation(
+  previous: PersonResearchOperationOutcome,
+  current: PersonResearchOperationOutcome,
+): PersonResearchOperationOutcome {
+  const operation: PersonResearchOperationOutcome = {
+    ...current,
+    startedAt: previous.startedAt,
+    modelCalls: previous.modelCalls + current.modelCalls,
+    requests: previous.requests + current.requests,
+    claimsPublished: previous.claimsPublished + current.claimsPublished,
+    attempts: [...previous.attempts, ...current.attempts],
+  };
+  if (previous.retainedSourceIds && current.retainedSourceIds) {
+    operation.retainedSourceIds = [
+      ...new Set([...previous.retainedSourceIds, ...current.retainedSourceIds]),
+    ];
+    operation.sourcesRetained = operation.retainedSourceIds.length;
+  } else {
+    operation.sourcesRetained = Math.max(previous.sourcesRetained, current.sourcesRetained);
+    delete operation.retainedSourceIds;
+  }
+  const leads = new Map(previous.leads.map((lead) => [lead.id, lead]));
+  for (const lead of current.leads)
+    if (lead.disposition !== "deduplicated" || !leads.has(lead.id)) leads.set(lead.id, lead);
+  operation.leads = [...leads.values()];
+  return operation;
+}
 interface PendingRead {
   leadId: string;
   url: string;
@@ -258,6 +337,11 @@ interface PendingRead {
 export class PersonResearch {
   private readonly modelWork = new WorkLimiter(4);
   private readonly sourceWork = new SourceScheduler();
+  private readonly active = new Map<
+    string,
+    { generation: number; operationId: string; cancelledAt: number | null }
+  >();
+  private generation = 0;
   constructor(
     private readonly deps: {
       dossiers: PersonDossierStore;
@@ -315,6 +399,137 @@ export class PersonResearch {
       now?: () => Date;
     },
   ) {}
+
+  async execute(command: ResearchExecutionCommand): Promise<ResearchExecutionResult> {
+    const now = this.deps.now ?? (() => new Date());
+    const operationId =
+      command.checkpoint?.operationId ?? command.currentOperationId ?? randomUUID();
+    const operationRevision = command.operationRevision;
+    const startedAt = now().toISOString();
+    const previous = command.previousOperation;
+    const previousConclusion =
+      previous && previous.operation.operationId !== operationId
+        ? {
+            operationId: previous.operation.operationId,
+            revision: previous.revision,
+            conclusion: previous.operation.conclusion,
+            finishedAt: previous.operation.finishedAt,
+            detail: previous.operation.detail,
+            ...(previous.operation.decisiveExtraction
+              ? { decisive: previous.operation.decisiveExtraction }
+              : {}),
+          }
+        : undefined;
+    const started = Date.now();
+    const generation = ++this.generation;
+    this.active.set(command.profile.id, { generation, operationId, cancelledAt: null });
+    command.saveStart({
+      operationId,
+      operationRevision,
+      startedAt,
+      ...(previousConclusion ? { previousConclusion } : {}),
+    });
+    let result: ResearchOutcome | undefined;
+    let thrown: Error | undefined;
+    try {
+      result = await this.run(command.profile, {
+        operationId,
+        scope: command.scope,
+        explicit: command.explicit,
+        maxModelCalls: Math.max(1, command.limits.modelCalls - command.spent.modelCalls),
+        maxRequests: command.limits.requests,
+        maxMilliseconds: Math.max(1000, command.limits.milliseconds - command.spent.milliseconds),
+        readConcurrency: command.limits.readConcurrency,
+        requestTimeoutMilliseconds: command.limits.requestTimeoutMilliseconds,
+        quietRounds: command.limits.quietRounds,
+        ...(command.checkpoint ? { checkpoint: command.checkpoint } : {}),
+        active: () => {
+          const active = this.active.get(command.profile.id);
+          return (
+            active?.generation === generation &&
+            active.operationId === operationId &&
+            command.contextStatus() === "current"
+          );
+        },
+        saveCheckpoint: (checkpoint) => {
+          const active = this.active.get(command.profile.id);
+          if (active?.generation !== generation || active.operationId !== operationId) return;
+          command.saveCheckpoint(checkpoint);
+        },
+        reserveRequest: () => {
+          const active = this.active.get(command.profile.id);
+          if (
+            active?.generation !== generation ||
+            active.operationId !== operationId ||
+            command.contextStatus() !== "current"
+          )
+            return false;
+          command.saveRequest();
+          return true;
+        },
+        reserveModelCall: () => {
+          const active = this.active.get(command.profile.id);
+          if (
+            active?.generation !== generation ||
+            active.operationId !== operationId ||
+            command.contextStatus() !== "current"
+          )
+            return false;
+          command.saveSpend(command.spent.modelCalls + 1);
+          return true;
+        },
+      });
+    } catch (error) {
+      thrown =
+        error instanceof Error
+          ? error
+          : new Error("Person Research execution failed", { cause: error });
+    } finally {
+      const active = this.active.get(command.profile.id);
+      if (active?.generation === generation && active.operationId === operationId)
+        this.active.delete(command.profile.id);
+    }
+    if (thrown) throw thrown;
+    if (!result) throw new Error("Person Research execution ended without a result");
+    const operation =
+      previous?.operation.operationId === operationId
+        ? mergeResearchOperation(previous.operation, result.operation)
+        : result.operation;
+    return {
+      operation,
+      state: result.state,
+      detail: result.detail,
+      operationId,
+      operationRevision,
+      startedAt,
+      settled:
+        result.operation.conclusion !== "interrupted" || command.contextStatus() === "interrupted",
+      ...(result.operation.conclusion === "completed"
+        ? {}
+        : command.checkpoint
+          ? { checkpoint: command.checkpoint }
+          : {}),
+      ...(previousConclusion ? { previousConclusion } : {}),
+      elapsedMilliseconds: Math.min(
+        command.limits.milliseconds,
+        command.spent.milliseconds + Math.max(0, Date.now() - started),
+      ),
+    };
+  }
+
+  cancel(profileId: string, operationId: string): ResearchCancellation | null {
+    const active = this.active.get(profileId);
+    if (!active || active.operationId !== operationId) return null;
+    active.cancelledAt = Date.now();
+    active.generation = ++this.generation;
+    return {
+      operationId,
+      state: "interrupted",
+      detail:
+        "Research was stopped by an owner; retained evidence and pending leads are preserved.",
+      billedThrough: active.cancelledAt,
+    };
+  }
 
   async run(inputProfile: PersonProfile, allowance: ResearchAllowance): Promise<ResearchOutcome> {
     /* Clone the incoming operation profile at method entry so transient
@@ -550,8 +765,16 @@ export class PersonResearch {
       const pendingSeedUrlLeads = leads
         .pending()
         .filter((lead) => lead.kind === "url" && lead.origin === "seed");
+      const pendingLinkedInFollowUps = leads
+        .pending()
+        .filter(
+          (lead) =>
+            lead.kind === "url" &&
+            lead.origin === "document-link" &&
+            /(^|\.)linkedin\.com$/i.test(safeUrl(lead.target)?.hostname ?? ""),
+        );
       const queryLeads =
-        pendingSeedUrlLeads.length > 0
+        pendingSeedUrlLeads.length > 0 || pendingLinkedInFollowUps.length > 0
           ? []
           : leads
               .pending()
@@ -897,7 +1120,12 @@ export class PersonResearch {
           });
         }
         if (read.access === "retrieved") leads.observeRedirect(pending.leadId, read.finalUrl);
-        return { pending, read, privateDocument, readMilliseconds: Date.now() - readStarted };
+        return {
+          pending,
+          read,
+          privateDocument,
+          readMilliseconds: Date.now() - readStarted,
+        };
       };
 
       /**
@@ -1391,7 +1619,6 @@ export class PersonResearch {
         }
 
         const published = await gate.publish(async () => {
-          if (!active() || (privateDocument && !privateDocument.active())) return null;
           const source = this.retain(
             profile,
             pending,
@@ -1424,11 +1651,8 @@ export class PersonResearch {
           );
           const current = this.deps.dossiers.get(profile.id);
           try {
-            this.deps.dossiers.publish(
-              profile.id,
-              current?.revision ?? 0,
-              this.combine(current ?? EMPTY, content, source.sourceClass),
-            );
+            const combined = this.combine(current ?? EMPTY, content, source.sourceClass);
+            this.deps.dossiers.publish(profile.id, current?.revision ?? 0, combined);
           } catch (error) {
             recorder.record({
               stage: "publication",
@@ -1514,16 +1738,12 @@ export class PersonResearch {
               reason: claim.changeReason ?? "Matched source supplies the fact.",
             });
         const declaredAuthorName =
-          read.linkedInAuthor &&
-          profile.profileUrls.some(
-            (url) =>
-              linkedInProfileIdentity(url) ===
-              linkedInProfileIdentity(read.linkedInAuthor!.profileUrl),
-          )
-            ? read.linkedInAuthor.name
+          read.linkedIn?.identity.decision === "matched"
+            ? (read.linkedIn.declaredAuthor?.name ?? null)
             : null;
         const resolvedName =
           extracted.fullName ??
+          (read.linkedIn?.identity.decision === "matched" ? read.linkedIn.profileName : null) ??
           linkedInProfileName(source, profile.profileUrls, read.finalUrl) ??
           declaredAuthorName;
         if (
@@ -1590,42 +1810,30 @@ export class PersonResearch {
             );
         }
 
-        /* A verified guest profile offers more LinkedIn work than this host's
-           anonymous budget should follow. Read two listed posts and one article;
-           the reader's labelled cards are the source of these URLs. */
-        const ownLinkedInProfile = profile.profileUrls.some(
-          (url) =>
-            linkedInProfileIdentity(url) !== null &&
-            linkedInProfileIdentity(url) === linkedInProfileIdentity(read.finalUrl),
-        );
-        if (!privateDocument && ownLinkedInProfile) {
-          const linkedOnPage = (url: string) =>
-            read.outboundUrls.some((outbound) => outbound.split(/[?#]/, 1)[0] === url);
-          const posts = [
-            ...read.text.matchAll(
-              /^Post listed by [^\n]+\nText: [^\n]+(?:\nDate \(decoded from activity ID\): [^\n]+)?\nURL: (https?:\/\/[^\s]+)$/gm,
-            ),
-          ]
-            .map((match) => match[1]!)
-            .filter(
-              (url) =>
-                linkedOnPage(url) && /^https:\/\/(?:www\.)?linkedin\.com\/posts\//i.test(url),
+        if (!privateDocument && read.linkedIn?.kind === "profile") {
+          for (const followUp of read.linkedIn.followUps) {
+            const target = safeUrl(followUp.url);
+            if (
+              !target ||
+              !/^https:$/.test(target.protocol) ||
+              !/(^|\.)linkedin\.com$/i.test(target.hostname)
             )
-            .slice(0, 2);
-          const articles = [
-            ...read.text.matchAll(
-              /^Article listed by [^\n]+\nTitle: [^\n]+\nDate: [^\n]+\nURL: (https?:\/\/[^\s]+)$/gm,
-            ),
-          ]
-            .map((match) => match[1]!)
-            .filter(
-              (url) =>
-                linkedOnPage(url) && /^https:\/\/(?:www\.)?linkedin\.com\/pulse\//i.test(url),
-            )
-            .slice(0, 1);
-          for (const url of [...posts, ...articles]) {
-            const added = leads.add({ kind: "url", target: url, origin: "document-link" });
-            if (added) leadContext.set(added.id, { title: url, snippet: "", rank: 0 });
+              continue;
+            const pathKind = /^\/posts\//.test(target.pathname)
+              ? "post"
+              : /^\/pulse\//.test(target.pathname)
+                ? "article"
+                : null;
+            if (!pathKind || pathKind !== followUp.kind) continue;
+            target.search = "";
+            target.hash = "";
+            const added = leads.add({ kind: "url", target: target.href, origin: "document-link" });
+            if (added)
+              leadContext.set(added.id, {
+                title: followUp.title,
+                snippet: profile.fullName ?? "",
+                rank: 0,
+              });
           }
         }
 
@@ -1637,7 +1845,7 @@ export class PersonResearch {
             read.outboundUrls.includes(work.url) &&
             work.contribution &&
             !(
-              ownLinkedInProfile &&
+              read.linkedIn?.kind === "profile" &&
               /^https:\/\/(?:www\.)?linkedin\.com\/(?:posts|pulse)\//i.test(work.url)
             )
           ) {
@@ -1718,6 +1926,15 @@ export class PersonResearch {
              must never hold one of the four composition-wide permits idle
              while another person's extraction is ready and waiting for it. */
           await processRead(entry);
+          if (
+            leads.get(pending.leadId)?.disposition === "pending" &&
+            entry.read.access === "retrieved"
+          )
+            leads.resolve(
+              pending.leadId,
+              "investigated",
+              "Retained within the operation's final request slot; no further request was spent.",
+            );
           const host = hostOf(entry.read.finalUrl) ?? hostOf(pending.url);
           if (host) {
             const previous = sourcePerformance.get(host) ?? {
@@ -2060,8 +2277,22 @@ export class PersonResearch {
   } {
     if (isPrivate)
       return { decision: "matched", reason: "A confirmed Workspace Transcript.", anchor: "signal" };
-    if (read.linkedInAuthor) {
-      const authorIdentity = linkedInProfileIdentity(read.linkedInAuthor.profileUrl);
+    if (read.linkedIn && read.linkedIn.identity.decision !== "unresolved") {
+      const matched = read.linkedIn.identity.decision === "matched";
+      return matched
+        ? {
+            decision: "matched",
+            reason: "LinkedIn page structure established the Profile's identity.",
+            anchor: read.linkedIn.identity.anchor,
+          }
+        : {
+            decision: "unmatched",
+            reason: "LinkedIn page structure identified a different person.",
+            anchor: read.linkedIn.identity.anchor,
+          };
+    }
+    if (read.linkedIn?.declaredAuthor) {
+      const authorIdentity = linkedInProfileIdentity(read.linkedIn.declaredAuthor.profileUrl);
       const matched =
         authorIdentity !== null &&
         profile.profileUrls.some((entry) => linkedInProfileIdentity(entry) === authorIdentity);
@@ -2267,6 +2498,7 @@ export class PersonResearch {
         ...(dossier ?? EMPTY),
         sourceIds: [...(dossier?.sourceIds ?? []), source.id],
       });
+
     return source;
   }
 
@@ -2789,9 +3021,10 @@ function prefixExtractionPart(
   content: z.infer<typeof Extraction>,
   part: number,
 ): z.infer<typeof Extraction> {
-  /* The prefix matches the dossier id grammar itself (letters, digits,
-     underscores and hyphens), so a prefixed id stays a valid id. */
-  const id = (value: string): string => `p${part}-${value}`;
+  /* The prefix prevents ids invented in different parts from colliding. One
+     part is the whole document, so its model-authored identity is already
+     unambiguous and stays stable when an interrupted operation resumes. */
+  const id = (value: string): string => (part === 0 ? value : `p${part}-${value}`);
   const idList = (values: string[]): string[] => values.map(id);
   const grounded = <T extends { claimIds: string[] }>(entry: T): T => ({
     ...entry,

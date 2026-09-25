@@ -437,14 +437,18 @@ export function ActionItemRow({
       )}
 
       <p className="muted">
-        Proposed · {proposedDue(actionItemProposal(item).dueDate, today)} ·{" "}
+        Proposed · {proposedDue(actionItemProposal(item).dueDate, today)} · Responsible Person:{" "}
         {actionItemProposal(item).responsiblePerson
           ? responsibleLabel(actionItemProposal(item).responsiblePerson, profiles)
-          : "Unassigned"}
-        {item.evidence.responsibleSurfaceName
-          ? ` · named ${item.evidence.responsibleSurfaceName}`
-          : ""}
+          : "Nobody confirmed"}
+        {!actionItemProposal(item).responsiblePerson ? " · Unassigned" : ""}
       </p>
+      {item.evidence.responsibleSurfaceName ? (
+        <p className="muted">
+          {item.evidence.responsibleSurfaceName} is mentioned in the source; a source mention is not
+          a confirmed Responsible Person.
+        </p>
+      ) : null}
       <p className="muted">
         {context?.meeting ? (
           <>
@@ -454,7 +458,11 @@ export function ActionItemRow({
         ) : (
           "Source Meeting unavailable. "
         )}
-        <Link to={`/meeting-debrief/${encodeURIComponent(item.source.debriefRunId)}`}>
+        <Link
+          to={`/meeting-debrief/${encodeURIComponent(item.source.debriefRunId)}${
+            context?.meeting ? "" : "?retained=1"
+          }`}
+        >
           Open source Debrief
         </Link>
       </p>

@@ -14,10 +14,48 @@ import {
   type MigrationRouteDeps,
 } from "../../../apps/server/src/api/migration";
 import { ConfigStore } from "../../../apps/server/src/config";
+import { installationStatus } from "../../../apps/server/src/installation";
 import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { WorkspaceBrandProfileStore } from "../../../apps/server/src/brand-profile/store";
+import { TaskCutover } from "../../../apps/server/src/tasks/cutover";
+
+type TestGoogleState = "unconfigured" | "disconnected" | "connected" | "expired";
+interface TestCatalogFacts {
+  consent: { folderId: string; folderName: string; consentedAt: string } | null;
+  backfill: "idle" | "running" | "paused";
+  pending: number;
+  processed: number;
+  failed: number;
+  skipped: number;
+  transcriptCount: number;
+}
+interface MigrationRouteFixtureDeps extends MigrationRouteDeps {
+  taskCutover?: TaskCutover;
+  transcriptCatalog: { status(): TestCatalogFacts };
+  google: { state: TestGoogleState };
+  catalog: TestCatalogFacts;
+}
+
+const originalOpenRouterEnvironment = process.env.OPENROUTER_API_KEY;
+
+function setOpenRouterKey(value: string): void {
+  process.env.OPENROUTER_API_KEY = value;
+}
+
+function restoreOpenRouterEnvironment(): void {
+  if (originalOpenRouterEnvironment === undefined) delete process.env.OPENROUTER_API_KEY;
+  else process.env.OPENROUTER_API_KEY = originalOpenRouterEnvironment;
+}
+
+beforeEach(() => {
+  setOpenRouterKey("");
+});
+
+afterEach(() => {
+  restoreOpenRouterEnvironment();
+});
 
 /**
  * The migration gate's API surface (issue #144): status, inventory, confirm,
@@ -31,7 +69,7 @@ const ONBOARDING_STEP_IDS = [
   "owner-profile",
   "brand-voice",
   "internal-domains",
-  "transcript-folder",
+  "transcript-polling",
   "sheets-destinations",
   "workflow-bundles",
 ];
@@ -39,8 +77,6 @@ const ONBOARDING_STEP_IDS = [
 /** A small valid config.json; the schema's defaults fill the rest on load. */
 const MINIMAL_CONFIG = {
   provider: "mock",
-  model: "",
-  apiKey: "",
   tasklistName: "Meeting Followups",
 };
 
@@ -91,15 +127,29 @@ function seedCompletedMarker(workspaceDir: string) {
  * the Workspace would tip `readMigrationState` from fresh to required. The
  * Workspace's own state stays under the seed helpers' control alone.
  */
-function buildDeps(workspaceDir: string, gate: MigrationGate): MigrationRouteDeps {
+function buildDeps(workspaceDir: string, gate: MigrationGate): MigrationRouteFixtureDeps {
   const configDir = mkdtempSync(join(tmpdir(), "cos-migration-routes-config-"));
   const configStore = new ConfigStore(join(configDir, "config.json"));
   configStore.load();
+  const google = { state: "unconfigured" as TestGoogleState };
+  const catalog: TestCatalogFacts = {
+    consent: null,
+    backfill: "idle",
+    pending: 0,
+    processed: 0,
+    failed: 0,
+    skipped: 0,
+    transcriptCount: 0,
+  };
   return {
     workspaceDir,
     gate,
     configStore,
-    googleConnection: { state: async () => ({ state: "unconfigured" }) },
+    installationStatus,
+    googleConnection: { state: async () => ({ state: google.state }) },
+    transcriptCatalog: { status: () => catalog },
+    google,
+    catalog,
     ownerOnboarding: new OwnerOnboarding({
       people: new WorkspacePersonProfiles({
         store: new PersonProfileStore(workspaceDir),
@@ -115,7 +165,7 @@ interface RoutesHarness {
   app: FastifyInstance;
   workspaceDir: string;
   gate: FakeGate;
-  deps: MigrationRouteDeps;
+  deps: MigrationRouteFixtureDeps;
 }
 
 /** One fastify instance with the gate hook, the migration routes, and nothing else. */
@@ -173,8 +223,167 @@ describe("GET /api/migration/status", () => {
     expect(res.json().state).toBe("completed");
   });
 
+  it("reports an authorized zero-count cutover as migrated", async () => {
+    h.deps.taskCutover = new TaskCutover({ workspaceDir: h.workspaceDir });
+    const previewResponse = await h.app.inject({
+      method: "GET",
+      url: "/api/migration/inventory",
+    });
+    expect(previewResponse.statusCode).toBe(200);
+    const preview = previewResponse.json<{
+      workspace: string;
+      fingerprint: string;
+      counts: Record<string, number>;
+    }>();
+    expect(Object.values(preview.counts).every((count) => count === 0)).toBe(true);
+
+    const confirmed = await h.app.inject({
+      method: "POST",
+      url: "/api/migration/confirm",
+      payload: { ...preview, typedConfirmation: "MIGRATE TASKS" },
+    });
+    expect(confirmed.statusCode).toBe(200);
+
+    const status = await h.app.inject({ method: "GET", url: "/api/migration/status" });
+    expect(status.json()).toMatchObject({ state: "completed", origin: "migrated" });
+  });
+
+  it("keeps the Meeting goal to five independent prerequisites with exact destinations", async () => {
+    h.deps.google.state = "connected";
+    h.deps.configStore.update({
+      provider: "openrouter",
+      drive: {
+        enabled: true,
+        folderId: "meeting-transcripts",
+        folderName: "Meeting Transcripts",
+        pollIntervalMinutes: 5,
+      },
+    });
+    h.deps.catalog.consent = {
+      folderId: "meeting-transcripts",
+      folderName: "Meeting Transcripts",
+      consentedAt: "2026-09-24T12:00:00.000Z",
+    };
+
+    const read = async () =>
+      (await h.app.inject({ method: "GET", url: "/api/migration/status?goal=meetings" })).json<{
+        onboarding: {
+          goal: string;
+          complete: boolean;
+          steps: { id: string; done: boolean; href: string }[];
+        };
+      }>().onboarding;
+
+    const initial = await read();
+    expect(initial.goal).toBe("meetings");
+    expect(initial.complete).toBe(false);
+    expect(initial.steps).toEqual([
+      {
+        id: "meeting-provider",
+        label: "Configure the model extraction provider",
+        done: false,
+        href: "/settings#api-key",
+      },
+      {
+        id: "meeting-google",
+        label: "Connect Google",
+        done: true,
+        href: "/settings#group-google",
+      },
+      {
+        id: "meeting-folder",
+        label: "Choose the transcript Drive folder",
+        done: true,
+        href: "/settings#drive-folder",
+      },
+      {
+        id: "meeting-polling",
+        label: "Enable Drive polling",
+        done: true,
+        href: "/settings#drive-polling",
+      },
+      {
+        id: "meeting-consent",
+        label: "Allow the app to read and process the selected folder",
+        done: true,
+        href: "/settings#transcript-consent",
+      },
+    ]);
+
+    setOpenRouterKey("meeting-model-key");
+    expect((await read()).complete).toBe(true);
+
+    h.deps.catalog.consent = null;
+    const withoutConsent = await read();
+    expect(withoutConsent.steps.find((step) => step.id === "meeting-consent")?.done).toBe(false);
+    expect(withoutConsent.complete).toBe(false);
+
+    h.deps.catalog.consent = {
+      folderId: "meeting-transcripts",
+      folderName: "Meeting Transcripts",
+      consentedAt: "2026-09-24T12:00:00.000Z",
+    };
+    expect((await read()).complete).toBe(true);
+  });
+
+  it("keeps a truthful general goal when unrelated product setup remains incomplete", async () => {
+    const response = await h.app.inject({ method: "GET", url: "/api/migration/status" });
+    const onboarding = response.json<{
+      onboarding: { goal: string; complete: boolean; steps: { id: string }[] };
+    }>().onboarding;
+    expect(onboarding.goal).toBe("general");
+    expect(onboarding.complete).toBe(false);
+    expect(onboarding.steps.map((step) => step.id)).toEqual(ONBOARDING_STEP_IDS);
+  });
+
+  it("makes enabling polling the next transcript action after a folder is selected", async () => {
+    h.deps.configStore.update({
+      drive: {
+        enabled: false,
+        folderId: "folder-1",
+        folderName: "Team Transcripts",
+        pollIntervalMinutes: 5,
+      },
+    });
+
+    const response = await h.app.inject({ method: "GET", url: "/api/migration/status" });
+    const steps = response.json<{
+      onboarding: { steps: { id: string; label: string; done: boolean; href: string }[] };
+    }>().onboarding.steps;
+
+    expect(steps.find((step) => step.id === "transcript-polling")).toEqual({
+      id: "transcript-polling",
+      label: "Enable transcript polling",
+      done: false,
+      href: "/settings#drive-polling",
+    });
+  });
+
+  it("marks the same transcript action complete when polling is enabled", async () => {
+    h.deps.configStore.update({
+      drive: {
+        enabled: true,
+        folderId: "folder-1",
+        folderName: "Team Transcripts",
+        pollIntervalMinutes: 5,
+      },
+    });
+
+    const response = await h.app.inject({ method: "GET", url: "/api/migration/status" });
+    const steps = response.json<{
+      onboarding: { steps: { id: string; label: string; done: boolean; href: string }[] };
+    }>().onboarding.steps;
+
+    expect(steps.find((step) => step.id === "transcript-polling")).toEqual({
+      id: "transcript-polling",
+      label: "Transcript polling enabled",
+      done: true,
+      href: "/settings#drive-polling",
+    });
+  });
+
   it("reads each step's done from the real store, never hardcoded", async () => {
-    h.deps.configStore.update({ apiKey: "model-key" });
+    setOpenRouterKey("model-key");
     h.deps.configStore.update({
       drive: { enabled: true, folderId: "folder-1", folderName: "Transcripts" },
     });
@@ -206,7 +415,7 @@ describe("GET /api/migration/status", () => {
       "owner-profile": false,
       "brand-voice": true,
       "internal-domains": true,
-      "transcript-folder": true,
+      "transcript-polling": true,
       "sheets-destinations": true,
       "workflow-bundles": true,
     });

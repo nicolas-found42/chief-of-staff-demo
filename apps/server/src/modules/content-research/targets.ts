@@ -70,15 +70,16 @@ function deriveTargets(person: NamedPerson, adapterId: string): { label: string;
       }
       return [...origins].map((url) => ({ label: `${person.name} website`, url }));
     }
-    case "youtube":
-      return hints.youtubeChannelId
-        ? [
-            {
-              label: `${person.name} YouTube`,
-              url: `https://www.youtube.com/channel/${hints.youtubeChannelId}`,
-            },
-          ]
-        : [];
+    case "youtube": {
+      const hint = hints.youtubeChannelId?.trim();
+      if (!hint) return [];
+      const url = hint.startsWith("@")
+        ? `https://www.youtube.com/${hint}`
+        : /^https?:\/\//i.test(hint)
+          ? hint
+          : `https://www.youtube.com/channel/${hint}`;
+      return [{ label: `${person.name} YouTube`, url }];
+    }
     case "reddit":
       return [
         {

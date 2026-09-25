@@ -505,11 +505,6 @@ export function TasksPage({
      card has to say why before asking again. */
   const [policy, setPolicy] = useState<ActionItemPolicySetting | null>(null);
   const [policyWarning, setPolicyWarning] = useState<string | null>(null);
-  /* The release evidence the owner names when they record a release (#360).
-     Held locally: the record keeps the reference and the checksum of the
-     bytes it stood on, and the bytes themselves stay private. */
-  const [releaseReference, setReleaseReference] = useState("");
-  const [releaseChecksum, setReleaseChecksum] = useState("");
   const [googleLists, setGoogleLists] = useState<{ id: string; title: string }[]>([]);
   /* The filters, held as one value so the load below is a function of them
      rather than of five pieces of state that can disagree. */
@@ -1010,8 +1005,8 @@ export function TasksPage({
         ),
       )}
 
-      <section id="action-items">
-        <h2>Meeting approvals</h2>
+      <section id="action-items" aria-labelledby="meeting-approvals-heading">
+        <h2 id="meeting-approvals-heading">Meeting approvals</h2>
         <p>Review proposed work on its source Meeting. Accepted Tasks are managed here.</p>
         <ProposalMeetingNavigation
           client={client}
@@ -1060,7 +1055,7 @@ export function TasksPage({
         <div className="card">
           <p className="muted">
             {policy.policy === "auto-create-mine"
-              ? "Automatically create my Tasks · my own commitments become Tasks without review"
+              ? "Automatically create my Tasks · saved preference"
               : "Stage all Action Items · every proposal waits for your review"}
           </p>
           {policyWarning !== null && <p role="alert">{policyWarning}</p>}
@@ -1074,8 +1069,8 @@ export function TasksPage({
                   policy.policy === "auto-create-mine" ? "stage-all" : "auto-create-mine";
                 void act(
                   next === "auto-create-mine"
-                    ? "My own commitments now become Tasks automatically."
-                    : "Every Action Item now waits for review.",
+                    ? "Preference saved. Automatic creation is not active unless the status below says it is."
+                    : "Stage all preference saved.",
                   async () => {
                     try {
                       setPolicy(await client.setActionItemPolicy(next, policyWarning !== null));
@@ -1103,66 +1098,36 @@ export function TasksPage({
                 : "Automatically create my Tasks"}
             </button>
           </div>
-          {/* The restriction is recorded apart from the preference above, so
-              the surface says which of the two is holding automation back
-              rather than letting a saved choice read as permission (#360). */}
           <p className="muted" role="status">
-            {policy.automaticPromotion.effective
-              ? "Automatic promotion is enabled for future first extractions."
-              : policy.automaticPromotion.reason}
+            {policy.automaticPromotion.message}
           </p>
-          {policy.automaticPromotion.release.state === "restricted" ? (
-            <div className="field-row">
-              <label htmlFor="promotion-release-reference">Retained release evidence</label>
-              <input
-                id="promotion-release-reference"
-                value={releaseReference}
-                autoComplete="off"
-                onChange={(event) => setReleaseReference(event.target.value)}
-              />
-              <label htmlFor="promotion-release-checksum">sha256 of those bytes</label>
-              <input
-                id="promotion-release-checksum"
-                value={releaseChecksum}
-                autoComplete="off"
-                onChange={(event) => setReleaseChecksum(event.target.value)}
-              />
-              <button
-                type="button"
-                className="action-button"
-                aria-disabled={busy}
-                onClick={() =>
-                  void act("The release evidence is recorded.", async () => {
-                    setPolicy(
-                      await client.setAutomaticPromotion({
-                        action: "release",
-                        evidence: {
-                          reference: releaseReference.trim(),
-                          checksum: releaseChecksum.trim(),
-                        },
-                      }),
-                    );
-                  })
-                }
-              >
-                Record the release evidence
-              </button>
-            </div>
-          ) : (
+          {(policy.automaticPromotion.nextAction === "enable" ||
+            policy.automaticPromotion.nextAction === "disable") && (
             <div className="toolbar">
               <button
                 type="button"
                 className="action-button"
-                aria-disabled={busy || policy.automaticPromotion.enabledAt !== null}
+                aria-disabled={busy || policy.automaticPromotion.nextAction !== "enable"}
                 onClick={() =>
-                  void act("Automatic promotion is enabled.", async () => {
-                    setPolicy(
-                      await client.setAutomaticPromotion(
-                        { action: "enable" },
-                        policyWarning !== null,
-                      ),
-                    );
-                    setPolicyWarning(null);
+                  void act("Automatic promotion status saved.", async () => {
+                    try {
+                      setPolicy(
+                        await client.setAutomaticPromotion(
+                          { action: "enable" },
+                          policyWarning !== null,
+                        ),
+                      );
+                      setPolicyWarning(null);
+                    } catch (err) {
+                      if (policy.externalDestination !== null && policyWarning === null) {
+                        setPolicyWarning(
+                          `Tasks created automatically would be written to ${policy.externalDestination} ` +
+                            "without review. Select this again to confirm.",
+                        );
+                        return;
+                      }
+                      throw err;
+                    }
                   })
                 }
               >
@@ -1171,9 +1136,9 @@ export function TasksPage({
               <button
                 type="button"
                 className="action-button"
-                aria-disabled={busy || policy.automaticPromotion.enabledAt === null}
+                aria-disabled={busy || policy.automaticPromotion.nextAction !== "disable"}
                 onClick={() =>
-                  void act("Automatic promotion is disabled.", async () => {
+                  void act("Automatic promotion disabled.", async () => {
                     setPolicy(await client.setAutomaticPromotion({ action: "disable" }));
                   })
                 }

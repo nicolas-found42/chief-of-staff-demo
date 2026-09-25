@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { registerPersonDossierApi } from "../../../apps/server/src/api/person-dossiers.js";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
+import { synthesizeSections } from "../../../apps/server/src/person-profile/dossier-store.js";
 import { PersonResearchQueue } from "../../../apps/server/src/person-profile/research-queue.js";
 import { PersonResearch } from "../../../apps/server/src/person-profile/research.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
@@ -311,7 +312,7 @@ test.each(["queued", "retrieving"])(
         works: [],
         expertise: [],
         connections: [],
-        sections: [],
+        sections: synthesizeSections([]),
       };
       const original = dossiers.publish(person.id, 0, content);
       dossiers.publish(other.id, 0, content);

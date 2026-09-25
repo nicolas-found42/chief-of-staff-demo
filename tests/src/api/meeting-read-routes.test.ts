@@ -14,30 +14,194 @@ import { openRuns } from "../../../apps/server/src/runs";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
 
+type GoogleReadState = "unconfigured" | "disconnected" | "connected" | "expired";
+type IntakeVerdict =
+  | "provider-required"
+  | "google-required"
+  | "folder-required"
+  | "polling-required"
+  | "consent-required"
+  | "intake-running"
+  | "waiting-for-transcript"
+  | "intake-failed"
+  | "intake-paused"
+  | "ready";
+interface TranscriptIntakeFacts {
+  providerReady: boolean;
+  googleState: GoogleReadState;
+  folderSelected: boolean;
+  pollingEnabled: boolean;
+  consentGranted: boolean;
+  backfill: "idle" | "running" | "paused";
+  failed: number;
+  transcriptCount: number;
+}
+interface IntakeReadiness {
+  verdict: IntakeVerdict;
+  nextAction: { label: string; href: string } | null;
+}
+const READY_INTAKE: TranscriptIntakeFacts = {
+  providerReady: true,
+  googleState: "connected",
+  folderSelected: true,
+  pollingEnabled: true,
+  consentGranted: true,
+  backfill: "idle",
+  failed: 0,
+  transcriptCount: 1,
+};
 const dirs: string[] = [];
 afterEach(() => {
   vi.useRealTimers();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-function setup(now = "2026-09-09T16:00:00Z", timezone = "America/New_York") {
+function setup(
+  now = "2026-09-09T16:00:00Z",
+  timezone = "America/New_York",
+  intake: TranscriptIntakeFacts = { ...READY_INTAKE },
+) {
   const dir = mkdtempSync(join(tmpdir(), "meeting-read-"));
   dirs.push(dir);
   const meetings = new WorkspaceMeetings(dir);
   const runs = openRuns(dir);
   const actionItems = new WorkspaceActionItems({ store: new TaskStore(dir) });
   const transcripts: TranscriptRecord[] = [];
-  const read = new MeetingRead({
+  const deps = {
     meetings,
     runs,
     actionItems,
     transcripts: () => transcripts,
     now: () => new Date(now),
     timezone: () => timezone,
-  });
+    transcriptIntake: () => intake,
+  };
+  const read = new MeetingRead(deps);
   const app = fastify();
   read.registerRoutes(app);
-  return { app, meetings, runs, actionItems, transcripts, dir };
+  return { app, meetings, runs, actionItems, transcripts, dir, intake };
 }
+
+test("globally empty Meeting history exposes the first unmet Transcript Intake action", async () => {
+  const { app } = setup("2026-09-09T16:00:00Z", "America/New_York", {
+    ...READY_INTAKE,
+    providerReady: false,
+    folderSelected: false,
+    pollingEnabled: false,
+    consentGranted: false,
+  });
+
+  const view = (await app.inject("/api/meetings/workspace")).json<{
+    historyBeginsAt: string | null;
+    today: unknown[];
+    recent: unknown[];
+    upcoming: unknown[];
+    intakeReadiness: IntakeReadiness;
+  }>();
+  expect(view).toMatchObject({
+    historyBeginsAt: null,
+    today: [],
+    recent: [],
+    upcoming: [],
+    intakeReadiness: {
+      verdict: "provider-required",
+      nextAction: { label: "Configure a model provider", href: "/onboarding?goal=meetings" },
+    },
+  });
+  expect(JSON.stringify(view)).not.toMatch(/upload|secret|credential/i);
+  await app.close();
+});
+
+test.each([
+  [{ providerReady: false }, "provider-required", "/onboarding?goal=meetings"],
+  [{ googleState: "disconnected" as const }, "google-required", "/onboarding?goal=meetings"],
+  [{ folderSelected: false }, "folder-required", "/settings#drive-folder"],
+  [{ pollingEnabled: false }, "polling-required", "/settings#drive-polling"],
+  [{ consentGranted: false }, "consent-required", "/settings#transcript-consent"],
+] satisfies [Partial<TranscriptIntakeFacts>, IntakeVerdict, string][])(
+  "Meeting reads give %s the first unmet Transcript Intake action",
+  async (facts, verdict, href) => {
+    const { app } = setup("2026-09-09T16:00:00Z", "America/New_York", {
+      ...READY_INTAKE,
+      ...facts,
+    });
+    const response = await app.inject("/api/meetings/workspace");
+    const readiness = response.json<{ intakeReadiness: IntakeReadiness }>().intakeReadiness;
+    expect(readiness).toMatchObject({ verdict, nextAction: { href } });
+    await app.close();
+  },
+);
+
+test("configured intake waits for a Drive transcript and offers the existing sync control", async () => {
+  const { app } = setup("2026-09-09T16:00:00Z", "America/New_York", {
+    ...READY_INTAKE,
+    transcriptCount: 0,
+  });
+  const response = await app.inject("/api/meetings/workspace");
+  expect(response.json<{ intakeReadiness: IntakeReadiness }>().intakeReadiness).toEqual({
+    verdict: "waiting-for-transcript",
+    nextAction: { label: "Sync now", href: "/settings#transcript-sync" },
+  });
+  expect(response.body).not.toMatch(/upload/i);
+  await app.close();
+});
+
+test.each([0, 3])(
+  "a paused backfill stays paused with %i catalogued transcripts",
+  async (transcriptCount) => {
+    const { app } = setup("2026-09-09T16:00:00Z", "America/New_York", {
+      ...READY_INTAKE,
+      backfill: "paused",
+      transcriptCount,
+    });
+
+    const response = await app.inject("/api/meetings/workspace");
+
+    expect(response.json<{ intakeReadiness: IntakeReadiness }>().intakeReadiness).toEqual({
+      verdict: "intake-paused",
+      nextAction: null,
+    });
+    await app.close();
+  },
+);
+
+test("a populated Meeting missing its Transcript gets the same action in overview and detail", async () => {
+  const { app, meetings } = setup("2026-09-09T16:00:00Z", "America/New_York", {
+    ...READY_INTAKE,
+    pollingEnabled: false,
+  });
+  const meeting = meetings.upsertFromCalendar({
+    occurrenceKey: "missing-transcript",
+    calendarEventId: "missing-transcript",
+    occurrenceId: "missing-transcript",
+    title: "Calendar-only planning",
+    startAt: "2026-09-09T14:00:00.000Z",
+    endAt: "2026-09-09T15:00:00.000Z",
+    participants: [],
+    cancelled: false,
+    ineligibleReason: null,
+  });
+
+  const workspace = (await app.inject("/api/meetings/workspace")).json<{
+    intakeReadiness: IntakeReadiness;
+    today: { id: string; debrief: { status: string; nextAction: IntakeReadiness["nextAction"] } }[];
+  }>();
+  const detail = (await app.inject(`/api/meetings/${meeting.id}/read`)).json<{
+    intakeReadiness: IntakeReadiness;
+    meeting: { debrief: { status: string; nextAction: IntakeReadiness["nextAction"] } };
+  }>();
+  const action = {
+    label: "Enable Drive polling",
+    href: "/settings#drive-polling",
+  };
+  expect(workspace.intakeReadiness).toEqual({
+    verdict: "polling-required",
+    nextAction: action,
+  });
+  expect(workspace.today[0].debrief).toMatchObject({ status: "no-transcript", nextAction: action });
+  expect(detail.intakeReadiness).toEqual(workspace.intakeReadiness);
+  expect(detail.meeting.debrief).toMatchObject({ status: "no-transcript", nextAction: action });
+  await app.close();
+});
 test("History reads retained Meetings across weeks with inclusive Workspace dates and participant search", async () => {
   const { app, meetings } = setup();
   meetings.upsertFromCalendar({

@@ -1,4 +1,4 @@
-import { expect, serverPort, test } from "./fixture";
+import { expect, test } from "./fixture";
 import AxeBuilder from "@axe-core/playwright";
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
@@ -17,21 +17,23 @@ test("Drive folder is the only Intake; Runs list and Drive settings are visible"
   await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
 });
 
-test("settings round-trips with redacted secrets", async ({ page }) => {
+test("settings round-trips with status-only installation credentials", async ({ page }) => {
   await page.goto("/settings");
   // Exact: "Provider API key" and the "Extraction provider" group also
   // contain the substring "Provider".
   await expect(page.getByLabel("Provider", { exact: true })).toHaveValue("mock");
 
-  // Secrets are never echoed back: every password input is empty.
-  const secretValues = await page
-    .locator('input[type="password"]')
-    .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value));
-  expect(secretValues.length).toBeGreaterThan(0);
-  expect(secretValues.every((value) => value === "")).toBe(true);
+  // Installation credentials are status-only in the Workspace UI.
+  await expect(page.getByRole("heading", { name: "Installation credentials" })).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Installation credentials" })
+      .locator('input[type="password"]'),
+  ).toHaveCount(0);
 
   const manage = page.getByText("Manage provider", { exact: true });
   if (await manage.isVisible()) await manage.click();
+  await page.getByText("Advanced: choose models per task", { exact: true }).click();
   await page.getByLabel("Research evaluation judge", { exact: true }).fill("independent-judge");
   await page
     .getByLabel("Person evidence extraction and identity", { exact: true })
@@ -49,10 +51,12 @@ test("settings round-trips with redacted secrets", async ({ page }) => {
 
   await page.reload();
   await expect(page.getByLabel("Task list name")).toHaveValue("E2E Followups");
-  await expect(page.getByText("Not connected", { exact: false })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Google", exact: true })).toContainText(
+    "Not configured",
+  );
 });
 
-test("Ollama is an advanced choice, and OpenRouter is the recommendation", async ({ page }) => {
+test("provider choices include local Ollama and test-only mock", async ({ page }) => {
   await page.goto("/settings");
   await page.getByRole("heading", { name: "Connections" }).waitFor();
   const manage = page.getByText("Manage provider", { exact: true });
@@ -60,14 +64,10 @@ test("Ollama is an advanced choice, and OpenRouter is the recommendation", async
     await manage.click();
   }
   const provider = page.getByLabel("Provider", { exact: true });
-  /* Issue #198: OpenRouter leads the choices as the recommendation, and this
-     test-mode server is one of the two places mock may appear at all. */
-  await expect(provider.locator("option").first()).toHaveText("OpenRouter (recommended)");
+  /* This hermetic server admits mock; Ollama needs no installation key. */
   await expect(provider.getByRole("option", { name: /^mock/ })).toHaveCount(1);
-  /* Ollama is not offered beside the cloud providers; it lives under Advanced. */
-  await expect(provider.getByRole("option", { name: /Ollama/ })).toHaveCount(0);
-  await page.getByText("Advanced local-model settings", { exact: true }).click();
-  await page.getByRole("button", { name: "Use Ollama (local model)" }).click();
+  await expect(provider.getByRole("option", { name: /Ollama/ })).toHaveCount(1);
+  await provider.selectOption("ollama");
   await expect(provider).toHaveValue("ollama");
   await expect(page.getByLabel("Ollama base URL")).toBeVisible();
   /* Leave the shared Workspace's form state as it was found. */
@@ -75,81 +75,34 @@ test("Ollama is an advanced choice, and OpenRouter is the recommendation", async
   await expect(provider).toHaveValue("mock");
 });
 
-test("an unconfigured workspace gets the setup wizard, not two bare fields", async ({ page }) => {
+test("installation setup stays operator-owned and gives an actionable guide", async ({ page }) => {
   await page.goto("/settings");
-
-  // Seven steps, in the order the console forces them (ADR-0013 froze the
-  // sequence), rendered as a wizard: progress visible, exactly one step open.
-  const steps = page.locator(".setup-steps > li");
-  const toggle = (index: number) => steps.nth(index).locator("button.wizard-step-toggle");
-  await expect(steps).toHaveCount(7);
-  await expect(page.locator(".wizard-progress")).toHaveText("Step 1 of 7");
-  await expect(toggle(0)).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByRole("link", { name: "Create a project", exact: true })).toBeVisible();
-
-  // Moving on collapses the walked-past step to a ✓ line and opens one more.
-  await toggle(1).click();
-  await expect(page.locator(".wizard-progress")).toHaveText("Step 2 of 7");
-  await expect(toggle(0)).toHaveAttribute("aria-expanded", "false");
-  await expect(steps.nth(0)).toHaveClass(/done/);
-  await expect(page.getByRole("link", { name: "Enable the Tasks API", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Create a project", exact: true })).toHaveCount(0);
-
-  // The scopes step carries its exact values, each offered to copy so none has
-  // to be typed out. YouTube joined them under ADR-0016, which is the one real
-  // cost of that decision: every existing connection consents once more.
-  // Gmail send joined them for the Meeting Brief owner-only auto-send
-  // (ADR-0034), with the same consent cost.
-  // Google Tasks is not among them: it is the one optional surface, asked for
-  // only once the owner enables it as a Task Destination (issue #184).
-  await toggle(4).click();
-  await expect(page.locator(".setup-copy > code")).toHaveText([
-    "https://www.googleapis.com/auth/gmail.compose",
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/calendar.readonly",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/youtube.readonly",
-  ]);
-  await expect(page.locator(".copy-button")).toHaveCount(6);
-  await expect(
-    page.getByRole("button", { name: "Copy https://www.googleapis.com/auth/tasks", exact: true }),
-  ).toHaveCount(0);
-
-  // The redirect URI is built from the port the server is actually on, so a
-  // value hardcoded to another port — as the UI used to carry — fails here.
-  await toggle(5).click();
-  await expect(page.locator(".setup-copy > code")).toHaveText([
-    `http://localhost:${serverPort}/api/google/callback`,
-  ]);
-  await expect(page.getByRole("button", { name: "Copy Redirect URI", exact: true })).toBeVisible();
-
-  // The credential step is the last, and its sign-in button is Google-branded.
-  await toggle(6).click();
-  await expect(page.getByRole("button", { name: /Save and sign in with Google/ })).toBeVisible();
+  const credentials = page.getByRole("region", { name: "Installation credentials" });
+  await expect(credentials).toContainText("./scripts/setup-wizard.sh");
+  await expect(credentials.getByRole("link", { name: "Open Guided Setup" })).toHaveAttribute(
+    "href",
+    "/onboarding?goal=meetings",
+  );
+  await expect(credentials.locator('input[type="password"]')).toHaveCount(0);
 });
 
-test("signing in without a client id reports Google's refusal in the page", async ({ page }) => {
+test("missing installation client explains the operator step before owner consent", async ({
+  page,
+}) => {
+  await page.route("**/api/config", async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.installation.googleClient.state = "missing";
+    await route.fulfill({ response, json: payload });
+  });
   await page.goto("/settings");
-
-  // Credential fields live in the last wizard step (ADR-0013); open it first
-  // (steps are collapsed by default, only step 0 open). The previous layout
-  // kept them always visible, so the test failed when they moved.
-  const steps = page.locator(".setup-steps > li");
-  const last = steps.last().locator("button.wizard-step-toggle");
-  await last.click();
-  // Pressing sign-in with nothing filled in saves an empty client and asks the
-  // server for a consent URL, which it refuses. That refusal has to land as
-  // readable text, not a console error (WCAG 3.3.1).
-  const signIn = page.getByRole("button", { name: /Save and sign in with Google/ });
-  await signIn.focus();
-  await signIn.click();
-  // The wording is the connection's own (googleFailureHint), so the refusal the
-  // user reads here is the same sentence a Run shows when it fails for this state.
-  await expect(page.locator(".banner-error")).toContainText(/not set up/i);
-  await expect(page.locator(".banner-error")).toContainText(/Settings/);
-  // The control the user pressed keeps focus rather than dropping it (WCAG 2.4.3).
-  await expect(signIn).toBeFocused();
+  const google = page.getByRole("group", { name: "Google", exact: true });
+  await expect(google).toContainText("installation Google OAuth client is not configured");
+  await expect(google.getByRole("link", { name: "Open Guided Setup" })).toHaveAttribute(
+    "href",
+    "/onboarding?goal=meetings",
+  );
+  await expect(google.getByRole("button", { name: "Sign in with Google" })).toHaveCount(0);
 });
 
 test("the Shell says Google is not set up on every page, and not on Settings", async ({ page }) => {
@@ -183,8 +136,8 @@ test("the Shell says Google is not set up on every page, and not on Settings", a
   // And it routes to the place that fixes it.
   await page.goto("/");
   await shellBanner.getByRole("link", { name: "Set up Google" }).click();
-  await expect(page).toHaveURL(/\/settings$/);
-  await expect(page.locator(".setup-steps")).toBeVisible();
+  await expect(page).toHaveURL(/\/onboarding\?goal=meetings$/);
+  await expect(page.getByRole("heading", { name: /Meeting setup/i }).first()).toBeVisible();
 });
 
 test("primary actions are reachable and operable by keyboard", async ({ page }) => {
@@ -435,6 +388,60 @@ test("partial Content Scout diagnostics stay visible and accessible", async ({ p
   expect((await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations).toEqual([]);
 });
 
+test.describe("fresh Content Engine setup", () => {
+  test.use({ freshWorkspace: true });
+  test("Content Engine empty state links each setup prerequisite and names truthful status", async ({
+    page,
+  }) => {
+    await page.goto("/content-scout");
+    await expect(page).toHaveTitle(/^Content Engine ·/);
+    const rows = page.locator(".setup-check-list > li");
+    await expect(rows).toHaveCount(3);
+    await expect(rows).toContainText([
+      "Configure model access",
+      "Create Brand Voice",
+      "Add a source to monitor",
+    ]);
+    await expect(rows).toContainText(["Working", "To do", "To do"]);
+    await expect(rows.nth(0)).toContainText("provider key is configured");
+
+    await rows
+      .nth(1)
+      .getByRole("button", { name: /Create Brand Voice/i })
+      .click();
+    await expect(page.getByRole("heading", { name: "Brand Profile" })).toBeVisible();
+    await expect(
+      page
+        .getByRole("navigation", { name: /Content/ })
+        .getByRole("button", { name: "Brand Profile" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await page
+      .getByRole("navigation", { name: /Content/ })
+      .getByRole("button", { name: "Shortlist" })
+      .click();
+    await rows
+      .nth(2)
+      .getByRole("button", { name: /Add a source to monitor/i })
+      .click();
+    await expect(page.getByRole("heading", { name: "Approved Source Targets" })).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: /Content/ }).getByRole("button", { name: "Sources" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+test("Content Research explains source boundaries and accepts YouTube handles", async ({
+  page,
+}) => {
+  await page.goto("/content-research");
+  await expect(page.getByText(/Person Profile.*identity signal/i).first()).toBeVisible();
+  await expect(page.getByText(/LinkedIn.*not watched/i).first()).toBeVisible();
+  const youtube = page.getByLabel("YouTube channel");
+  await expect(youtube).toHaveAttribute("aria-describedby", /youtube-help/);
+  await expect(page.getByText(/channel URL.*@handle/i).first()).toBeVisible();
+  await expect(page.getByText(/Hacker News.*profile/i).first()).toBeVisible();
+});
+
 test("Content Scout goes from bounded Brand Profile scan to a started Content Project", async ({
   page,
 }) => {
@@ -456,10 +463,10 @@ test("Content Scout goes from bounded Brand Profile scan to a started Content Pr
   });
   expect(confirmation.ok()).toBe(true);
   await page.goto("/content-scout");
-  await expect(page.getByRole("heading", { level: 1, name: "Content Scout" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Content Engine" })).toBeVisible();
 
   await page.getByRole("button", { name: "Brand Profile" }).click();
-  await page.getByLabel("Company website URL").fill("https://company.example/");
+  await page.getByLabel("Company website URL").fill("https://company.example");
   await page.getByRole("button", { name: "Scan website" }).click();
   await expect(page.getByRole("heading", { name: "Review website evidence" })).toBeVisible();
   await expect(
@@ -633,7 +640,7 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   );
   await expect(mockRow.getByRole("link", { name: "Choose a provider" })).toHaveAttribute(
     "href",
-    "/settings",
+    "/onboarding?goal=meetings",
   );
 
   // This workspace was never configured; that is not the expected weekly
@@ -716,84 +723,6 @@ test("Home reflows to one column, and a connected workspace says whose it is", a
   expect(rail, "attention rail").not.toBeNull();
   expect(tiles, "module tiles").not.toBeNull();
   expect(rail!.y).toBeLessThan(tiles!.y);
-});
-
-/* Last in the file, and it puts the workspace back: it is the only test here
-   that stores Google credentials, and everything above expects a workspace with
-   none. */
-test("credentials saved but no successful sign-in keeps the steps on the page", async ({
-  page,
-}) => {
-  // Where a beginner lands when the first sign-in fails — a wrong redirect URI,
-  // an API left disabled, or closing the consent screen. The connection reads
-  // `disconnected`, exactly like a deliberate sign-out, and this used to
-  // collapse every instruction behind a "Change the OAuth client" summary at
-  // precisely the moment they were needed.
-  await page.request.put("/api/config", {
-    data: {
-      google: {
-        clientId: "000000000000-onboarding.apps.googleusercontent.com",
-        clientSecret: "not-a-real-secret",
-      },
-    },
-  });
-
-  try {
-    await page.goto("/settings");
-
-    await expect(page.locator(".setup-steps > li")).toHaveCount(7);
-    // Open on the page, not behind a Manage summary (D11), and not collapsed
-    // into a wizard someone must first discover (D12).
-    await expect(page.locator(".wizard")).toBeVisible();
-    // And it says why the steps are still here, rather than only "Not connected".
-    await expect(page.locator(".banner-warn")).toContainText(/no sign-in has succeeded yet/i);
-    // Credential fields are in the last wizard step, collapsed by default
-    const credSteps = page.locator(".setup-steps > li");
-    await credSteps.last().locator("button.wizard-step-toggle").click();
-    // The credentials already stored are the ones in the field, so the person can
-    // see and correct the value that failed.
-    await expect(page.getByLabel("OAuth client ID")).toHaveValue(
-      "000000000000-onboarding.apps.googleusercontent.com",
-    );
-  } finally {
-    await page.request.put("/api/config", {
-      data: { google: { clientId: "", clientSecret: "" } },
-    });
-  }
-});
-
-test("choosing a work account drops the test-user step", async ({ page }) => {
-  await page.goto("/settings");
-
-  // A Workspace account can set the consent screen to Internal, which needs no
-  // test users at all — and skipping test users on External is the one mistake
-  // with no recovery on Google's own page (Error 403: access_denied). So the
-  // step list differs, and the choice is made before the steps rather than
-  // explained inside them.
-  await expect(page.locator(".setup-steps > li")).toHaveCount(7);
-  const steps = page.locator(".setup-steps > li");
-  await expect(steps.nth(3).locator("button.wizard-step-toggle")).toContainText("test user");
-  await steps.nth(3).locator("button.wizard-step-toggle").click();
-  await expect(page.getByRole("link", { name: "Open Audience", exact: true })).toBeVisible();
-
-  await page.getByRole("radio", { name: /work account/ }).check();
-
-  await expect(page.locator(".setup-steps > li")).toHaveCount(6);
-  await expect(page.getByRole("link", { name: "Open Audience", exact: true })).toHaveCount(0);
-  // And the step that remains tells them which radio to pick in the console.
-  // The open index survives the switch, so progress renumbers against the
-  // shorter list. "Internal" lives in step 3's body (Google Auth Platform)
-  // which is collapsed as done — open it to read the body, or check the
-  // audience hint that is always visible. The hint alone names the
-  // work-account path this way, so pin it rather than the bare word, which
-  // three elements carry.
-  await expect(
-    page.getByText("A work account can set the consent screen to Internal"),
-  ).toBeVisible();
-  await expect(page.locator(".wizard-progress")).toHaveText("Step 4 of 6");
-  await page.getByRole("radio", { name: /personal account/ }).check();
-  await expect(page.locator(".setup-steps > li")).toHaveCount(7);
-  await expect(page.locator(".wizard-progress")).toHaveText("Step 4 of 7");
 });
 
 /* Last of all, because it empties the Workspace: the danger zone's repeatable

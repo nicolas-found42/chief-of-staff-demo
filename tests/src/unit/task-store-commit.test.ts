@@ -24,6 +24,7 @@ const bundleOf = (workspace: string): Record<string, unknown> =>
 function syntheticReceipt(workspace: string): TaskCutoverReceipt {
   return {
     kind: "canonical-tasks",
+    origin: "migrated",
     workspace,
     fingerprint: "0".repeat(64),
     counts: {

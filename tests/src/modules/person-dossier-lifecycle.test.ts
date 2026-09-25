@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import type { PersonProfile } from "@chief-of-staff-demo/shared";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
 import { personDossierRegistry } from "../../../apps/server/src/person-profile/lifecycle.js";
+import { publishCanonicalDossier } from "./person-dossier-fixture.js";
 
 const retain = (dossiers: PersonDossierStore, url: string, text: string) =>
   dossiers.retainSource({
@@ -34,7 +35,7 @@ test("deletion disclosure lists every retained source, including sources no clai
       "Maya designed the Atlas scheduler.",
     );
     const orphan = retain(dossiers, "https://example.com/orphan", "Maya attended the summit.");
-    dossiers.publish("p1", 0, {
+    publishCanonicalDossier(dossiers, "p1", 0, {
       sourceIds: [cited.id, orphan.id],
       claims: [
         {
@@ -55,7 +56,6 @@ test("deletion disclosure lists every retained source, including sources no clai
       works: [],
       expertise: [],
       connections: [],
-      sections: [],
     });
     const registry = personDossierRegistry(dossiers, () => {});
     const inspection = registry.inspect(profile("p1"));
@@ -82,7 +82,7 @@ test("privacy deletion purges the dossier and reports one snapshot when one exis
       "https://example.com/maya",
       "Maya designed the Atlas scheduler.",
     );
-    dossiers.publish("p1", 0, {
+    publishCanonicalDossier(dossiers, "p1", 0, {
       claims: [
         {
           id: "c",
@@ -102,7 +102,6 @@ test("privacy deletion purges the dossier and reports one snapshot when one exis
       works: [],
       expertise: [],
       connections: [],
-      sections: [],
     });
     const removed: string[] = [];
     const registry = personDossierRegistry(dossiers, (profileId) => removed.push(profileId));

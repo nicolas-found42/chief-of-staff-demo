@@ -184,391 +184,237 @@ finish() {
 # Replace the example below. Set TOTAL_STAGES to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
-# This app keeps every value in workspace/config.json through its own HTTP
-# API (there is no .env and CI holds no secrets), so the stages below capture
-# with ask/ask_secret and persist with curl against the running app.
-
+# Guided Setup is operator-driven and resumable. It never edits Workspace
+# credential fields and never runs a migration without an accepted backup.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="${APP:-http://127.0.0.1:4317}"
-_API_BODY=""
-_API_CODE=0
+WORKSPACE_DIR="${WORKSPACE_DIR:-$REPO_ROOT/workspace}"
+# The reusable wizard library supplies ".env" before these stages run.
+[[ "$ENV_FILE" == ".env" ]] && ENV_FILE="$REPO_ROOT/.env"
+BACKUP_DESTINATION="${BACKUP_DESTINATION:-$HOME/.local/share/chief-of-staff-demo/guided-setup-backup}"
+BACKUP_RESULT="${BACKUP_RESULT:-$BACKUP_DESTINATION/result.json}"
+STOPPED_CONTAINER="${STOPPED_CONTAINER:-chief-of-staff-demo-app-1}"
+MIGRATION_SCRIPT="$REPO_ROOT/scripts/migrate-installation-credentials.mts"
 
-# api METHOD PATH [JSON_BODY] — stores response in _API_BODY, status in _API_CODE.
-api() {
-  _API_BODY=""
-  _API_CODE=0
-  local method="$1" path="$2" body="${3:-}" out
-  local curl_args=(-sS --max-time 120 -X "$method" "$APP$path" -H 'Content-Type: application/json' -w $'\n%{http_code}')
-  [[ -n "$body" ]] && curl_args+=(-d "$body")
-  if ! out="$(curl "${curl_args[@]}")"; then
-    _API_CODE="000"
-    return 1
-  fi
-  _API_CODE="${out##*$'\n'}"
-  _API_BODY="${out%$'\n'*}"
-}
+TOTAL_STAGES=10
 
-# api_jq 'filter' — run a jq filter over the last response body.
-api_jq() {
-  printf '%s' "$_API_BODY" | jq -r "$1"
-}
+banner "Chief of Staff — Guided Setup"
 
-# load_config — GET /api/config into _API_BODY, warning on transport failure.
-load_config() {
-  if ! api GET /api/config; then
-    warn "could not read config from $APP"
-    return 1
-  fi
-}
-
-# wait_health SECONDS — poll /api/health until ok.
-wait_health() {
-  local deadline=$(( $(date +%s) + $1 ))
-  until curl -fsS --max-time 3 "$APP/api/health" >/dev/null 2>&1; do
-    if (( $(date +%s) > deadline )); then return 1; fi
-    printf '.'
-    sleep 5
-  done
-  printf '\n'
-}
-
-TOTAL_STAGES=12
-
-banner "Chief of Staff — full setup"
-
-[[ -f docker-compose.yml ]] || { warn "run this from the repo root (docker-compose.yml not found)"; exit 1; }
-for _tool in curl jq docker; do
+for _tool in pnpm docker curl jq python3; do
   command -v "$_tool" >/dev/null 2>&1 || { warn "$_tool is required"; exit 1; }
 done
-
-# ── 1 · Bring the app up ──────────────────────────────────────────────────
-stage "Bring-up"
-if curl -fsS --max-time 3 "$APP/api/health" >/dev/null 2>&1; then
-  say "App is already running at $APP — nothing to do."
-else
-  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
-    step "Start Docker Desktop and wait for the whale in the menu bar to stop animating."
-    open_url "https://www.docker.com/products/docker-desktop/"
-    pause "Press Enter once Docker is running…"
-  fi
-  say "Building and starting the app (first run takes a few minutes)…"
-  docker compose up -d --build
-  say "Waiting for the app to become healthy"
-  if ! wait_health 600; then
-    warn "app did not become healthy — check 'docker compose logs app', then re-run this wizard."
+[[ -f "$MIGRATION_SCRIPT" ]] || { warn "migration command is missing"; exit 1; }
+for _path in "$WORKSPACE_DIR" "$ENV_FILE" "$BACKUP_RESULT"; do
+  [[ "$_path" = /* ]] || { warn "Guided Setup paths must be absolute: $_path"; exit 1; }
+done
+mkdir -p "$(dirname "$ENV_FILE")"
+if [[ ! -f "$WORKSPACE_DIR/config.json" ]]; then
+  if [[ -d "$WORKSPACE_DIR" && -n "$(ls -A "$WORKSPACE_DIR")" ]]; then
+    warn "Workspace has files but no config.json; inspect it before setup"
     exit 1
   fi
-  say "App is healthy at $APP"
+  FRESH_WORKSPACE=true
+else
+  FRESH_WORKSPACE=false
 fi
 
-# ── 2 · Extraction provider (LLM) ─────────────────────────────────────────
-stage "Extraction provider"
-load_config
-CUR_PROVIDER="$(api_jq '.config.provider')"
-CUR_MODEL="$(api_jq '.config.model')"
-CUR_KEY_SET="$(api_jq '.config.apiKey.set')"
-CUR_KEY_HINT="$(api_jq '.config.apiKey.hint')"
-say "Current: provider=$CUR_PROVIDER model=$CUR_MODEL api key=$( [[ "$CUR_KEY_SET" == "true" ]] && printf 'set (…%s)' "$CUR_KEY_HINT" || printf 'unset' )"
-step "Create an API key on the provider's dashboard (it pays for the calls)."
-ask PROVIDER "Provider (openai|anthropic|openrouter|gemini|ollama — OpenRouter is the default; mock exists only in test/demo mode):"
-[[ -z "$PROVIDER" ]] && PROVIDER="$CUR_PROVIDER"
-ask MODEL "Model id:"
-[[ -z "$MODEL" ]] && MODEL="$CUR_MODEL"
-API_KEY=""
-if [[ "$CUR_KEY_SET" != "true" ]]; then
-  ask_secret PROVIDER_API_KEY "Paste the provider API key:"
-  API_KEY="$PROVIDER_API_KEY"
-elif confirm "Replace the stored API key?"; then
-  ask_secret PROVIDER_API_KEY "Paste the new provider API key:"
-  API_KEY="$PROVIDER_API_KEY"
-fi
-body=$(jq -n --arg p "$PROVIDER" --arg m "$MODEL" --arg k "$API_KEY" \
-  '{provider: $p, model: $m} + (if $k == "" then {} else {apiKey: $k} end)')
-api PUT /api/config "$body"
-if [[ "$_API_CODE" == "200" ]]; then
-  load_config
-  say "Saved: provider=$(api_jq '.config.provider') model=$(api_jq '.config.model') key hint …$(api_jq '.config.apiKey.hint')"
-else
-  warn "config save failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
-fi
+api_get() {
+  _API_BODY="$(curl -fsS --max-time 10 "$APP$1" 2>/dev/null || true)"
+}
 
-# ── 3 · Google OAuth client ───────────────────────────────────────────────
-stage "Google OAuth client"
-load_config
-if [[ "$(api_jq '.config.google.clientSecret.set')" == "true" ]] && ! confirm "Replace the existing Google OAuth client?"; then
-  say "Keeping the existing Google OAuth client."
-else
-  open_url "$APP/settings"
-  say "Follow the Google card on that page: it deep-links every Google Cloud console"
-  say "step, in the order Google imposes, with the exact values and copy buttons."
-  note "The redirect URI must be http://localhost:4317/api/google/callback — the card shows it."
-  note "Enable ALL four APIs on the card (Tasks, Gmail, Drive, YouTube Data) or the first run 403s."
-  GOOGLE_CLIENT_ID=""
-  GOOGLE_CLIENT_SECRET=""
-  ask GOOGLE_CLIENT_ID "Paste the OAuth client ID:"
-  ask_secret GOOGLE_CLIENT_SECRET "Paste the OAuth client secret:"
-  body=$(jq -n --arg i "$GOOGLE_CLIENT_ID" --arg s "$GOOGLE_CLIENT_SECRET" \
-    '{google: {clientId: $i, clientSecret: $s}}')
-  api PUT /api/config "$body"
-  [[ "$_API_CODE" == "200" ]] && say "Google OAuth client saved." || warn "save failed (HTTP $_API_CODE)"
-fi
+wait_for_health() {
+  local seconds="${1:-60}"
+  local elapsed=0
+  while (( elapsed < seconds )); do
+    if curl -fsS --max-time 3 "$APP/api/health" >/dev/null 2>&1; then return 0; fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  return 1
+}
 
-# ── 4 · Google connect + verify ───────────────────────────────────────────
-stage "Google sign-in"
-api GET /api/google/status
-GOOGLE_STATE="$(api_jq '.state // empty')"
-if [[ "$GOOGLE_STATE" == "connected" ]] && ! confirm "Sign in to Google again anyway?"; then
-  say "Google connection kept."
-  note "Personal accounts re-auth about weekly — re-running this script lands here: choose to sign in again."
+migration_check() {
+  pnpm exec tsx "$MIGRATION_SCRIPT" check \
+    --workspace "$WORKSPACE_DIR" --env "$ENV_FILE" --backup-result "$BACKUP_RESULT"
+}
+
+migration_apply() {
+  pnpm exec tsx "$MIGRATION_SCRIPT" apply \
+    --workspace "$WORKSPACE_DIR" --env "$ENV_FILE" --backup-result "$BACKUP_RESULT"
+}
+
+# ── 1 · Preflight and paths ────────────────────────────────────────────────
+stage "Preflight and paths"
+say "This local setup provisions installation credentials once for this installation."
+say "Workspace: $WORKSPACE_DIR"
+say "Installation environment: $ENV_FILE"
+say "The Workspace keeps provider/model choices, Google consent, and records; it does not keep installation secret values."
+confirm "Continue with the local Guided Setup?" || { warn "setup cancelled"; exit 1; }
+
+# ── 2 · Required Workspace backup ─────────────────────────────────────────
+stage "Required Workspace backup"
+if [[ "$FRESH_WORKSPACE" == true ]]; then
+  say "No Workspace records exist yet; there is nothing to back up or migrate."
 else
-  api GET /api/google/connect
-  if [[ "$_API_CODE" != "200" ]]; then
-    warn "cannot start sign-in (HTTP $_API_CODE): $(api_jq '.error // empty')"
-    SKIPPED+=("Google sign-in")
+  say "The app must be stopped before the private backup is captured."
+  say "Choose a new private backup destination; it must not be inside the Workspace or repository."
+  step "Stop the app and any other Workspace writer, then press Enter."
+  pause "App stopped and all other writers are quiet"
+  step "Capture the Workspace backup (the command verifies two isolated restorations)."
+  if [[ -f "$BACKUP_RESULT" ]]; then
+    say "Existing backup result found. Stage 3 verifies it before any migration."
+  elif [[ -e "$BACKUP_DESTINATION" ]]; then
+    warn "backup destination exists without a result; choose a new BACKUP_DESTINATION and resume"
+    exit 1
   else
-    AUTH_URL="$(api_jq '.authUrl')"
-    step "Sign in with the Google account that owns your Tasks, Gmail, Drive and YouTube."
-    open_url "$AUTH_URL"
-    note "Personal account: the 'unverified app' screen is expected — click Continue (small link, bottom left)."
-    pause "Press Enter once you have completed the consent screen…"
-    say "Waiting for Google to call back"
-    CONNECTED=""
-    for _ in $(seq 1 60); do
-      api GET /api/google/status
-      STATE="$(api_jq '.state // empty')"
-      [[ "$STATE" == "connected" ]] && { CONNECTED=1; break; }
-      printf '.'
-      sleep 5
-    done
-    printf '\n'
-    if [[ -n "$CONNECTED" ]]; then
-      say "Connected."
-      api POST /api/google/check
-      say "Check my setup: $(printf '%s' "$_API_BODY" | jq -c .)"
-    else
-      warn "not connected after 5 minutes — check the Google card in Settings, then re-run."
-      note "Failure symptoms are tabled in ONBOARDING.md → 'When something is wrong'."
-      SKIPPED+=("Google sign-in verification")
-    fi
+    pnpm exec tsx "$REPO_ROOT/scripts/workspace-backup.mts" capture \
+      "$WORKSPACE_DIR" "$BACKUP_DESTINATION" "$REPO_ROOT" "$STOPPED_CONTAINER" || {
+      warn "backup failed; no credential migration was attempted"
+      exit 1
+    }
   fi
+  [[ -f "$BACKUP_RESULT" ]] || { warn "backup result is missing; setup stops safely"; exit 1; }
+  say "Accepted backup evidence is available. Keep it private for recovery."
 fi
 
-# ── 5 · Drive intake folder ───────────────────────────────────────────────
-stage "Drive transcripts folder"
-load_config
-CUR_FOLDER="$(api_jq '.config.drive.folderName // empty')"
-if [[ -n "$CUR_FOLDER" ]]; then
-  say "Current folder: $CUR_FOLDER"
-  confirm_folder="n"
-  confirm "Pick a different folder?" && confirm_folder="y"
+# ── 3 · Check migration and confirm ───────────────────────────────────────
+stage "Check migration and confirm"
+say "The read-only check verifies the accepted backup and reports whether legacy fields need transfer."
+if [[ "$FRESH_WORKSPACE" == true ]]; then
+  say "Fresh installation: no legacy credentials require transfer."
 else
-  say "No folder chosen yet — the app polls one Drive folder for transcripts."
-  confirm_folder="y"
+  migration_check || { warn "migration check failed; source and destination remain unchanged"; exit 1; }
 fi
-if [[ "$confirm_folder" == "y" ]]; then
-  open_url "$APP/settings"
-  step "On the Drive transcripts card, click Choose folder and pick the folder your transcript service writes to."
-  pause "Press Enter once saved…"
-  api GET /api/config
-  say "Folder now: $(api_jq '.config.drive.folderName // empty')"
-fi
-CUR_POLL="$(api_jq '.config.drive.pollIntervalMinutes // empty')"
-ask POLL_MINUTES "Poll interval in minutes${CUR_POLL:+ [Enter keeps $CUR_POLL]}:"
-[[ -z "$POLL_MINUTES" ]] && POLL_MINUTES="${CUR_POLL:-2}"
-[[ "$POLL_MINUTES" =~ ^[0-9]+$ ]] || POLL_MINUTES=2
-if (( POLL_MINUTES < 1 )); then POLL_MINUTES=1; fi
-api PUT /api/config "$(jq -n --argjson n "$POLL_MINUTES" '{drive: {enabled: true, pollIntervalMinutes: $n}}')"
-[[ "$_API_CODE" == "200" ]] && say "Drive polling on, every $POLL_MINUTES min." || warn "save failed (HTTP $_API_CODE)"
+confirm "Continue to provision the checked installation values?" || {
+  warn "setup paused before any migration; resume later"
+  exit 1
+}
 
-# ── 6 · Transcript smoke test (writes real Google data) ───────────────────
-stage "Transcript smoke test"
-say "This uploads the sample transcript and creates REAL Google Tasks and a REAL Gmail draft."
-if ! confirm "Run the end-to-end smoke test now?"; then
-  SKIPPED+=("Transcript smoke test")
-  warn "skipped — run it later: upload the sample transcript, then Sync now in Settings."
-else
-  load_config
-  FOLDER_ID="$(api_jq '.config.drive.folderId // empty')"
-  [[ -n "$FOLDER_ID" ]] && open_url "https://drive.google.com/drive/folders/$FOLDER_ID" \
-    || open_url "https://drive.google.com"
-  step "Upload tests/fixtures/transcripts/sample-transcript.md to that folder (New → File upload)."
-  pause "Press Enter once uploaded…"
-  api POST /api/drive/sync
-  CREATED="$(api_jq '.created // 0')"
-  say "Sync created $CREATED run(s)."
-  api GET "/api/runs?module=transcript&limit=1"
-  RUN_ID="$(api_jq '.runs[0].id // empty')"
-  if [[ "$CREATED" == "0" || -z "$RUN_ID" ]]; then
-    warn "no new run to watch — either nothing was ingested (the ledger remembers every file id it has seen) or the file landed in a different folder."
-    SKIPPED+=("Transcript smoke test verification")
-  else
-    say "Watching run $RUN_ID"
-    for _ in $(seq 1 60); do
-      api GET "/api/runs/$RUN_ID"
-      RUN_STATUS="$(api_jq '.status')"
-      case "$RUN_STATUS" in done|failed|skipped) break ;; esac
-      printf '.'
-      sleep 5
-    done
-    printf '\n'
-    say "Run $RUN_ID → $RUN_STATUS"
-    [[ "$RUN_STATUS" == "done" ]] && step "Confirm: Google Tasks list 'Meeting Followups' has 3 tasks; Gmail Drafts has 1 draft."
-  fi
+# ── 4 · Installation Google client ────────────────────────────────────────
+stage "Installation Google client"
+LEGACY_GOOGLE=false
+if [[ "$FRESH_WORKSPACE" == false ]] && jq -e '.google.clientId and .google.clientSecret' "$WORKSPACE_DIR/config.json" >/dev/null; then
+  LEGACY_GOOGLE=true
 fi
-
-# ── 7 · YouTube channels ──────────────────────────────────────────────────
-stage "YouTube channels"
-api GET /api/youtube/trends
-EXISTING_CHANNELS="$(api_jq '.channels | length')"
-if [[ "$EXISTING_CHANNELS" =~ ^[0-9]+$ ]] && (( EXISTING_CHANNELS > 0 )) \
-  && confirm "Keep the $EXISTING_CHANNELS channel(s) already being tracked?"; then
-  say "Channels kept."
+if [[ "$LEGACY_GOOGLE" == true ]]; then
+  say "The existing Workspace Google client will transfer at stage 6 without re-entry."
 else
-  while true; do
-    ask CHANNEL_URL "Channel URL (youtube.com/@name or /channel/UC…, empty to stop):"
-    [[ -z "$CHANNEL_URL" ]] && break
-    api POST /api/youtube/channels "$(jq -n --arg u "$CHANNEL_URL" '{url: $u}')"
-    if [[ "$_API_CODE" == "201" ]]; then
-      say "Tracking: $(api_jq '.channel.title')"
-    else
-      warn "$(api_jq '.error // "failed (HTTP '"$_API_CODE"')"')"
+  for credential in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do
+    if [[ -n "${!credential:-}" || -n "$(_existing "$credential" || true)" ]]; then
+      say "$credential is already configured; keeping it."
+      continue
     fi
+    step "Prepare the installation Google OAuth client in Google Cloud."
+    open_url "https://console.cloud.google.com/apis/credentials"
+    ask_secret "$credential" "Installation $credential:"
+    [[ -n "${!credential}" ]] || { warn "$credential is required"; exit 1; }
+    write_env "$credential" "${!credential}"
   done
 fi
 
-# ── 8 · YouTube Trends spreadsheet (creates a real Sheet) ─────────────────
-stage "YouTube Trends spreadsheet"
-api GET /api/youtube/trends
-EXISTING_URL="$(api_jq '.spreadsheet.url // empty')"
-if [[ -n "$EXISTING_URL" ]]; then
-  say "Spreadsheet already exists."
-  open_url "$EXISTING_URL"
+# ── 5 · Installation provider key ─────────────────────────────────────────
+stage "Installation provider key"
+step "Choose one installed cloud provider, or choose Ollama for a local model."
+say "Cloud keys are provider-specific; Ollama needs no installation key."
+CURRENT_PROVIDER="$(jq -r '.provider // empty' "$WORKSPACE_DIR/config.json" 2>/dev/null || true)"
+LEGACY_PROVIDER_KEY=false
+if [[ "$FRESH_WORKSPACE" == false ]] && jq -e '.apiKey | type == "string" and length > 0' "$WORKSPACE_DIR/config.json" >/dev/null; then
+  LEGACY_PROVIDER_KEY=true
+fi
+if [[ "$LEGACY_PROVIDER_KEY" == true ]]; then
+  PROVIDER="$CURRENT_PROVIDER"
+  say "The existing $PROVIDER Workspace key will transfer without re-entry. Change Provider Choice after migration."
 else
-  say "Creates a spreadsheet named 'YouTube Trends' in your Drive — one tab per channel, one row per video per day."
-  if confirm "Create it now?"; then
-    api POST /api/youtube/spreadsheet
-    if [[ "$_API_CODE" == "201" ]]; then
-      open_url "$(api_jq '.spreadsheet.url')"
-      say "Created."
-    elif [[ "$_API_CODE" == "409" ]]; then
-      say "Already exists (someone created it moments ago)."
-      open_url "$(api_jq '.spreadsheet.url // empty')"
-    else
-      warn "creation failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
-      SKIPPED+=("YouTube Trends spreadsheet")
-    fi
-  else
-    SKIPPED+=("YouTube Trends spreadsheet")
-  fi
+  [[ -n "$CURRENT_PROVIDER" ]] && say "Current Workspace provider: $CURRENT_PROVIDER"
+  ask PROVIDER "Provider (openrouter|openai|anthropic|gemini|ollama${CURRENT_PROVIDER:+ [Enter keeps $CURRENT_PROVIDER]}):"
+  [[ -z "$PROVIDER" && -n "$CURRENT_PROVIDER" ]] && PROVIDER="$CURRENT_PROVIDER"
+fi
+case "$PROVIDER" in
+    openrouter|openai|anthropic|gemini)
+      case "$PROVIDER" in
+        openrouter) provider_env="OPENROUTER_API_KEY"; open_url "https://openrouter.ai/keys" ;;
+        openai) provider_env="OPENAI_API_KEY"; open_url "https://platform.openai.com/api-keys" ;;
+        anthropic) provider_env="ANTHROPIC_API_KEY"; open_url "https://console.anthropic.com/settings/keys" ;;
+        gemini) provider_env="GEMINI_API_KEY"; open_url "https://aistudio.google.com/apikey" ;;
+      esac
+      if [[ "$LEGACY_PROVIDER_KEY" == true ]]; then
+        say "$provider_env will be transferred at stage 6."
+      elif [[ -n "${!provider_env:-}" || -n "$(_existing "$provider_env" || true)" ]]; then
+        say "$provider_env is already configured; keeping it."
+      else
+        ask_secret "$provider_env" "Installation API key for $PROVIDER:"
+        [[ -n "${!provider_env}" ]] || { warn "$provider_env is required"; exit 1; }
+        write_env "$provider_env" "${!provider_env}"
+      fi
+      ;;
+  ollama) say "Ollama selected; no installation key is required." ;;
+  *) warn "choose a listed provider"; exit 1 ;;
+esac
+
+# ── 6 · Apply migration and verify destination ───────────────────────────
+stage "Apply migration and verify destination"
+if [[ "$FRESH_WORKSPACE" == true ]]; then
+  say "Fresh installation: no Workspace credential fields need removal."
+else
+  say "The app remains stopped. The command verifies exact values and mode 600 before removing source fields."
+  confirm "Run the backup-gated credential migration now?" || { warn "migration not applied"; exit 1; }
+  migration_apply || { warn "migration failed; retain the backup and inspect the recovery state"; exit 1; }
+  say "Migration applied. The backup remains available for recovery."
 fi
 
-# ── 9 · Content Scout schedule ───────────────────────────────────────────
-stage "Content Scout schedule"
-api GET /api/content-scout
-say "Current: $(printf '%s' "$_API_BODY" | jq -c '.settings // empty')"
-if confirm "Keep the current schedule?"; then
-  say "Schedule kept."
-else
-  ask SCOUT_TZ "IANA time zone:"
-  ask SCOUT_DAILY "Daily scout time (HH:MM):"
-  ask SCOUT_WDAY "Weekly discovery weekday (1=Mon…7=Sun):"
-  ask SCOUT_WTIME "Weekly discovery time (HH:MM):"
-  ask SCOUT_SIZE "Shortlist size (3–10):"
-  CUR_SETTINGS="$(printf '%s' "$_API_BODY" | jq -c '.settings // {}')"
-  SCOUT_TZ="${SCOUT_TZ:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.timeZone // empty')}"
-  SCOUT_DAILY="${SCOUT_DAILY:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.dailyTime // "08:00"')}"
-  SCOUT_WDAY="${SCOUT_WDAY:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.weeklyDiscoveryDay // 1')}"
-  SCOUT_WTIME="${SCOUT_WTIME:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.weeklyDiscoveryTime // "09:00"')}"
-  SCOUT_SIZE="${SCOUT_SIZE:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.shortlistSize // 5')}"
-  [[ "$SCOUT_WDAY" =~ ^[1-7]$ ]] || SCOUT_WDAY=1
-  [[ "$SCOUT_SIZE" =~ ^[0-9]+$ ]] || SCOUT_SIZE=5
-  if (( SCOUT_SIZE < 3 )); then SCOUT_SIZE=3; fi
-  if (( SCOUT_SIZE > 10 )); then SCOUT_SIZE=10; fi
-  body=$(jq -n --arg tz "$SCOUT_TZ" --arg d "$SCOUT_DAILY" --argjson wd "$SCOUT_WDAY" \
-    --arg wt "$SCOUT_WTIME" --argjson sz "$SCOUT_SIZE" \
-    '{timeZone: $tz, dailyTime: $d, weeklyDiscoveryDay: $wd, weeklyDiscoveryTime: $wt, shortlistSize: $sz}')
-  api PATCH /api/content-scout/settings "$body"
-  if [[ "$_API_CODE" == "200" ]]; then
-    say "Schedule saved: daily $SCOUT_DAILY $SCOUT_TZ, discovery weekday $SCOUT_WDAY at $SCOUT_WTIME, shortlist $SCOUT_SIZE."
-  else
-    warn "save failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
-  fi
+# ── 7 · Restart installation ──────────────────────────────────────────────
+stage "Restart installation"
+step "Start the same app container so it loads the installation environment."
+touch "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+docker compose -f "$REPO_ROOT/docker-compose.yml" --env-file "$ENV_FILE" up -d --force-recreate app
+wait_for_health 90 || { warn "app did not become healthy; keep the backup and resume"; exit 1; }
+api_get /api/config.installation
+printf '%s' "$_API_BODY" | jq -e --arg provider "$PROVIDER" \
+  '.googleClient.state == "configured" and ($provider == "ollama" or .providerKeys[$provider].state == "configured")' >/dev/null || {
+  warn "effective installation credentials are still missing; resume after provisioning"
+  exit 1
+}
+say "Installation status is Configured/Missing/Not required only; no values are returned."
+
+# ── 8 · Owner Google consent ──────────────────────────────────────────────
+stage "Owner Google consent"
+open_url "$APP/settings#group-google"
+step "Sign in with the Google account that owns this Workspace and grant the requested permissions."
+step "Return here after the app reports Connected. The installation client is shared; consent and refresh tokens stay in this Workspace."
+pause "Google consent completed for this Workspace"
+api_get /api/google/status
+printf '%s' "$_API_BODY" | jq -e '.state == "connected"' >/dev/null || {
+  warn "Google consent is not connected yet; resume when the owner has completed it"
+  exit 1
+}
+
+# ── 9 · Provider, model, and Transcript Intake ───────────────────────────
+stage "Provider, model, and Transcript Intake"
+open_url "$APP/settings#api-key"
+step "Confirm the provider and model in Settings. Only providers with an installed key, or Ollama, are selectable."
+step "Choose the transcript Drive folder, enable Drive polling, and allow the app to read and process that folder."
+step "Use the selected Google Drive folder and its existing intake controls; no manual upload step is part of this path."
+pause "Provider, model, folder, polling, and consent are saved"
+api_get "/api/migration/status?goal=meetings"
+printf '%s' "$_API_BODY" | jq -e '.onboarding.complete == true' >/dev/null || {
+  warn "Meeting prerequisites are unfinished; follow the five controls and resume"
+  exit 1
+}
+
+# ── 10 · Verify the first result ─────────────────────────────────────────
+stage "Verify the first result"
+api_get "/api/migration/status?goal=meetings"
+say "Meeting setup status: $(printf '%s' "$_API_BODY" | jq -r '.onboarding.complete // false')"
+api_get /api/meetings/workspace
+say "Meeting Intake status: $(printf '%s' "$_API_BODY" | jq -r '.intakeReadiness.verdict // "unavailable"')"
+step "Open Meeting Wizard and follow the next truthful Transcript Intake action."
+open_url "$APP/meetings"
+if ! printf '%s' "$_API_BODY" | jq -e \
+  '[.today[]?, .recent[]?, .upcoming[]?] | any(.debrief.status == "ready")' >/dev/null; then
+  say "Meeting setup is ready, but the first Debrief is still waiting for a Transcript and extraction."
+  say "Use the selected Drive folder and Sync now, then re-run this stage to verify the result."
+  exit 0
 fi
-
-# ── 10 · Content Scout sources ───────────────────────────────────────────
-stage "Content Scout sources"
-say "Recurring public sources the daily scout reads (rss feeds work best)."
-while true; do
-  confirm "Add a source?" || break
-  ask SOURCE_ADAPTER "Adapter (rss|website):"
-  ask SOURCE_LABEL "Label (e.g. Hacker News front page):"
-  ask SOURCE_URL "Public URL:"
-  [[ -z "$SOURCE_URL" ]] && break
-  api POST /api/content-scout/sources \
-    "$(jq -n --arg a "$SOURCE_ADAPTER" --arg l "$SOURCE_LABEL" --arg u "$SOURCE_URL" '{adapterId: $a, label: $l, url: $u}')"
-  if [[ "$_API_CODE" == "200" || "$_API_CODE" == "201" ]]; then
-    say "Source added."
-  else
-    warn "$(api_jq '.error // "failed (HTTP '"$_API_CODE"')"')"
-  fi
-done
-
-# ── 11 · Meeting Brief Generator ──────────────────────────────────────────
-stage "Meeting Brief Generator"
-warn "Heads-up: as shipped, this Module cannot RUN — no calendar provider is wired in, and"
-warn "external-guest enrichment needs six providers the server does not have. This stage"
-warn "records your configuration only; unlocking Runs needs a code change (see the smoke report)."
-if confirm "Configure Meeting Brief settings anyway?"; then
-  ask INTERNAL_DOMAINS "Internal domains, comma-separated (e.g. found42.com):"
-  if [[ -n "$INTERNAL_DOMAINS" ]]; then
-    domains=()
-    IFS=',' read -r -a _parts <<< "$INTERNAL_DOMAINS"
-    for d in "${_parts[@]}"; do d="$(printf '%s' "$d" | sed 's/^ *//; s/ *$//')"; [[ -n "$d" ]] && domains+=("$d"); done
-    body=$(jq -n '$ARGS.positional | {internalDomains: .}' --args "${domains[@]}")
-    api PUT /api/meeting-brief/config "$body"
-    [[ "$_API_CODE" == "200" ]] && say "Internal domains saved." || warn "save failed (HTTP $_API_CODE)"
-  fi
-  if confirm "Connect HubSpot now?"; then
-    open_url "https://app.hubspot.com/private-apps"
-    step "Create a private app with read access to companies and contacts, then copy its token (pat-na1-…)."
-    ask_secret HUBSPOT_TOKEN "Paste the HubSpot private-app token:"
-    api POST /api/meeting-brief/hubspot/connect "$(jq -n --arg t "$HUBSPOT_TOKEN" '{token: $t}')"
-    api POST /api/meeting-brief/hubspot/check
-    say "HubSpot check: $(printf '%s' "$_API_BODY" | jq -c .)"
-  else
-    SKIPPED+=("HubSpot connection")
-  fi
-  if confirm "Connect the guest-profile provider now?"; then
-    ask GP_ENDPOINT "Guest-profile service endpoint URL:"
-    ask_secret GP_KEY "Guest-profile API key:"
-    api POST /api/meeting-brief/guest-profile/connect \
-      "$(jq -n --arg e "$GP_ENDPOINT" --arg k "$GP_KEY" '{endpoint: $e, apiKey: $k}')"
-    api POST /api/meeting-brief/guest-profile/check
-    say "Guest-profile check: $(printf '%s' "$_API_BODY" | jq -c .)"
-  else
-    SKIPPED+=("Guest-profile connection")
-  fi
-else
-  SKIPPED+=("Meeting Brief Generator settings")
-fi
-
-# ── 12 · Final check ──────────────────────────────────────────────────────
-stage "Final check"
-api GET /api/health
-say "App: $( [[ "$_API_CODE" == "200" ]] && printf 'healthy' || printf 'UNHEALTHY' ) at $APP"
-load_config
-say "Provider: $(api_jq '.config.provider') / $(api_jq '.config.model') · key set: $(api_jq '.config.apiKey.set')"
-say "Google client: $(api_jq '.config.google.clientSecret.set' | sed 's/true/set/; s/false/unset/')"
-say "Drive folder: $(api_jq '.config.drive.folderName // "none"') (polling $(api_jq '.config.drive.enabled' | sed 's/true/on/; s/false/off/'))"
-api GET /api/google/status
-say "Google connection: $(api_jq '.state // "unknown"')"
-api GET /api/youtube/trends
-say "YouTube Trends sheet: $(api_jq '.spreadsheet.url // "none"')"
-api GET /api/content-scout
-say "Content Scout: $(printf '%s' "$_API_BODY" | jq -r '.sourceTargets | length') source target(s)"
-api GET /api/meeting-brief/config
-say "Meeting Brief: $(printf '%s' "$_API_BODY" | jq -c '{internalDomains: (.internalDomains | length), hubspot: .hubspot.state}')"
-say ""
-say "Open the app: $APP"
-note "Anything misbehave? ONBOARDING.md → 'When something is wrong' names the fix."
 
 finish

@@ -259,6 +259,7 @@ function publishCanonical(store: TaskStore): void {
     { tasks: store.readTasks(), lists: [], actionItems: store.readActionItems() },
     {
       kind: "canonical-tasks",
+      origin: "migrated",
       workspace: "isolated",
       fingerprint: "0".repeat(64),
       counts: {

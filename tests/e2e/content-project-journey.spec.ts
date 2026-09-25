@@ -58,7 +58,7 @@ test("content project journey — brand voice revisions → scout → select →
     .getByRole("link", { name: "Content Engine" })
     .click();
   await expect(page).toHaveURL(/\/content-scout$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Content Scout" })).toBeFocused();
+  await expect(page.getByRole("heading", { level: 1, name: "Content Engine" })).toBeFocused();
 
   // 2. Versioning the inputs a Project will freeze: each Brand Voice acceptance
   //    appends an immutable Markdown revision, and the UI names the new current

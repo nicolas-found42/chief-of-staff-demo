@@ -22,14 +22,15 @@ import { linkedInActivityDate, linkedInProfileIdentity } from "./linkedin-articl
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE. */
 
-export function linkedInGuestProfile(
-  html: string,
-  url: string,
-): {
+export interface LinkedInGuestProfile {
   text: string;
   redactedTitles: number;
-} {
-  if (!linkedInProfileIdentity(url)) return { text: "", redactedTitles: 0 };
+  name: string | null;
+  posts: { kind: "post"; url: string; title: string; publishedAt: string | null }[];
+}
+
+export function linkedInGuestProfile(html: string, url: string): LinkedInGuestProfile {
+  if (!linkedInProfileIdentity(url)) return { text: "", redactedTitles: 0, name: null, posts: [] };
   const $ = load(html);
   const clean = (value: string) => value.replace(/\s+/g, " ").trim();
   const field = ($root: ReturnType<typeof $>, selector: string) =>
@@ -90,6 +91,7 @@ export function linkedInGuestProfile(
     if (school) lines.push(`Education: ${[school, degree, dates].filter(Boolean).join(" | ")}`);
   });
   const seenPosts = new Set<string>();
+  const posts: LinkedInGuestProfile["posts"] = [];
   $("[data-section='posts'] a[href*='/posts/']").each((_, element) => {
     if (seenPosts.size >= 10) return;
     const link = $(element);
@@ -105,13 +107,14 @@ export function linkedInGuestProfile(
       target.hash = "";
       if (seenPosts.has(target.href)) return;
       seenPosts.add(target.href);
-      const date = linkedInActivityDate(target.href);
+      const publishedAt = linkedInActivityDate(target.href);
+      posts.push({ kind: "post", url: target.href, title, publishedAt });
       lines.push(
-        `Post listed by ${name}\nText: ${title}${date ? `\nDate (decoded from activity ID): ${date}` : ""}\nURL: ${target.href}`,
+        `Post listed by ${name}\nText: ${title}${publishedAt ? `\nDate (decoded from activity ID): ${publishedAt}` : ""}\nURL: ${target.href}`,
       );
     } catch {
       return;
     }
   });
-  return { text: lines.join("\n"), redactedTitles };
+  return { text: lines.join("\n"), redactedTitles, name: name || null, posts };
 }

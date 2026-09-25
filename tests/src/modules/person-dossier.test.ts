@@ -13,6 +13,15 @@ function workspace() {
   roots.push(root);
   return root;
 }
+function account(claims: Parameters<typeof synthesizeSections>[0]) {
+  return {
+    claims,
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: synthesizeSections(claims),
+  };
+}
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -54,7 +63,22 @@ test("retained source versions and grounded claims survive a restart without cop
     works: [],
     expertise: [],
     connections: [],
-    sections: [],
+    sections: synthesizeSections([
+      {
+        id: "contribution",
+        section: "work",
+        statement: "Maya designed the scheduler",
+        status: "supported",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: "2024-02-01",
+        effectiveTo: null,
+        citations: [{ sourceId: source.id, quote: "Maya designed the scheduler." }],
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+      },
+    ]),
   });
   const restarted = new PersonDossierStore(root);
   expect(restarted.get("maya")?.claims[0]?.citations[0]?.sourceId).toBe(source.id);
@@ -71,7 +95,12 @@ test("retained source versions and grounded claims survive a restart without cop
       works: [],
       expertise: [],
       connections: [],
-      sections: [],
+      sections: synthesizeSections([
+        {
+          ...restarted.get("maya")!.claims[0],
+          citations: [{ sourceId: source.id, quote: "Maya led 200 people" }],
+        },
+      ]),
     }),
   ).toThrow(/passage/i);
   expect(restarted.get("maya")?.revision).toBe(1);
@@ -100,8 +129,10 @@ test("source revisions are immutable and privacy deletion removes every person a
   );
   const changed = store.retainSource({ ...input, text: "Maya previously worked on compilers." });
   expect(changed.id).not.toBe(original.id);
-  store.publish("maya", 0, {
-    claims: [
+  store.publish(
+    "maya",
+    0,
+    account([
       {
         id: "focus",
         section: "career",
@@ -116,25 +147,13 @@ test("source revisions are immutable and privacy deletion removes every person a
         supersedes: [],
         changeReason: null,
       },
-    ],
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: [],
-  });
+    ]),
+  );
   expect(store.privacyDelete("maya")).toEqual([original.id]);
   const restarted = new PersonDossierStore(root);
   expect(restarted.get("maya")).toBeNull();
   expect(restarted.source("maya", original.id)).toBeNull();
-  expect(() =>
-    restarted.publish("maya", 0, {
-      claims: [],
-      works: [],
-      expertise: [],
-      connections: [],
-      sections: [],
-    }),
-  ).toThrow(/deleted/i);
+  expect(() => restarted.publish("maya", 0, account([]))).toThrow(/deleted/i);
 });
 
 test("removing a private source purges dependent interpretations and work while retaining independent public claims", () => {
@@ -175,8 +194,10 @@ test("removing a private source purges dependent interpretations and work while 
     supersedes: [],
     changeReason: null,
   };
-  store.publish("maya", 0, {
-    claims: [
+  store.publish(
+    "maya",
+    0,
+    account([
       {
         ...claim,
         id: "public",
@@ -197,12 +218,8 @@ test("removing a private source purges dependent interpretations and work while 
         supports: ["private", "public"],
         citations: [{ sourceId: publicSource.id, quote: publicSource.text }],
       },
-    ],
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: [],
-  });
+    ]),
+  );
   expect(store.project("maya", "public")?.claims.map((c) => c.id)).toEqual(["public"]);
   store.removeTranscript("meeting1");
   expect(store.get("maya")?.claims.map((c) => c.id)).toEqual(["public"]);
@@ -247,8 +264,10 @@ test("a claim cited by both a surviving public source and a purged transcript ke
     supersedes: [],
     changeReason: null,
   };
-  store.publish("maya", 0, {
-    claims: [
+  store.publish(
+    "maya",
+    0,
+    account([
       {
         ...claim,
         id: "mixed",
@@ -258,12 +277,8 @@ test("a claim cited by both a surviving public source and a purged transcript ke
           { sourceId: privateSource.id, quote: privateSource.text },
         ],
       },
-    ],
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: [],
-  });
+    ]),
+  );
   store.removeTranscript("meeting9");
   const surviving = store.get("maya")?.claims ?? [];
   expect(surviving.map((c) => c.id)).toEqual(["mixed"]);
@@ -273,8 +288,10 @@ test("a claim cited by both a surviving public source and a purged transcript ke
 
 test("merge retains grounded records on the survivor and removes the duplicate dossier", () => {
   const store = new PersonDossierStore(workspace());
-  store.publish("duplicate", 0, {
-    claims: [
+  store.publish(
+    "duplicate",
+    0,
+    account([
       {
         id: "unknown",
         section: "context",
@@ -289,12 +306,8 @@ test("merge retains grounded records on the survivor and removes the duplicate d
         supersedes: [],
         changeReason: null,
       },
-    ],
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: [],
-  });
+    ]),
+  );
   store.merge("survivor", "duplicate");
   expect(store.get("survivor")?.claims[0]?.statement).toBe("Working language is unknown");
   expect(store.get("duplicate")).toBeNull();
@@ -337,19 +350,10 @@ test("merge rebuilds the survivor's sections from the merged claims and keeps on
     workIds: [],
     claimIds: ["d"],
   };
-  store.publish("survivor", 0, {
-    claims: [claim("s")],
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: [],
-  });
+  store.publish("survivor", 0, account([claim("s")]));
   store.publish("duplicate", 0, {
-    claims: [claim("d")],
-    works: [],
+    ...account([claim("d")]),
     expertise: [expertise],
-    connections: [],
-    sections: [],
   });
   store.merge("survivor", "duplicate");
   const survivor = store.get("survivor")!;
@@ -378,28 +382,22 @@ test("detaching a wrongly attributed source rejects future publication from that
     access: "retrieved",
     acquisition: "website",
   });
-  const content = {
-    claims: [
-      {
-        id: "c",
-        section: "work" as const,
-        statement: source.text,
-        status: "claimed" as const,
-        nature: "statement" as const,
-        matchConfidence: "high" as const,
-        effectiveFrom: null,
-        effectiveTo: null,
-        citations: [{ sourceId: source.id, quote: source.text }],
-        supports: [],
-        supersedes: [],
-        changeReason: null,
-      },
-    ],
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: [],
-  };
+  const content = account([
+    {
+      id: "c",
+      section: "work" as const,
+      statement: source.text,
+      status: "claimed" as const,
+      nature: "statement" as const,
+      matchConfidence: "high" as const,
+      effectiveFrom: null,
+      effectiveTo: null,
+      citations: [{ sourceId: source.id, quote: source.text }],
+      supports: [],
+      supersedes: [],
+      changeReason: null,
+    },
+  ]);
   store.publish("maya", 0, content);
   store.detach("maya", source.id);
   expect(store.get("maya")?.claims).toEqual([]);
@@ -442,24 +440,12 @@ test("detaching a source removes same-text mirrors instead of failing the detach
     supersedes: [],
     changeReason: null,
   });
-  store.publish("maya", 0, {
-    claims: [claim("original", original), claim("mirror", mirror)],
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: [],
-  });
+  store.publish("maya", 0, account([claim("original", original), claim("mirror", mirror)]));
   store.detach("maya", original.id);
   expect(store.get("maya")?.claims).toEqual([]);
-  expect(() =>
-    store.publish("maya", 2, {
-      claims: [claim("again", mirror)],
-      works: [],
-      expertise: [],
-      connections: [],
-      sections: [],
-    }),
-  ).toThrow(/rejected attribution/i);
+  expect(() => store.publish("maya", 2, account([claim("again", mirror)]))).toThrow(
+    /rejected attribution/i,
+  );
 });
 
 test("identical mirrored source text is one independent source family", () => {
@@ -518,20 +504,8 @@ test("detachment preserves historical revisions but denies current attribution a
     supersedes: [],
     changeReason: null,
   };
-  store.publish("maya", 0, {
-    claims: [claim],
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: [],
-  });
-  store.publish("maya", 1, {
-    claims: [{ ...claim, status: "contested" }],
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: [],
-  });
+  store.publish("maya", 0, account([claim]));
+  store.publish("maya", 1, account([{ ...claim, status: "contested" }]));
   expect(store.getRevision("maya", 1)?.claims[0]?.status).toBe("supported");
   const historical = store.getRevision("maya", 1);
   const oldResearch = store.get("maya")!;
@@ -639,4 +613,143 @@ test("audit F13: section prose separates fragments without doubling existing sen
   expect(synthesizeSections(claims).find((section) => section.key === "overview")?.summary).toBe(
     "Maya built Atlas. Maya deployed Nova. What changed?",
   );
+});
+
+test("a publication with Person Evidence must carry the exact readable account for those claims", () => {
+  const store = new PersonDossierStore(workspace());
+  const source = store.retainSource({
+    url: "https://example.com/profile",
+    title: "Profile",
+    author: "Maya Okafor",
+    publishedAt: "2026-09-01",
+    retrievedAt: "2026-09-24T00:00:00Z",
+    text: "Maya Okafor is a sensor lead. Maya Okafor leads the Atlas rollout.",
+    family: "example.com",
+    sourceClass: "self-report",
+    visibility: "public",
+    completeness: "full",
+    access: "retrieved",
+    acquisition: "website",
+  });
+  const claims = [
+    {
+      id: "sensor-lead",
+      section: "career" as const,
+      statement: "Maya Okafor is a sensor lead",
+      status: "supported" as const,
+      nature: "statement" as const,
+      matchConfidence: "high" as const,
+      effectiveFrom: null,
+      effectiveTo: null,
+      citations: [{ sourceId: source.id, quote: "Maya Okafor is a sensor lead" }],
+      supports: [],
+      supersedes: [],
+      changeReason: null,
+    },
+    {
+      id: "atlas",
+      section: "work" as const,
+      statement: "Maya Okafor leads the Atlas rollout",
+      status: "supported" as const,
+      nature: "statement" as const,
+      matchConfidence: "high" as const,
+      effectiveFrom: null,
+      effectiveTo: null,
+      citations: [{ sourceId: source.id, quote: "Maya Okafor leads the Atlas rollout" }],
+      supports: [],
+      supersedes: [],
+      changeReason: null,
+    },
+  ];
+  const canonical = synthesizeSections(claims);
+  const wrongEvidence = canonical.map((section) =>
+    section.key === "overview" ? { ...section, claimIds: ["sensor-lead"] } : section,
+  );
+
+  expect(() =>
+    store.publish("maya", 0, {
+      claims,
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: wrongEvidence,
+    }),
+  ).toThrow(/readable account|person evidence|section/i);
+  expect(store.get("maya")).toBeNull();
+});
+
+test("current and exact historical reads preserve each published account and its evidence references", () => {
+  const store = new PersonDossierStore(workspace());
+  const firstSource = store.retainSource({
+    url: "https://example.com/first",
+    title: "First account",
+    author: "Maya Okafor",
+    publishedAt: null,
+    retrievedAt: "2026-09-24T00:00:00Z",
+    text: "Maya Okafor is a sensor lead.",
+    family: "example.com",
+    sourceClass: "self-report",
+    visibility: "public",
+    completeness: "full",
+    access: "retrieved",
+    acquisition: "website",
+  });
+  const firstClaim = {
+    id: "sensor-lead",
+    section: "career" as const,
+    statement: "Maya Okafor is a sensor lead.",
+    status: "supported" as const,
+    nature: "statement" as const,
+    matchConfidence: "high" as const,
+    effectiveFrom: null,
+    effectiveTo: null,
+    citations: [{ sourceId: firstSource.id, quote: firstSource.text }],
+    supports: [],
+    supersedes: [],
+    changeReason: null,
+  };
+  const first = store.publish("maya", 0, {
+    claims: [firstClaim],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: synthesizeSections([firstClaim]),
+  });
+  const secondSource = store.retainSource({
+    url: "https://example.com/second",
+    title: "Second account",
+    author: "Maya Okafor",
+    publishedAt: null,
+    retrievedAt: "2026-09-24T00:00:00Z",
+    text: "Maya Okafor leads the Atlas rollout.",
+    family: "example.com",
+    sourceClass: "self-report",
+    visibility: "public",
+    completeness: "full",
+    access: "retrieved",
+    acquisition: "website",
+  });
+  const secondClaim = {
+    ...firstClaim,
+    id: "atlas",
+    section: "work" as const,
+    statement: "Maya Okafor leads the Atlas rollout.",
+    citations: [{ sourceId: secondSource.id, quote: secondSource.text }],
+  };
+  const second = store.publish("maya", 1, {
+    claims: [firstClaim, secondClaim],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: synthesizeSections([firstClaim, secondClaim]),
+  });
+
+  expect(store.get("maya")).toEqual(second);
+  expect(
+    store.get("maya")?.sections.map(({ key, summary, claimIds }) => ({ key, summary, claimIds })),
+  ).toEqual(second.sections.map(({ key, summary, claimIds }) => ({ key, summary, claimIds })));
+  expect(store.getRevision("maya", first.revision)).toEqual(first);
+  expect(store.getRevision("maya", first.revision)?.sections).toEqual(first.sections);
+  expect(store.getRevision("maya", first.revision)?.claims).toEqual([firstClaim]);
+  expect(store.getRevision("maya", first.revision)?.sourceIds).toEqual([firstSource.id]);
 });

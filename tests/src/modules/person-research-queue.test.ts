@@ -550,8 +550,8 @@ test("resumes the retained document after interruption during extraction without
   expect(searches).toBe(1);
   expect(retrievals).toBe(2);
   expect(extractions).toBe(2);
-  /* `calls` counts model calls now that requests are bounded separately:
-     one extraction before the interruption and one after it. */
+  /* The first model call was interrupted before it produced a reusable part;
+     restart must make the second call against the retained document. */
   expect(restarted.status().jobs[0].calls).toBe(2);
   expect(restarted.status().jobs[0].elapsedMilliseconds).toBeGreaterThanOrEqual(0);
 });

@@ -46,6 +46,18 @@ while a prepared one kept the aliases its manifest recorded. A result written wi
 still adopts as the alias-less revision it is, never as an integrity failure. No stored format is
 added: the field lives inside the Run directory's revision result beside the rest of it.
 
+**Amended by [issue #493](https://github.com/nicolas-found42/chief-of-staff-demo/issues/493):**
+model-backed and injected extraction no longer build the checked result separately. One
+`finalizeDebriefRevision()` contract applies required-section outcomes, resolves owners from
+Catalog review state, strips recipient emails that the source did not verify, canonicalizes the
+required-section availability vector, validates candidate accounting against the exact Action
+Item count, and serializes the one revision. A newly written checked result therefore carries
+the complete availability vector and one string-or-null candidate alias per Action Item, while
+durable parsing continues to accept legacy results where either field is absent. A present
+vector that names unknown, duplicate or missing sections, or whose alias vector disagrees with
+the Action Item list or the materialization mappings, is an integrity failure before
+publication.
+
 Public Module and HTTP regressions cover zero-output and nonzero-output publication, a refused
 mapping write, an interrupted preparation, damaged result and manifest bytes, a corrupt review
 record that is refused rather than re-created, a missing projection, a missing completion receipt

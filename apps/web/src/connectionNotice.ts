@@ -15,10 +15,12 @@ import type { GoogleStatus } from "@chief-of-staff-demo/shared";
  */
 export interface ConnectionNotice {
   text: string;
-  /** Label for the link to Settings, which is where every one of these is fixed. */
+  /** Label for the stable Guided Setup destination. */
   action: string;
+  href: string;
 }
 
+const GUIDED_SETUP_DESTINATION = "/onboarding?goal=meetings";
 /** Whole days: the expiry is an estimate, and worth no more precision than that. */
 function daysAgo(iso: string): number {
   return Math.round((Date.now() - new Date(iso).getTime()) / 86_400_000);
@@ -42,7 +44,7 @@ const DAY = new Intl.DateTimeFormat(undefined, {
  * event in different words — a `RunsPage` local that said "within a day" and
  * this one, which names the day.
  */
-export function expiryNote(status: GoogleStatus): string | null {
+function expiryNote(status: GoogleStatus): string | null {
   if (!status.lastConnectedAt) {
     return null;
   }
@@ -91,16 +93,19 @@ export function connectionNotice(status: GoogleStatus | null): ConnectionNotice 
       return {
         text: "Google is not set up. Gmail and Google Tasks need a connection; local Tasks remain available.",
         action: "Set up Google",
+        href: GUIDED_SETUP_DESTINATION,
       };
     case "disconnected":
       return {
         text: "Google is not signed in. Gmail and Google Tasks need a connection; local Tasks remain available.",
         action: "Sign in with Google",
+        href: GUIDED_SETUP_DESTINATION,
       };
     case "expired":
       return {
         text: "The saved Google sign-in has expired as expected. Reconnect for Gmail and Google Tasks; local Tasks remain available.",
         action: "Reconnect Google",
+        href: GUIDED_SETUP_DESTINATION,
       };
     case "connected": {
       /* A working connection about to lapse still has something to say, and it
@@ -108,7 +113,9 @@ export function connectionNotice(status: GoogleStatus | null): ConnectionNotice 
          carries the date, so a near expiry with nothing to report — no recorded
          sign-in — stays silent rather than warning without a reason. */
       const note = expiryNear(status) ? expiryNote(status) : null;
-      return note ? { text: note, action: "Sign in with Google" } : null;
+      return note
+        ? { text: note, action: "Sign in with Google", href: GUIDED_SETUP_DESTINATION }
+        : null;
     }
   }
 }

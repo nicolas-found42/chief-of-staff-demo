@@ -15,6 +15,15 @@ This refines ADRs 0037/0061/0078 and extends ADR-0084. Independent section retri
 retain immutable dependencies and exclude rejected prose. The detailed technical contract and
 migration/acceptance matrix live on the issue. This is a specification awaiting implementation.
 
+## Finalization amendment (issue #493)
+
+Both extraction producers enter the same checked-revision finalization before publication. Its
+canonical availability vector and one candidate alias or null per Action Item travel with the
+revision bytes, while the permanent review-only rule, immutable identity and retry/adoption
+behavior above remain unchanged. Legacy results that omit either field remain readable and
+adoptable under their original contract.
+
+
 ## Implementation decisions (issue #361)
 
 The implementation keeps every Debrief artifact inside the Run directory, so **no Workspace stored

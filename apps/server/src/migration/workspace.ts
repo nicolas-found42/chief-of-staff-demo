@@ -733,17 +733,21 @@ function validateComposite(
  * an earlier attempt already removed is simply absent.
  */
 
-/** The three answers to "where does this Workspace stand in the cutover?". */
+/** The two durable origins a Workspace can have after initialization. */
+export type MigrationOrigin = "pristine" | "migrated";
+
+/** The three answers to "where does this Workspace stand?". */
 export type MigrationState = "fresh" | "required" | "completed";
 
 /**
  * The content-free record a completed reset leaves behind: counts, never paths,
  * key names, or stored values. `directories` and `files` count the product
  * directories and whole-file records the reset deleted, mirroring the boundary
- * tables above.
+ * tables above. Origin is recorded by the operation, never inferred from counts.
  */
 export interface MigrationReceipt {
   schemaVersion: 1;
+  origin: MigrationOrigin;
   migratedAt: string; // ISO timestamp
   durationMs: number;
   categories: {
@@ -799,6 +803,16 @@ export function readMigrationState(workspaceDir: string): MigrationState {
     : "fresh";
 }
 
+/**
+ * The origin is durable metadata. A receipt written before the field existed
+ * can only have come from the explicit reset path, so its compatibility value
+ * is `migrated`; a fresh Workspace has no migration receipt and is pristine.
+ */
+export function readMigrationOrigin(workspaceDir: string): MigrationOrigin {
+  if (existsSync(join(workspaceDir, MIGRATION_DIRECTORY, MIGRATION_MARKER_FILE))) return "migrated";
+  return "pristine";
+}
+
 /** The receipt a completed reset left, or null when there is none or it cannot be read. */
 export function readMigrationReceipt(workspaceDir: string): MigrationReceipt | null {
   try {
@@ -806,7 +820,10 @@ export function readMigrationReceipt(workspaceDir: string): MigrationReceipt | n
       readFileSync(join(workspaceDir, MIGRATION_DIRECTORY, MIGRATION_RECEIPT_FILE), "utf8"),
     );
     if (!isPlainObject(parsed) || parsed.schemaVersion !== 1) return null;
-    return parsed as unknown as MigrationReceipt;
+    return {
+      ...(parsed as unknown as Omit<MigrationReceipt, "origin">),
+      origin: parsed.origin === "pristine" ? "pristine" : "migrated",
+    };
   } catch {
     return null;
   }
@@ -999,6 +1016,7 @@ export function executeWorkspaceMigration(
   const configRewrite = rewrites.find((rewrite) => rewrite.entry === "config.json");
   const relayRewrite = rewrites.find((rewrite) => rewrite.entry === "relay.json");
   const receipt: MigrationReceipt = {
+    origin: "migrated",
     schemaVersion: 1,
     migratedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,

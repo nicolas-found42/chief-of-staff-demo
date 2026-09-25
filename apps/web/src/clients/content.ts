@@ -9,6 +9,8 @@ import type {
   OutlineSetOutcome,
   PlatformOutline,
   PlatformOutlineApproval,
+  ContentScoutSetup,
+  ContentScoutReadiness,
   BrandProfileRevision,
   BrandProfileRevisionSummary,
   BrandProfileProposal,
@@ -47,6 +49,8 @@ import { request } from "../client";
  */
 
 export interface ContentScoutState {
+  setup?: ContentScoutSetup;
+  brandProfileScanReadiness?: ContentScoutReadiness;
   brandProfile: BrandProfileRevision | null;
   brandProfileProposal: BrandProfileProposal | null;
   brandProfileRevisions: BrandProfileRevisionSummary[];

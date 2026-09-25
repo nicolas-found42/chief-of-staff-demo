@@ -5,7 +5,7 @@ import { MeetingDebriefContent } from "../components/MeetingDebriefContent";
 import { ReadingDisclosure } from "../components/ReadingDisclosure";
 import "./meetingWizard.css";
 import { MeetingArtifactStatus } from "../components/MeetingReadRow";
-import { meetingDate } from "../meetingDisplay";
+import { meetingDate, meetingIntakeMessage } from "../meetingDisplay";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type {
@@ -782,6 +782,13 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
           <TabLabel label="Debrief" state={debriefState} />
         </button>
       </div>
+
+      {readView?.meeting.debrief.status === "no-transcript" ? (
+        <section className="card" aria-labelledby="meeting-intake-readiness-heading">
+          <h2 id="meeting-intake-readiness-heading">Transcript Intake</h2>
+          <p>{meetingIntakeMessage(readView.intakeReadiness)}</p>
+        </section>
+      ) : null}
 
       {readView ? (
         <>

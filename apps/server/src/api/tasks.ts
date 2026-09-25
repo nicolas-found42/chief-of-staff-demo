@@ -31,7 +31,6 @@ import {
 } from "../tasks/tasks.js";
 import type { ActionItemQuery, WorkspaceActionItems } from "../tasks/action-items.js";
 import { promotionEligibility } from "../tasks/promotion-eligibility.js";
-import type { PromotionReleaseEvidence } from "../tasks/promotion-authorization.js";
 import { PromotionAuthorizationError } from "../tasks/promotion-authorization.js";
 import { promoteActionItem } from "../tasks/promotion.js";
 import type { TaskLinking, TaskLinkResolution } from "../tasks/external-link.js";
@@ -66,15 +65,13 @@ export interface TasksApiContext {
     set: (policy: ActionItemPolicy) => void;
   };
   /**
-   * Automatic promotion's release restriction and the owner's explicit
-   * enablement (#360, ADR-0083). Absent when the Workspace composes no
-   * configuration store, and then automation is restricted: the release is
-   * recorded state, and nothing stands in for it.
+   * The public availability and the owner's explicit enablement (#479).
+   * Release recording remains on WorkspacePromotionAuthorization for an
+   * operator/deployment seam; this ordinary HTTP interface cannot attest it.
    */
   promotion?: {
     facts: () => AutomaticPromotionAuthorizationFacts;
     status: () => AutomaticPromotionStatus;
-    release: (evidence: PromotionReleaseEvidence) => AutomaticPromotionAuthorization;
     enable: () => AutomaticPromotionAuthorization;
     disable: () => AutomaticPromotionAuthorization;
   };
@@ -810,8 +807,8 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
       ...(promotion
         ? {
             /* Why automation would or would not answer for each proposal
-               (#360 §4): shown beside the proposal rather than left to be
-               inferred from a policy setting. */
+           (#360 §4): shown beside the proposal rather than left to be
+           inferred from a policy setting. */
             automation: Object.fromEntries(
               items.map((item) => [
                 item.id,
@@ -834,6 +831,8 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     };
     if (query.source === "unavailable")
       index.items = index.items.filter((item) => index.context?.[item.id]?.meeting === null);
+    if (query.source === "available")
+      index.items = index.items.filter((item) => index.context?.[item.id]?.meeting !== null);
     return index;
   });
 
@@ -1107,14 +1106,9 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
   });
 
   /**
-   * Recording a release, and the owner's explicit enablement of automatic
-   * promotion (#360, ADR-0083, spec #343 §7).
-   *
-   * Deliberately not a settings field. A release has to name the retained
-   * evidence it stands on, and enablement is available only once a release is
-   * recorded — so neither passing tests nor a saved preference can turn
-   * automation on from here, and the answer always says which of the two is
-   * holding it back.
+   * The owner's explicit enablement of automatic promotion (#479). A release
+   * is an operator/deployment fact recorded outside this ordinary HTTP
+   * interface, so the public route accepts only the two owner actions.
    */
   app.put("/api/action-item-promotion", async (request: FastifyRequest, reply: FastifyReply) => {
     const promotion = ctx.promotion;
@@ -1124,38 +1118,13 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     }
     const body = (request.body ?? {}) as {
       action?: string;
-      evidence?: { reference?: string; checksum?: string };
       confirmedExternalWrites?: boolean;
     };
-    if (body.action === "release") {
-      const evidence = {
-        reference: body.evidence?.reference?.trim() ?? "",
-        checksum: body.evidence?.checksum?.trim() ?? "",
-      };
-      if (evidence.reference === "" || !/^[0-9a-f]{64}$/.test(evidence.checksum)) {
-        reply.code(400);
-        return {
-          error: "invalid-release-evidence",
-          message:
-            "A release names the retained evidence it stands on: a reference and the sha256 of those exact bytes.",
-        };
-      }
-      try {
-        promotion.release(evidence);
-      } catch (error) {
-        if (error instanceof PromotionAuthorizationError) {
-          reply.code(409);
-          return { error: error.code, message: error.message };
-        }
-        throw error;
-      }
-      return policyAnswer();
-    }
     if (body.action !== "enable" && body.action !== "disable") {
       reply.code(400);
       return {
         error: "invalid-promotion-action",
-        message: 'Automatic promotion takes one of: "release", "enable", "disable".',
+        message: 'Automatic promotion takes one of: "enable", "disable".',
       };
     }
     const outward = outwardDestination();
@@ -1181,7 +1150,7 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     return policyAnswer();
   });
 
-  /** The policy, the release restriction, and what automation would send outward. */
+  /** The saved preference, public availability, and outward destination. */
   function policyAnswer(): {
     policy: ActionItemPolicy;
     externalDestination: string | null;
@@ -1193,10 +1162,9 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
       externalDestination: outwardDestination(),
       automaticPromotion: ctx.promotion?.status() ?? {
         effective: false,
-        reason:
-          "Automatic promotion is restricted: this Workspace composes no authorization record.",
-        release: { state: "restricted", basis: "no-authorization-surface", since: null },
-        enabledAt: null,
+        state: "unavailable",
+        message: "Automatic creation is unavailable in this release and is not active.",
+        nextAction: null,
       },
     };
   }

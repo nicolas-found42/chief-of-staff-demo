@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { openGoogleConnection } from "../../../apps/server/src/google/connection";
@@ -161,7 +161,25 @@ const config: AppConfig = {
   },
 };
 
+const originalGoogleEnvironment = {
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+};
+
+function setGoogleCredentials(clientId = "", clientSecret = ""): void {
+  process.env.GOOGLE_CLIENT_ID = clientId;
+  process.env.GOOGLE_CLIENT_SECRET = clientSecret;
+}
+
+function restoreGoogleEnvironment(): void {
+  for (const [name, value] of Object.entries(originalGoogleEnvironment)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
 beforeEach(() => {
+  setGoogleCredentials();
   vi.clearAllMocks();
   sdk.sheets.spreadsheets.create.mockResolvedValue({
     data: { spreadsheetId: "sheet-1", spreadsheetUrl: "https://docs.google.com/sheet-1" },
@@ -200,6 +218,10 @@ beforeEach(() => {
     tokens: { refresh_token: "new-refresh", scope: GOOGLE_SCOPES.join(" ") },
   });
   sdk.oauthClient.getAccessToken.mockResolvedValue({ token: "access-token" });
+});
+
+afterEach(() => {
+  restoreGoogleEnvironment();
 });
 
 describe("Sheets Output Adapter", () => {
@@ -471,9 +493,9 @@ describe("Google Outputs surface", () => {
 describe("Google connection SDK probes", () => {
   function connectionConfig(): ConfigStore {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-google-probes-"));
+    setGoogleCredentials("id.apps", "secret");
     const store = new ConfigStore(join(workspaceDir, "config.json"));
     store.load();
-    store.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
     store.setGoogleRefreshToken("refresh-token");
     return store;
   }

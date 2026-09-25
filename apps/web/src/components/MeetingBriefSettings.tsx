@@ -288,7 +288,9 @@ export function MeetingBriefSettings({
       <section className="settings-section" aria-labelledby="section-meeting-brief">
         <h2 id="section-meeting-brief">Meeting Brief Generator</h2>
         <div className="card" role="group" aria-labelledby="group-meeting-brief-domains">
-          <h3 id="group-meeting-brief-domains">Internal Domains</h3>
+          <h3 id="group-meeting-brief-domains" tabIndex={-1}>
+            Internal Domains
+          </h3>
           <p className="muted">
             Email domains belonging to your organization. Attendees from these domains are not
             treated as External Guests. Consumer domains remain external and are never employer
@@ -321,7 +323,9 @@ export function MeetingBriefSettings({
         </div>
 
         <div className="card" role="group" aria-labelledby="group-meeting-brief-bundles">
-          <h3 id="group-meeting-brief-bundles">Workflow bundles</h3>
+          <h3 id="group-meeting-brief-bundles" tabIndex={-1}>
+            Workflow bundles
+          </h3>
           <p className="muted">
             Every provider a bundle selects is required: a Brief is never presented as complete when
             configured evidence is missing. A provider leaves the required set only through an

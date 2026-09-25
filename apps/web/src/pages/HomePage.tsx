@@ -97,7 +97,7 @@ export function HomePage() {
   useEffect(() => {
     let live = true;
     migrationApi
-      .status()
+      .status("meetings")
       .then((payload) => {
         if (live) setOnboarding(payload.onboarding);
       })
@@ -239,9 +239,15 @@ export function HomePage() {
           before either. */}
       {onboarding !== null && !onboarding.complete && (
         <div className="banner" role="status">
-          Workspace setup is not finished. <Link to="/onboarding">Finish setup</Link>
+          Meeting setup is not finished.{" "}
+          <Link to="/onboarding?goal=meetings">Finish Meeting setup</Link>
         </div>
       )}
+      {onboarding?.otherSetup && !onboarding.otherSetup.complete ? (
+        <p className="muted">
+          Other product setup is optional. <Link to="/onboarding">Review other setup</Link>
+        </p>
+      ) : null}
 
       {/* The rail leads the markup and the Modules follow, so a reader who takes
           the page in one column meets what needs them before what merely exists
@@ -274,8 +280,10 @@ export function HomePage() {
           </section>
 
           {rows.length > 0 && (
-            <section className="card home-rail-card">
-              <h2 className="visually-hidden">Needs your attention</h2>
+            <section className="card home-rail-card" aria-labelledby="home-attention-heading">
+              <h2 id="home-attention-heading" className="visually-hidden">
+                Needs your attention
+              </h2>
               <ul className="home-rail">
                 {rows.map((row) => (
                   <li key={row.id} className="home-rail-row">

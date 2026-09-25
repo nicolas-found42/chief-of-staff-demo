@@ -251,6 +251,176 @@ test("current specialist Debrief link resolves to its owning Meeting", async ({
   await expect(page.getByRole("heading", { name: "Summary", exact: true })).toBeVisible();
 });
 
+test("retained Debrief navigation keeps canonical pending and reviewed Action Items in the run", async ({
+  page,
+  request,
+}) => {
+  const transcriptId = "drive_retained_navigation_r1";
+  const transcript = {
+    id: transcriptId,
+    source: {
+      sourceSystem: "drive",
+      externalFileId: "retained-navigation",
+      fileName: "Retained source notes.md",
+      sourceUrl: null,
+      checksum: "retained-navigation-checksum",
+      observedRevision: 1,
+      modifiedAt: null,
+    },
+    ingestedAt: "2026-08-01T12:00:00.000Z",
+    extractorVersion: 1,
+    normalizedText: "Alice: We will send the proposal and follow up with the customer.",
+    meetingDate: "2026-08-01",
+    occurrence: null,
+    speakers: ["Alice"],
+    speakerIdentityMappings: [],
+    roster: [],
+    meetingId: null,
+    association: null,
+  };
+  const targetStart = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const targetEnd = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const targetEvent = {
+    calendarId: "primary",
+    eventId: "retained-target",
+    occurrenceId: targetStart,
+    version: "v1",
+    summary: "Current customer planning",
+    startAt: targetStart,
+    endAt: targetEnd,
+    organizer: { email: "owner@example.com", displayName: "Owner" },
+    attendees: [
+      { email: "owner@example.com", responseStatus: "accepted", organizer: true },
+      { email: "customer@example.com", responseStatus: "accepted" },
+    ],
+  };
+  expect(
+    (
+      await request.post("/api/test/meeting-brief/schedule", {
+        data: { event: targetEvent },
+      })
+    ).ok(),
+  ).toBe(true);
+  expect(
+    (
+      await request.post("/api/test/meeting-brief/seed-transcript", {
+        data: { record: transcript },
+      })
+    ).ok(),
+  ).toBe(true);
+  const extraction = {
+    version: 1 as const,
+    summary: "Retained source review",
+    decisions: [],
+    actionItems: [
+      {
+        title: "Send the customer proposal",
+        owner: "Alice",
+        ownerMentionId: null,
+        ownerProfileId: null,
+        dueDate: null,
+      },
+      {
+        title: "Follow up with the customer",
+        owner: "Alice",
+        ownerMentionId: null,
+        ownerProfileId: null,
+        dueDate: null,
+      },
+    ],
+    openQuestions: [],
+    effectivenessEvidence: "The commitments were explicit.",
+    coachingAdvice: "Confirm the follow-up before the next sync.",
+    suggestedRecipients: [],
+  };
+  expect(
+    (
+      await request.post("/api/test/meeting-debrief/extraction", {
+        data: { transcriptId, extraction },
+      })
+    ).ok(),
+  ).toBe(true);
+  expect((await request.post("/api/meeting-brief/reconcile")).ok()).toBe(true);
+
+  const index = (await (await request.get("/api/meeting-debrief/index")).json()) as {
+    entries: { runId: string; transcriptId: string; meetingId: string | null }[];
+  };
+  const run = index.entries.find((entry) => entry.transcriptId === transcriptId);
+  expect(run).toBeDefined();
+  const runId = run!.runId;
+  const queue = (await (await request.get(`/api/action-items?debriefRunId=${runId}`)).json()) as {
+    items: { id: string; state: string }[];
+  };
+  expect(queue.items).toHaveLength(2);
+  expect((await request.post(`/api/action-items/${queue.items[0].id}/dismiss`)).ok()).toBe(true);
+
+  const meetings = (await (await request.get("/api/meetings/list")).json()) as {
+    meetings: { id: string; title: string; occurrenceKey: string | null }[];
+  };
+  const owned = meetings.meetings.find(
+    (meeting) => meeting.occurrenceKey === null && meeting.title === "Retained source notes",
+  );
+  const target = meetings.meetings.find((meeting) => meeting.occurrenceKey !== null);
+  expect(owned).toBeDefined();
+  expect(target).toBeDefined();
+  expect(
+    (
+      await request.post(`/api/meetings/${owned!.id}/merge`, {
+        data: { targetOccurrenceKey: target!.occurrenceKey },
+      })
+    ).ok(),
+  ).toBe(true);
+
+  await page.goto(`/meetings/recovery/${runId}`);
+  await expect(page.getByRole("heading", { name: "Retained Meeting proposals" })).toBeVisible();
+  await expect(page.getByText("1 pending · 1 reviewed", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Try the retained Debrief", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/meeting-debrief/${runId}`));
+  await expect(page.getByRole("heading", { name: "Summary", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Review on source Meeting", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/meetings/recovery/${runId}`));
+  await expect(page.getByText("1 pending · 1 reviewed", { exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/meeting-debrief/${runId}`));
+  await expect(page.getByRole("heading", { name: "Summary", exact: true })).toBeVisible();
+});
+
+test("retained source navigation exposes source availability filters and a source-meeting shortcut", async ({
+  page,
+  request,
+}) => {
+  await request.post("/api/test/meetings/overview-fixture");
+  await page.goto("/tasks?source=unavailable#action-items");
+  const approvals = page.getByRole("region", { name: "Meeting approvals", exact: true });
+  await expect(approvals).toContainText("Awaiting approval (0)");
+  await expect(approvals.getByRole("combobox", { name: "Source availability" })).toHaveValue(
+    "unavailable",
+  );
+  await expect(
+    approvals.getByRole("link", { name: "Review on source Meeting", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("Home prioritizes approval work and explains a failed Meeting stage", async ({
+  page,
+  request,
+}) => {
+  const fixture = (await (await request.post("/api/test/meetings/overview-fixture")).json()) as {
+    briefRunId: string;
+  };
+  await page.goto("/");
+  const work = page.getByRole("region", { name: "Your work", exact: true });
+  await expect(work).toContainText("Awaiting approval (47)");
+  const attention = page.getByRole("region", { name: "Needs your attention", exact: true });
+  await expect(attention).toContainText("snapshot");
+  await expect(attention).toContainText("synthetic private diagnostic");
+  await expect(attention).not.toContainText("synthetic private failure detail");
+  await expect(
+    attention.getByRole("link", { name: "Open failed Meeting Brief", exact: true }),
+  ).toHaveAttribute("href", "/meetings/brief");
+  expect(fixture.briefRunId).toBeTruthy();
+});
+
 test("weekly work keeps accepted Task previews and complete Meeting approval navigation", async ({
   page,
   request,
@@ -418,7 +588,7 @@ test("earlier Debrief links retain their exact version and current links resolve
   await expect(page.getByText("We agreed on the September 5 plan.", { exact: true })).toBeVisible();
   await expect(page.getByText("Revised September 5 summary.", { exact: true })).toHaveCount(0);
   const actions = page.getByRole("region", { name: "Action Items", exact: true });
-  await expect(actions).toContainText("Original extracted proposals");
+  await expect(actions).toContainText("This readable Debrief lists the original extraction.");
   await expect(actions.getByRole("button", { name: "Create Task", exact: true })).toHaveCount(0);
   await expect(actions.getByRole("link", { name: "Review on source Meeting" })).toBeVisible();
 

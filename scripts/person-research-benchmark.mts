@@ -12,6 +12,7 @@ import {
   type BenchmarkReport,
   type BenchmarkCollectionResult,
   type PersonResearchOperationOutcome,
+  type PersonDossier,
 } from "../packages/shared/src/index.js";
 import { ConfigStore } from "../apps/server/src/config.js";
 import {
@@ -765,6 +766,7 @@ export async function runBenchmarkCli(
       requireWork(repeatRun);
 
       const workspaceDir = mkdtempSync(join(tmpdir(), "person-benchmark-collection-"));
+      let publicDossier: ((profileId: string) => PersonDossier | null) | null = null;
       try {
         const ports: EvaluationPorts = {
           workspaceDir,
@@ -875,6 +877,7 @@ export async function runBenchmarkCli(
             researchEnabled: () => false,
           });
         }
+        publicDossier = (profileId) => people.research.dossier(profileId, "public");
         collection = await evaluateCollection(people, population, corpus.scenarios, {
           references: corpus.people,
           judge: judgePort(repeat),
@@ -896,10 +899,17 @@ export async function runBenchmarkCli(
               results.flatMap((result) =>
                 result.assessment?.operationId ? [result.assessment.operationId] : [],
               ),
+              (profileId) => {
+                if (!publicDossier) throw new Error("research population is unavailable");
+                return publicDossier(profileId);
+              },
             );
             writeStderr(`Retained evidence: ${evidenceDirectory}\n`);
           }
         } catch (error) {
+          writeStderr(
+            `Evidence snapshot failed: ${error instanceof Error ? error.message : "unknown error"}\n`,
+          );
           status = "interrupted";
           statusDetail = `Evidence snapshot failed: ${error instanceof Error ? error.message : "unknown error"}`;
         } finally {

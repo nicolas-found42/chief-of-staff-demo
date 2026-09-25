@@ -183,8 +183,8 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
           not a gate: both forms below stay usable throughout. */}
       <ol className="muted">
         <li>
-          Add a model provider key in{" "}
-          <Link to="/settings#group-provider">Settings → Extraction provider</Link>.
+          Provision the installation model credential in{" "}
+          <Link to="/onboarding?goal=meetings">Guided Setup</Link>.
         </li>
         <li>
           Create a Person Profile for yourself, using the email your Google account is connected

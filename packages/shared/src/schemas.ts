@@ -429,19 +429,12 @@ export const ConfigSchema = z.strictObject({
 export type AppConfig = z.infer<typeof ConfigSchema>;
 export type ModuleConfigs = AppConfig["modules"];
 
-/** PUT /api/config body. Absent secret fields keep their stored values. */
+/** PUT /api/config accepts Workspace-owned configuration only. */
 export const ConfigUpdateSchema = z.strictObject({
   provider: ProviderIdSchema.optional(),
   model: z.string().optional(),
   models: ModelsSchema.optional(),
-  apiKey: z.string().optional(),
   tasklistName: z.string().optional(),
-  google: z
-    .strictObject({
-      clientId: z.string().optional(),
-      clientSecret: z.string().optional(),
-    })
-    .optional(),
   drive: z
     .strictObject({
       enabled: z.boolean().optional(),
@@ -470,17 +463,26 @@ export interface SecretHint {
   hint: string;
 }
 
-/** GET /api/config response payload: every secret replaced by a hint. */
+export type InstallationCredentialState = "configured" | "missing" | "not-required";
+export type InstallationProviderId = "openrouter" | "openai" | "anthropic" | "gemini";
+
+export interface InstallationCredentialStatus {
+  state: InstallationCredentialState;
+}
+
+/** Public, content-free installation credential state. Secret values never cross this boundary. */
+export interface InstallationStatus {
+  googleClient: InstallationCredentialStatus;
+  providerKeys: Record<InstallationProviderId, InstallationCredentialStatus>;
+  ollama: InstallationCredentialStatus;
+}
+
+/** GET /api/config response payload: Workspace configuration with installation secrets absent. */
 export interface RedactedConfig {
   provider: ProviderId;
   model: string;
   models?: z.infer<typeof ModelsSchema>;
   tasklistName: string;
-  apiKey: SecretHint;
-  google: {
-    clientId: string;
-    clientSecret: SecretHint;
-  };
   notion: {
     token: SecretHint;
     lastVerifiedAt: string | null;
@@ -709,6 +711,13 @@ export interface RunSummary {
   summary: string | null;
   /** The exact connection state recorded at the failure site, when known. */
   connectionState?: GoogleConnectionState;
+  /**
+   * The failed product stage and reason, present only on a failed Run. Home
+   * uses these two compact fields to make triage actionable without turning
+   * the engine Run into the owning product surface (ADR-0051).
+   */
+  failedStage?: string | null;
+  failureHint?: string | null;
 }
 
 export interface RunDetail extends RunSummary {

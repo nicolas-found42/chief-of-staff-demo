@@ -233,8 +233,10 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
     ).text();
     const result = JSON.parse(raw) as Record<string, unknown>;
     expect(Object.keys(result).sort()).toEqual([
+      "candidateAliases",
       "debrief",
       "extractedAt",
+      "sections",
       "transcriptId",
       "version",
     ]);

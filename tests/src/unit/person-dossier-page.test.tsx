@@ -386,7 +386,22 @@ test.each(["supported", "contested"] as const)(
       works: [],
       expertise: [],
       connections: [],
-      sections: [],
+      sections: synthesizeSections([
+        {
+          id: "claim",
+          section: "work",
+          statement: document.text,
+          status,
+          nature: "statement",
+          matchConfidence: "high",
+          effectiveFrom: null,
+          effectiveTo: null,
+          citations: [{ sourceId: document.id, quote: document.text }],
+          supports: [],
+          supersedes: [],
+          changeReason: null,
+        },
+      ]),
     });
     const client = makeClient();
     client.read = async () => ({ dossier, research: null });
@@ -466,7 +481,23 @@ test("a claim grounded in an archived capture shows the capture date and its bou
     works: [],
     expertise: [],
     connections: [],
-    sections: [],
+    sections: synthesizeSections([
+      {
+        id: "tenure",
+        section: "career",
+        statement: source.text,
+        fact: { field: "role", value: "Deputy Governor, Markets and Banking" },
+        status: "stale",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: "2014-08-01",
+        effectiveTo: "2024-05-23",
+        citations: [{ sourceId: source.id, quote: source.text, capturedAt: source.capturedAt }],
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+      },
+    ]),
   });
   const client = makeClient();
   client.read = async () => ({ dossier, research: null });
@@ -529,7 +560,23 @@ test("a citation dates its capture in UTC and never repeats a self-domain title"
     works: [],
     expertise: [],
     connections: [],
-    sections: [],
+    sections: synthesizeSections([
+      {
+        id: "fact",
+        section: "career",
+        statement: source.text,
+        fact: { field: "role", value: "A role" },
+        status: "supported",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: null,
+        effectiveTo: null,
+        citations: [{ sourceId: source.id, quote: source.text, capturedAt: source.capturedAt }],
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+      },
+    ]),
   });
   const client = makeClient();
   client.read = async () => ({ dossier, research: null });
@@ -623,7 +670,7 @@ test("a source opens immediately and closing it prevents a late response reopeni
     works: [],
     expertise: [],
     connections: [],
-    sections: [],
+    sections: synthesizeSections([]),
   });
   const pending = Promise.withResolvers<typeof source>();
   const client = makeClient();
@@ -696,48 +743,117 @@ test("a source page with more outbound URLs than the stored cap retains a bounde
   }
 });
 
-test("audit F13: an old stored summary gains punctuation on read without changing the dossier", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dossier-old-prose-"));
-  const store = new PersonDossierStore(directory);
-  const claims = ["Maya built Atlas", "Maya deployed Nova"].map((statement, index) => ({
-    id: `old-${index}`,
-    section: "work" as const,
-    statement,
-    status: "unknown" as const,
+test("current and historical dossier reads render the selected revision's stored account and evidence", async () => {
+  const firstSource = {
+    id: "first-source",
+    title: "First source",
+    text: "Maya Okafor is a sensor lead.",
+  };
+  const secondSource = {
+    id: "second-source",
+    title: "Second source",
+    text: "Maya Okafor leads the Atlas rollout.",
+  };
+  const firstClaim = {
+    id: "sensor-lead",
+    section: "career" as const,
+    statement: "Maya Okafor is a sensor lead.",
+    status: "supported" as const,
     nature: "statement" as const,
     matchConfidence: "high" as const,
     effectiveFrom: null,
     effectiveTo: null,
-    citations: [],
+    citations: [{ sourceId: firstSource.id, quote: firstSource.text }],
     supports: [],
     supersedes: [],
     changeReason: null,
-  }));
-  const dossier = store.publish("maya", 0, {
-    claims,
-    works: [],
-    expertise: [],
-    connections: [],
-    sections: synthesizeSections(claims),
+  };
+  const first = fromPartial<PersonDossier>({
+    profileId: "maya",
+    revision: 1,
+    updatedAt: "2026-09-24T00:00:00Z",
+    sourceIds: [firstSource.id],
+    claims: [firstClaim],
+    sections: [
+      {
+        key: "overview",
+        summary: "The first published account says Maya builds sensor systems.",
+        claimIds: ["sensor-lead"],
+        updatedAt: "2026-09-24T00:00:00Z",
+        state: "incomplete",
+        gaps: [],
+      },
+    ],
   });
-  dossier.sections[0].summary = "Maya built Atlas Maya deployed Nova";
-  const api = makeClient();
-  api.read = async () => ({ dossier, research: null });
+  const secondClaim = {
+    ...firstClaim,
+    id: "atlas",
+    section: "work" as const,
+    statement: "Maya Okafor leads the Atlas rollout.",
+    citations: [{ sourceId: secondSource.id, quote: secondSource.text }],
+  };
+  const second = fromPartial<PersonDossier>({
+    profileId: "maya",
+    revision: 2,
+    updatedAt: "2026-09-24T01:00:00Z",
+    sourceIds: [firstSource.id, secondSource.id],
+    claims: [firstClaim, secondClaim],
+    sections: [
+      {
+        key: "overview",
+        summary: "The current published account says Maya leads Atlas.",
+        claimIds: ["atlas"],
+        updatedAt: "2026-09-24T01:00:00Z",
+        state: "incomplete",
+        gaps: [],
+      },
+    ],
+  });
+  const client = makeClient();
+  client.read = async (_profileId, revision) => ({
+    dossier: revision === first.revision ? first : second,
+    research: null,
+  });
+  client.sources = async () => ({
+    sources: [firstSource, secondSource].map((source) => ({
+      id: source.id,
+      title: source.title,
+      domain: "example.com",
+      capturedAt: null,
+    })),
+  });
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   try {
     await act(async () =>
-      root.render(createElement(PersonDossierPanel, { profileId: "maya", client: api })),
+      root.render(createElement(PersonDossierPanel, { profileId: "maya", client })),
     );
-    expect(container.querySelector("#dossier-panel > p")?.textContent).toBe(
-      "Maya built Atlas. Maya deployed Nova.",
+    expect(container.textContent).toContain("The current published account says Maya leads Atlas.");
+    expect(container.textContent).not.toContain(
+      "Maya Okafor is a sensor lead. Maya Okafor leads the Atlas rollout.",
     );
-    expect(dossier.sections[0].summary).toBe("Maya built Atlas Maya deployed Nova");
+    expect(container.querySelector<HTMLButtonElement>(".dossier-citation")?.textContent).toContain(
+      "Second source",
+    );
+
+    const revision = container.querySelector<HTMLSelectElement>('[aria-label="Dossier revision"]')!;
+    await act(async () => {
+      revision.value = String(first.revision);
+      revision.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.textContent).toContain(
+      "The first published account says Maya builds sensor systems.",
+    );
+    expect(container.textContent).not.toContain(
+      "The current published account says Maya leads Atlas.",
+    );
+    expect(container.querySelector<HTMLButtonElement>(".dossier-citation")?.textContent).toContain(
+      "First source",
+    );
   } finally {
     await act(async () => root.unmount());
     container.remove();
-    rmSync(directory, { recursive: true, force: true });
   }
 });
 

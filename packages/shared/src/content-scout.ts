@@ -78,6 +78,20 @@ export interface ContentScoutRuntimeCapability {
   };
 }
 
+export interface ContentScoutSetup {
+  providerConfigured: boolean;
+  brandVoiceAccepted: boolean;
+  sourceTargetCollectable: boolean;
+  scoutReady: boolean;
+  nextAction?: { label: string; href: string };
+}
+
+export interface ContentScoutReadiness {
+  state: "ready" | "setup-required";
+  reason: "ready" | "provider-not-configured";
+  nextAction?: { label: string; href: string };
+}
+
 export interface BrandProfileSourceScan {
   websiteUrl: string;
   includedUrls: string[];

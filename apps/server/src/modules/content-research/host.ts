@@ -46,6 +46,17 @@ export class ContentResearchProfileRefusal extends Error {
   }
 }
 
+class ContentResearchReadinessRefusal extends Error {
+  readonly statusCode = 409;
+  constructor(
+    readonly kind: "research" | "discovery",
+    message: string,
+  ) {
+    super(message);
+    this.name = "ContentResearchReadinessRefusal";
+  }
+}
+
 export interface ContentResearchHostDeps {
   runs: Runs;
   workspaceDir: string;
@@ -156,6 +167,10 @@ export class ContentResearchHost implements HostedModule {
       now,
       log,
     });
+  }
+  private assertReady(kind: "research" | "discovery"): void {
+    const reason = this.deps.readiness?.(kind);
+    if (reason) throw new ContentResearchReadinessRefusal(kind, reason);
   }
 
   /**
@@ -357,6 +372,7 @@ export class ContentResearchHost implements HostedModule {
     invocation: "manual" | "scheduled" = "manual",
     period?: string,
   ): Promise<string> {
+    this.assertReady("research");
     return this.runner.startRun(
       {
         intake: CONTENT_RESEARCH_INTAKE,
@@ -369,6 +385,7 @@ export class ContentResearchHost implements HostedModule {
   }
 
   async backfillNow(windowDays: 7 | 30 | 90): Promise<string> {
+    this.assertReady("research");
     return this.backfillRunner.startRun(
       {
         intake: CONTENT_RESEARCH_BACKFILL_INTAKE,
@@ -383,6 +400,7 @@ export class ContentResearchHost implements HostedModule {
     invocation: "manual" | "scheduled" = "manual",
     period?: string,
   ): Promise<string> {
+    this.assertReady("discovery");
     return this.discoveryRunner.startRun(
       {
         intake: CONTENT_RESEARCH_DISCOVERY_INTAKE,
@@ -663,9 +681,13 @@ export class ContentResearchHost implements HostedModule {
       return reply.send(raw);
     });
 
-    app.post("/api/content-research/run", async () => {
-      const id = await this.researchNow("manual");
-      return { runId: id };
+    app.post("/api/content-research/run", async (_request, reply) => {
+      try {
+        const id = await this.researchNow("manual");
+        return { runId: id };
+      } catch (error) {
+        return sendContentResearchSetupError(reply, error);
+      }
     });
 
     const backfillSchema = z.object({
@@ -677,13 +699,21 @@ export class ContentResearchHost implements HostedModule {
         reply.code(400).send({ error: "windowDays must be 7, 30, or 90" });
         return;
       }
-      const id = await this.backfillNow(parsed.data.windowDays);
-      return { runId: id };
+      try {
+        const id = await this.backfillNow(parsed.data.windowDays);
+        return { runId: id };
+      } catch (error) {
+        return sendContentResearchSetupError(reply, error);
+      }
     });
 
-    app.post("/api/content-research/discover", async () => {
-      const id = await this.discoverNow("manual");
-      return { runId: id };
+    app.post("/api/content-research/discover", async (_request, reply) => {
+      try {
+        const id = await this.discoverNow("manual");
+        return { runId: id };
+      } catch (error) {
+        return sendContentResearchSetupError(reply, error);
+      }
     });
 
     app.get("/api/content-research/schedule", async () => this.scheduleState());
@@ -696,6 +726,14 @@ function parseLocalTime(value: string): [number, number] {
   const hour = Number(match[1]);
   const minute = Number(match[2]);
   return hour <= 23 && minute <= 59 ? [hour, minute] : [0, 0];
+}
+
+function sendContentResearchSetupError(reply: FastifyReply, error: unknown): unknown {
+  if (error instanceof ContentResearchReadinessRefusal) {
+    reply.code(error.statusCode);
+    return { error: "content-research-setup-required", kind: error.kind, message: error.message };
+  }
+  throw error;
 }
 
 /**

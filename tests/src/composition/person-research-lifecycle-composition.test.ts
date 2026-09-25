@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { composePersonProfiles } from "../../../apps/server/src/person-profile/composition.js";
 
 it.each(["correction", "merge", "privacy deletion", "source detachment"])(
@@ -114,3 +114,130 @@ it.each(["correction", "merge", "privacy deletion", "source detachment"])(
     }
   },
 );
+
+it("keeps cancellation, retained work, resume, evidence, and conclusion under one public operation identity", async () => {
+  vi.useFakeTimers({ now: 0 });
+  const root = mkdtempSync(join(tmpdir(), "person-research-operation-owner-"));
+  const quote = "Maya Chen built Atlas.";
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let extractions = 0;
+  let fetches = 0;
+  const options = {
+    workspaceDir: root,
+    search: async () => [
+      { url: "https://example.com/maya", title: "Maya Chen", snippet: "Maya Chen" },
+    ],
+    complete: () => async () => {
+      extractions += 1;
+      if (extractions === 1) {
+        entered.resolve();
+        await release.promise;
+      }
+      return {
+        fullName: null,
+        employer: null,
+        sourceClass: "primary-artifact" as const,
+        author: null,
+        publishedAt: null,
+        claims: [
+          {
+            id: "atlas",
+            section: "work" as const,
+            statement: quote,
+            status: "supported" as const,
+            nature: "statement" as const,
+            matchConfidence: "high" as const,
+            effectiveFrom: null,
+            effectiveTo: null,
+            citations: [{ sourceId: "source", quote }],
+            supports: [],
+            supersedes: [],
+            changeReason: null,
+          },
+        ],
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      };
+    },
+    confirmedTranscripts: () => [],
+    transcriptStillConfirmed: () => false,
+    researchEnabled: () => true,
+    researchTestPorts: {
+      fetch: async (url: string) => {
+        fetches += 1;
+        return {
+          url,
+          status: 200,
+          contentType: "text/plain",
+          body: quote,
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+        };
+      },
+    },
+  };
+  let people = composePersonProfiles(options);
+  try {
+    const profile = people.research.startFor({
+      fullName: "Maya Chen",
+      profileUrls: ["https://example.com/maya"],
+    });
+    const running = people.research.runNow(profile.id);
+    await entered.promise;
+    const operationId = people.queue.summary(profile.id)?.currentOperationId;
+    const retainedBeforeCancel = people.research.sources(profile.id);
+    expect(operationId).toBeTruthy();
+    expect(retainedBeforeCancel).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(400);
+    expect(people.queue.cancel(profile.id)).toBe(true);
+    await vi.advanceTimersByTimeAsync(600);
+    release.resolve();
+    const cancelled = await running;
+
+    expect(cancelled).toMatchObject({
+      operationId,
+      conclusion: "interrupted",
+      sourcesRetained: 1,
+      retainedSourceIds: [retainedBeforeCancel[0].id],
+    });
+    expect(people.research.outcome(profile.id)).toEqual(cancelled);
+    expect(people.research.dossier(profile.id)?.claims).toEqual([]);
+    expect(people.research.sources(profile.id)).toEqual(retainedBeforeCancel);
+    expect(people.queue.job(profile.id)).toMatchObject({
+      state: "interrupted",
+      elapsedMilliseconds: 400,
+      calls: 1,
+      checkpoint: { operationId },
+    });
+
+    people.stop();
+    people = composePersonProfiles(options);
+
+    const completed = await people.research.runNow(profile.id);
+    expect(completed).toMatchObject({
+      operationId,
+      conclusion: "completed",
+      sourcesRetained: 2,
+      retainedSourceIds: [retainedBeforeCancel[0].id, expect.any(String)],
+      publishedDossierRevision: people.research.dossier(profile.id)?.revision,
+    });
+    expect(completed?.attempts).toEqual(expect.arrayContaining(cancelled?.attempts ?? []));
+    expect(people.research.dossier(profile.id)?.claims).toEqual([
+      expect.objectContaining({ statement: quote }),
+    ]);
+    expect(people.research.sources(profile.id)).toHaveLength(2);
+    expect(people.research.coverage(profile.id)).toEqual(completed?.coverage);
+    expect(people.research.attempts(profile.id)).toEqual(completed?.attempts);
+    expect(fetches).toBe(1);
+    expect(extractions).toBe(2);
+  } finally {
+    people.stop();
+    rmSync(root, { recursive: true, force: true });
+    vi.useRealTimers();
+  }
+});
