@@ -61,7 +61,7 @@
     "oxlint-tsgolint": "7.0.2003",
     "prettier": "^3.9.9",
     "simple-git-hooks": "^2.14.0",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "7.0.2",
     "yaml": "^2.9.1"
   },
