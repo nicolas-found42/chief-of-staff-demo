@@ -47,6 +47,7 @@ import type {
 import type { SourceAdapter } from "../../source-adapters/source-adapter.js";
 import { ContentScoutCanaryRunner, ContentScoutCanaryStore } from "./canary.js";
 import { ContentScoutStore } from "./store.js";
+import type { StoryPairJudger } from "./grouping-model.js";
 import {
   CONTENT_SCOUT_DISCOVERY_INTAKE,
   contentScoutDiscoveryModule,
@@ -83,6 +84,9 @@ export interface ContentScoutHostDeps {
   workspaceDir: string;
   adapters: SourceAdapter[];
   ranker: OpportunityRanker;
+  /** Semantic same-story pair judgments (#502); production wires the model
+   *  judger, seeded tests omit it and keep deterministic singletons. */
+  storyPairJudger?: StoryPairJudger;
   /** Selecting a shortlisted Opportunity starts exactly one governed Content Project (#133). */
   opportunityProjects?: OpportunityProjects;
   configStore?: ConfigStore;
@@ -126,6 +130,7 @@ export class ContentScoutHost implements HostedModule {
         store: this.store,
         adapters: deps.adapters,
         ranker: deps.ranker,
+        ...(deps.storyPairJudger ? { storyPairJudger: deps.storyPairJudger } : {}),
         ...(deps.opportunityProjects ? { opportunityProjects: deps.opportunityProjects } : {}),
         supersede: (oldRunId, newRunId) => this.supersede(oldRunId, newRunId),
         intakeCompleted: (period) => {

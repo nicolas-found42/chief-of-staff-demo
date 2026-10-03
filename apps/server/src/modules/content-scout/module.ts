@@ -20,7 +20,13 @@ import type {
 import type { ContentScoutStore } from "./store.js";
 import { collectSourceTargets, type CollectedSourceTargetProgress } from "./collection.js";
 import { sanitizeDiagnosticRoute } from "../../source-adapters/diagnostics.js";
-import { determineEligibility, enforceOpportunityIdentity } from "./eligibility.js";
+import {
+  determineEligibility,
+  determineStoryGroups,
+  enforceOpportunityIdentity,
+  storyGroupCooldownDisposition,
+} from "./eligibility.js";
+import type { StoryPairJudger } from "./grouping-model.js";
 import {
   CONTENT_SCOUT_MAX_COMMENTS,
   filterPromisingItems,
@@ -38,6 +44,10 @@ export interface ContentScoutModuleDeps {
   store: ContentScoutStore;
   adapters: SourceAdapter[];
   ranker: OpportunityRanker;
+  /** Semantic same-story pair judgments for grouping (#502). Absent — as in
+   *  the seeded test path — unkeyed items stay singletons and only adapter
+   *  storyKeys group, deterministically. */
+  storyPairJudger?: StoryPairJudger;
   /** Selecting a shortlisted Opportunity starts exactly one governed Content Project (#133). */
   opportunityProjects?: OpportunityProjects;
   supersede?: (oldRunId: string, newRunId: string) => void;
@@ -508,7 +518,16 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
           brandProfile: brandProfile!,
           now: deps.now(),
         });
-        ctx.writeFile("eligibility.json", `${JSON.stringify(eligibility, null, 2)}\n`);
+        const grouping = await determineStoryGroups({
+          eligibleItems: eligibility.items,
+          ...(deps.storyPairJudger ? { judger: deps.storyPairJudger } : {}),
+        });
+        const eligibilityJson = {
+          ...eligibility,
+          storyGroups: grouping.groups,
+        };
+        ctx.writeFile("eligibility.json", `${JSON.stringify(eligibilityJson, null, 2)}\n`);
+        ctx.writeFile("story-grouping.json", `${JSON.stringify(grouping.audit, null, 2)}\n`);
 
         const { promising, discarded } = filterPromisingItems({
           items: eligibility.items,
@@ -559,20 +578,22 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
           ranked: await deps.ranker.rank({
             brandProfile: brandProfile!,
             items: rankedItems,
-            storyGroups: eligibility.storyGroups,
+            storyGroups: grouping.groups,
             limit: 10,
           }),
           items: rankedItems,
-          storyGroups: eligibility.storyGroups,
+          storyGroups: grouping.groups,
           adapterStates: new Map(deps.adapters.map((adapter) => [adapter.id, adapter.state])),
         }).flatMap((opportunity) => {
           const sourceItemReferences = opportunity.sourceItemIds.flatMap((id) => {
             const canonicalUrl = sourceUrlByItemId.get(id);
             return canonicalUrl ? [{ id, canonicalUrl }] : [];
           });
-          const disposition = deps.store.opportunityCooldownDisposition(
-            opportunity,
-            sourceItemReferences,
+          const disposition = storyGroupCooldownDisposition(
+            deps.store.opportunityCooldownDisposition(opportunity, sourceItemReferences),
+            opportunity.canonicalKey,
+            sourceItemReferences.map((reference) => reference.canonicalUrl),
+            deps.store.recentDecisionEvidence(),
           );
           return disposition.eligible
             ? [

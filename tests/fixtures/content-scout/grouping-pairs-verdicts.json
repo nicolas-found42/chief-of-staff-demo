@@ -1,0 +1,288 @@
+{
+  "note": "Demonstration verdicts for the CI-side decision tests of the #502 grouping gate — hand-authored to match each pair's label, NOT measured model output. The live measurement (upstage/solar-pro4, 2026-10-03) FAILED the promotion gate with 4 false merges on 41 different/ambiguous pairs; see ADR-0106 and issue #502. The semantic grouping path ships unwired in production until a question revision clears the gate.",
+  "grp-001": {
+    "same": 0.94,
+    "different": 0.03,
+    "ambiguous": 0.03
+  },
+  "grp-002": {
+    "same": 0.96,
+    "different": 0.02,
+    "ambiguous": 0.02
+  },
+  "grp-003": {
+    "same": 0.93,
+    "different": 0.04,
+    "ambiguous": 0.03
+  },
+  "grp-004": {
+    "same": 0.95,
+    "different": 0.03,
+    "ambiguous": 0.02
+  },
+  "grp-005": {
+    "same": 0.97,
+    "different": 0.01,
+    "ambiguous": 0.02
+  },
+  "grp-006": {
+    "same": 0.92,
+    "different": 0.05,
+    "ambiguous": 0.03
+  },
+  "grp-007": {
+    "same": 0.95,
+    "different": 0.02,
+    "ambiguous": 0.03
+  },
+  "grp-008": {
+    "same": 0.9,
+    "different": 0.06,
+    "ambiguous": 0.04
+  },
+  "grp-055": {
+    "same": 0.93,
+    "different": 0.03,
+    "ambiguous": 0.04
+  },
+  "grp-048": {
+    "same": 0.96,
+    "different": 0.02,
+    "ambiguous": 0.02
+  },
+  "grp-049": {
+    "same": 0.96,
+    "different": 0.02,
+    "ambiguous": 0.02
+  },
+  "grp-050": {
+    "same": 0.91,
+    "different": 0.04,
+    "ambiguous": 0.05
+  },
+  "grp-051": {
+    "same": 0.92,
+    "different": 0.03,
+    "ambiguous": 0.05
+  },
+  "grp-052": {
+    "same": 0.9,
+    "different": 0.05,
+    "ambiguous": 0.05
+  },
+  "grp-053": {
+    "same": 0.99,
+    "different": 0.005,
+    "ambiguous": 0.005
+  },
+  "grp-054": {
+    "same": 0.99,
+    "different": 0.005,
+    "ambiguous": 0.005
+  },
+  "grp-009": {
+    "same": 0.04,
+    "different": 0.93,
+    "ambiguous": 0.03
+  },
+  "grp-010": {
+    "same": 0.03,
+    "different": 0.95,
+    "ambiguous": 0.02
+  },
+  "grp-011": {
+    "same": 0.05,
+    "different": 0.92,
+    "ambiguous": 0.03
+  },
+  "grp-012": {
+    "same": 0.04,
+    "different": 0.94,
+    "ambiguous": 0.02
+  },
+  "grp-013": {
+    "same": 0.03,
+    "different": 0.95,
+    "ambiguous": 0.02
+  },
+  "grp-014": {
+    "same": 0.02,
+    "different": 0.96,
+    "ambiguous": 0.02
+  },
+  "grp-056": {
+    "same": 0.06,
+    "different": 0.9,
+    "ambiguous": 0.04
+  },
+  "grp-015": {
+    "same": 0.03,
+    "different": 0.94,
+    "ambiguous": 0.03
+  },
+  "grp-016": {
+    "same": 0.05,
+    "different": 0.92,
+    "ambiguous": 0.03
+  },
+  "grp-017": {
+    "same": 0.04,
+    "different": 0.93,
+    "ambiguous": 0.03
+  },
+  "grp-018": {
+    "same": 0.03,
+    "different": 0.95,
+    "ambiguous": 0.02
+  },
+  "grp-019": {
+    "same": 0.06,
+    "different": 0.9,
+    "ambiguous": 0.04
+  },
+  "grp-020": {
+    "same": 0.05,
+    "different": 0.91,
+    "ambiguous": 0.04
+  },
+  "grp-042": {
+    "same": 0.04,
+    "different": 0.93,
+    "ambiguous": 0.03
+  },
+  "grp-043": {
+    "same": 0.04,
+    "different": 0.94,
+    "ambiguous": 0.02
+  },
+  "grp-044": {
+    "same": 0.03,
+    "different": 0.95,
+    "ambiguous": 0.02
+  },
+  "grp-045": {
+    "same": 0.02,
+    "different": 0.96,
+    "ambiguous": 0.02
+  },
+  "grp-046": {
+    "same": 0.05,
+    "different": 0.92,
+    "ambiguous": 0.03
+  },
+  "grp-047": {
+    "same": 0.07,
+    "different": 0.89,
+    "ambiguous": 0.04
+  },
+  "grp-021": {
+    "same": 0.04,
+    "different": 0.93,
+    "ambiguous": 0.03
+  },
+  "grp-022": {
+    "same": 0.05,
+    "different": 0.92,
+    "ambiguous": 0.03
+  },
+  "grp-023": {
+    "same": 0.03,
+    "different": 0.95,
+    "ambiguous": 0.02
+  },
+  "grp-024": {
+    "same": 0.04,
+    "different": 0.94,
+    "ambiguous": 0.02
+  },
+  "grp-025": {
+    "same": 0.06,
+    "different": 0.9,
+    "ambiguous": 0.04
+  },
+  "grp-026": {
+    "same": 0.05,
+    "different": 0.92,
+    "ambiguous": 0.03
+  },
+  "grp-027": {
+    "same": 0.08,
+    "different": 0.88,
+    "ambiguous": 0.04
+  },
+  "grp-028": {
+    "same": 0.1,
+    "different": 0.85,
+    "ambiguous": 0.05
+  },
+  "grp-029": {
+    "same": 0.09,
+    "different": 0.86,
+    "ambiguous": 0.05
+  },
+  "grp-030": {
+    "same": 0.07,
+    "different": 0.89,
+    "ambiguous": 0.04
+  },
+  "grp-031": {
+    "same": 0.1,
+    "different": 0.85,
+    "ambiguous": 0.05
+  },
+  "grp-032": {
+    "same": 0.04,
+    "different": 0.93,
+    "ambiguous": 0.03
+  },
+  "grp-033": {
+    "same": 0.05,
+    "different": 0.92,
+    "ambiguous": 0.03
+  },
+  "grp-034": {
+    "same": 0.06,
+    "different": 0.9,
+    "ambiguous": 0.04
+  },
+  "grp-035": {
+    "same": 0.05,
+    "different": 0.92,
+    "ambiguous": 0.03
+  },
+  "grp-036": {
+    "same": 0.04,
+    "different": 0.93,
+    "ambiguous": 0.03
+  },
+  "grp-037": {
+    "same": 0.45,
+    "different": 0.2,
+    "ambiguous": 0.35
+  },
+  "grp-038": {
+    "same": 0.42,
+    "different": 0.25,
+    "ambiguous": 0.33
+  },
+  "grp-039": {
+    "same": 0.38,
+    "different": 0.27,
+    "ambiguous": 0.35
+  },
+  "grp-040": {
+    "same": 0.4,
+    "different": 0.22,
+    "ambiguous": 0.38
+  },
+  "grp-041": {
+    "same": 0.35,
+    "different": 0.3,
+    "ambiguous": 0.35
+  },
+  "grp-057": {
+    "same": 0.44,
+    "different": 0.21,
+    "ambiguous": 0.35
+  }
+}
