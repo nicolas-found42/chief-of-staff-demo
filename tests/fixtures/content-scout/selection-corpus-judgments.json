@@ -1,0 +1,262 @@
+{
+  "sel-001": {
+    "fit": 0.9,
+    "substance": 0.7,
+    "promotion": 0.2
+  },
+  "sel-002": {
+    "fit": 0.8,
+    "substance": 0.2,
+    "promotion": 0.1
+  },
+  "sel-003": {
+    "fit": 0.9,
+    "substance": 0.9,
+    "promotion": 0.1
+  },
+  "sel-004": {
+    "fit": 0.95,
+    "substance": 0.8,
+    "promotion": 0
+  },
+  "sel-005": {
+    "fit": 0.85,
+    "substance": 0.75,
+    "promotion": 0.1
+  },
+  "sel-006": {
+    "fit": 0.1,
+    "substance": 0.1,
+    "promotion": 0.3
+  },
+  "sel-007": {
+    "fit": 0.2,
+    "substance": 0,
+    "promotion": 1
+  },
+  "sel-008": {
+    "fit": 0.3,
+    "substance": 0,
+    "promotion": 1
+  },
+  "sel-009": {
+    "fit": 0.75,
+    "substance": 0.2,
+    "promotion": 0.9
+  },
+  "sel-010": {
+    "fit": 0.2,
+    "substance": 0,
+    "promotion": 0.95
+  },
+  "sel-011": {
+    "fit": 0.95,
+    "substance": 0.6,
+    "promotion": 0.1
+  },
+  "sel-012": {
+    "fit": 0,
+    "substance": 0,
+    "promotion": 0
+  },
+  "sel-013": {
+    "fit": 1,
+    "substance": 0.9,
+    "promotion": 0
+  },
+  "sel-014": {
+    "fit": 0.9,
+    "substance": 0.8,
+    "promotion": 0
+  },
+  "sel-015": {
+    "fit": 0,
+    "substance": 0,
+    "promotion": 0
+  },
+  "sel-016": {
+    "fit": 0.4,
+    "substance": 0.1,
+    "promotion": 0.95
+  },
+  "sel-017": {
+    "fit": 0.4,
+    "substance": 0.1,
+    "promotion": 0.95
+  },
+  "sel-018": {
+    "fit": 0.95,
+    "substance": 0.9,
+    "promotion": 0
+  },
+  "sel-019": {
+    "fit": 0.95,
+    "substance": 0.75,
+    "promotion": 0.05
+  },
+  "sel-020": {
+    "fit": 0,
+    "substance": 0,
+    "promotion": 0.8
+  },
+  "sel-021": {
+    "fit": 0.9,
+    "substance": 0.7,
+    "promotion": 0.2
+  },
+  "sel-022": {
+    "fit": 0.3,
+    "substance": 0,
+    "promotion": 0.95
+  },
+  "sel-023": {
+    "fit": 0.8,
+    "substance": 0.7,
+    "promotion": 0
+  },
+  "sel-024": {
+    "fit": 1,
+    "substance": 0.8,
+    "promotion": 0.1
+  },
+  "sel-025": {
+    "fit": 0.9,
+    "substance": 0.75,
+    "promotion": 0.1
+  },
+  "sel-026": {
+    "fit": 0.2,
+    "substance": 0.3,
+    "promotion": 0.1
+  },
+  "sel-027": {
+    "fit": 0,
+    "substance": 0,
+    "promotion": 0
+  },
+  "sel-028": {
+    "fit": 0.9,
+    "substance": 0.8,
+    "promotion": 0
+  },
+  "sel-029": {
+    "fit": 0.7,
+    "substance": 0.2,
+    "promotion": 0.2
+  },
+  "sel-030": {
+    "fit": 0.8,
+    "substance": 0.1,
+    "promotion": 0.95
+  },
+  "sel-031": {
+    "fit": 0.7,
+    "substance": 0.6,
+    "promotion": 0
+  },
+  "sel-032": {
+    "fit": 0.95,
+    "substance": 0.85,
+    "promotion": 0.05
+  },
+  "sel-033": {
+    "fit": 0.2,
+    "substance": 0,
+    "promotion": 1
+  },
+  "sel-034": {
+    "fit": 0.3,
+    "substance": 0.1,
+    "promotion": 0.95
+  },
+  "sel-035": {
+    "fit": 0.95,
+    "substance": 0.9,
+    "promotion": 0
+  },
+  "sel-036": {
+    "fit": 0,
+    "substance": 0,
+    "promotion": 0
+  },
+  "sel-037": {
+    "fit": 0.9,
+    "substance": 0.65,
+    "promotion": 0.1
+  },
+  "sel-038": {
+    "fit": 0,
+    "substance": 0.1,
+    "promotion": 0
+  },
+  "sel-039": {
+    "fit": 0.6,
+    "substance": 0.3,
+    "promotion": 0.1
+  },
+  "sel-040": {
+    "fit": 0.9,
+    "substance": 0.6,
+    "promotion": 0
+  },
+  "sel-041": {
+    "fit": 0.8,
+    "substance": 0.7,
+    "promotion": 0.1
+  },
+  "sel-042": {
+    "fit": 0.95,
+    "substance": 0.9,
+    "promotion": 0
+  },
+  "sel-043": {
+    "fit": 0.2,
+    "substance": 0,
+    "promotion": 1
+  },
+  "sel-044": {
+    "fit": 0.2,
+    "substance": 0,
+    "promotion": 1
+  },
+  "sel-045": {
+    "fit": 0.95,
+    "substance": 0.85,
+    "promotion": 0.1
+  },
+  "sel-046": {
+    "fit": 0,
+    "substance": 0,
+    "promotion": 0.5
+  },
+  "sel-047": {
+    "fit": 0.95,
+    "substance": 0.85,
+    "promotion": 0.05
+  },
+  "sel-048": {
+    "fit": 1,
+    "substance": 0.8,
+    "promotion": 0
+  },
+  "sel-049": {
+    "fit": 0.85,
+    "substance": 0.65,
+    "promotion": 0.1
+  },
+  "sel-050": {
+    "fit": 1,
+    "substance": 0.6,
+    "promotion": 0
+  },
+  "sel-051": {
+    "fit": 0.1,
+    "substance": 0.2,
+    "promotion": 0.1
+  },
+  "sel-052": {
+    "fit": 0.3,
+    "substance": 0,
+    "promotion": 1
+  }
+}
