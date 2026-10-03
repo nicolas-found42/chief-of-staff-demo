@@ -108,6 +108,8 @@ export const PersonResearchFailureCodeSchema = z.enum([
   "stale-result-rejected",
   "lifecycle-invalidated",
   "publication-conflict",
+  /** Shadow citation-support observation recorded (#504); publication unchanged. */
+  "shadow-observation",
   // Recovery bookkeeping
   "retrieval-recovered",
   "model-call-metrics",

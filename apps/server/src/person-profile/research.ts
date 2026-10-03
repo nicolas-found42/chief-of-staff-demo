@@ -44,6 +44,7 @@ import {
   type PersonResearchPreviousConclusion,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
+import { shadowCitationSupport, type CitationSupportJudger } from "./citation-support.js";
 import { modelBoundaryDiagnostic } from "../llm/failure.js";
 import type { PublicSearch } from "../source-adapters/search.js";
 import { PublicSearchUnavailableError } from "../source-adapters/search.js";
@@ -360,6 +361,13 @@ export class PersonResearch {
       /** Tests may supply a fake-clock LinkedIn budget at the reader seam. */
       linkedInBudget?: LinkedInRequestBudget;
       complete: CompleteJson;
+      /**
+       * Shadow citation-support verification (#504). Absent — the production
+       * default while the promotion gate has not passed — no shadow judgment
+       * runs. When present, verdicts are recorded beside the published
+       * outcome and never change publication behavior.
+       */
+      citationShadow?: { judger: CitationSupportJudger };
       /**
        * Resolve configured model bindings once so exact reuse cannot cross a
        * model change. `identity` names the resolved extraction model
@@ -1697,6 +1705,35 @@ export class PersonResearch {
           return;
         }
         const { source, content } = published;
+
+        /* Shadow citation verification (#504): observe the semantic support
+           verdict beside the published outcome without changing it. Fire and
+           forget — a failure records as failed and never blocks the run. */
+        if (this.deps.citationShadow) {
+          void shadowCitationSupport({
+            claims: content.claims,
+            source,
+            judger: this.deps.citationShadow.judger,
+          })
+            .then((records) => {
+              for (const record of records) {
+                recorder.record({
+                  stage: "publication",
+                  code: "shadow-observation",
+                  outcome: "succeeded",
+                  recovery: "none",
+                  cause: "observed",
+                  target: pending.url,
+                  targetKind: "url",
+                  collector: "publication",
+                  reason: `Citation shadow: ${record.outcome} ${record.verdict?.support ?? "-"} (published ${record.publishedStatus}, rev ${record.questionRevision}).`,
+                });
+              }
+            })
+            .catch(() => {
+              /* A shadow crash must never surface: publication is done. */
+            });
+        }
 
         claimsPublished += content.claims.length;
         firstPublication.at ??= now().toISOString();
