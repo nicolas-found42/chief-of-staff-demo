@@ -16,6 +16,7 @@ import type { BrowserRenderer } from "../source-adapters/browser.js";
 import type { TranscriptConsumerRegistry } from "../transcript-catalog/deletion.js";
 import type { PersonProfileCreateInput } from "@chief-of-staff-demo/shared";
 import { createPersonClaimExtractor } from "./claims.js";
+import { modelCitationSupportJudger } from "./citation-support.js";
 import { PersonDossierStore } from "./dossier-store.js";
 import { personDossierRegistry } from "./lifecycle.js";
 import { WorkspacePersonProfiles, type PersonProfileLifecycleRegistry } from "./profiles.js";
@@ -118,6 +119,13 @@ export interface PersonProfilesCompositionDeps {
    * its own override.
    */
   completeDossier?: () => CompleteJson;
+  /**
+   * Shadow citation verification (#504, ADR-0107/0108). Production (shell)
+   * passes true: every real Person Research operation records shadow
+   * verdicts beside published outcomes, changing nothing. Absent — as in
+   * every test composition — no shadow judgment runs.
+   */
+  citationShadowEnabled?: boolean;
   /**
    * Dossier extraction's effective request policy (issue #418, T2/T4): the
    * output-token ceiling, requested reasoning effort, shape strategy and
@@ -280,6 +288,19 @@ export function composePersonProfiles(
     /* Rollback switch for validated Extraction Part reuse (#381, R1):
        versioned, and off without invalidating anything already stored. */
     reuseExtractionParts: process.env.PERSON_PROFILE_EXTRACTION_REUSE !== "0",
+    /* Shadow citation verification (#504, ADR-0107): records semantic
+       support verdicts beside published outcomes without changing
+       publication. The owner approved shadow activation; the ADR-0099
+       amendment that would let verdicts affect publication is a separate
+       reviewed change. Under researchTestPorts the shadow stays off, so
+       composition tests keep counting only extraction calls. */
+    ...(deps.citationShadowEnabled && !deps.researchTestPorts
+      ? {
+          citationShadow: {
+            judger: modelCitationSupportJudger(deps.completeClaims ?? deps.complete),
+          },
+        }
+      : {}),
     ...(deps.dossierExtractionPolicy
       ? { dossierExtractionPolicy: deps.dossierExtractionPolicy }
       : {}),

@@ -443,7 +443,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     ],
     ...(process.env.ENABLE_TEST_SEED === "1"
       ? { researchTestPorts: personDossierTestPorts }
-      : { render: playwrightBrowserRenderer() }),
+      : {
+          render: playwrightBrowserRenderer(),
+          citationShadowEnabled: true,
+        }),
   });
   const {
     store: peopleStore,
