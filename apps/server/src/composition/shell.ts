@@ -78,6 +78,7 @@ import {
   modelBrandProfileProposer,
 } from "../modules/content-scout/brand-profile.js";
 import { modelOpportunityRanker } from "../modules/content-scout/model.js";
+import { modelSelectionJudger } from "../modules/content-scout/selection-model.js";
 import { WorkspaceContentProjects } from "../content-projects/projects.js";
 import {
   createModelDraftGenerator,
@@ -572,6 +573,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         },
       }),
     ranker: testContentScout?.ranker ?? modelOpportunityRanker(contentScoutCompleteJson),
+    ...(testContentScout
+      ? {}
+      : { selectionJudger: modelSelectionJudger(contentScoutCompleteJson) }),
     opportunityProjects: contentProjectOpportunityStarter(contentProjects),
     discoverer: new PublicRouteSourceDiscoverer(),
     brandProfileCrawler: testContentScout?.brandProfileCrawler ?? new PublicBrandProfileCrawler(),

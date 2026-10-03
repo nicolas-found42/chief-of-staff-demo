@@ -1,5 +1,10 @@
 import type { SourceComment, SourceItem } from "@chief-of-staff-demo/shared";
 import { determineEligibility } from "./eligibility.js";
+import {
+  selectItemsForEnrichment,
+  type EnrichmentSelectionAudit,
+  type SemanticSelectionJudger,
+} from "./selection-model.js";
 
 /** Maximum comments retained per Source Item after enrichment. */
 export const CONTENT_SCOUT_MAX_COMMENTS = 50;
@@ -131,4 +136,45 @@ export function filterPromisingItems(input: {
     else discarded.push(item);
   }
   return { promising, discarded };
+}
+
+/** Semantic enrichment selection (#503): eligibility first, then the three-judgment
+ *  semantic selector over eligible items only, with the deterministic selector as
+ *  the fallback for borderline judgments, invalid responses, judger failures, and
+ *  budget overflow. Callers without a semantic judger keep using
+ *  filterPromisingItems unchanged. */
+export function selectPromisingItems(input: {
+  eligibleItems: SourceItem[];
+  brandProfile: Parameters<typeof determineEligibility>[0]["brandProfile"];
+  judger?: SemanticSelectionJudger;
+  deterministicSelector: PromisingItemSelector;
+}): Promise<{
+  promising: SourceItem[];
+  discarded: SourceItem[];
+  audit: EnrichmentSelectionAudit[];
+}> {
+  const selector = (item: SourceItem) =>
+    input.deterministicSelector({ item, brandProfileMarkdown: input.brandProfile.markdown });
+  if (!input.judger) {
+    const promising = input.eligibleItems.filter(selector);
+    const promisingIds = new Set(promising.map((item) => item.id));
+    return Promise.resolve({
+      promising,
+      discarded: input.eligibleItems.filter((item) => !promisingIds.has(item.id)),
+      audit: [],
+    });
+  }
+  return selectItemsForEnrichment({
+    items: input.eligibleItems,
+    brandProfile: input.brandProfile,
+    judger: input.judger,
+    fallbackSelector: selector,
+  }).then(({ promising, audit }) => {
+    const promisingIds = new Set(promising.map((item) => item.id));
+    return {
+      promising,
+      audit,
+      discarded: input.eligibleItems.filter((item) => !promisingIds.has(item.id)),
+    };
+  });
 }

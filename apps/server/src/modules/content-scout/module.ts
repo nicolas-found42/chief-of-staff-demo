@@ -25,7 +25,9 @@ import {
   CONTENT_SCOUT_MAX_COMMENTS,
   filterPromisingItems,
   selectDiverseComments,
+  selectPromisingItems,
 } from "./enrichment.js";
+import type { SemanticSelectionJudger } from "./selection-model.js";
 
 export const CONTENT_SCOUT_INTAKE = "daily-intake";
 
@@ -38,6 +40,10 @@ export interface ContentScoutModuleDeps {
   store: ContentScoutStore;
   adapters: SourceAdapter[];
   ranker: OpportunityRanker;
+  /** Semantic three-judgment enrichment selector (#503). Absent — as in the
+   *  seeded test path — the deterministic selector decides alone, exactly as
+   *  before this seam existed. */
+  selectionJudger?: SemanticSelectionJudger;
   /** Selecting a shortlisted Opportunity starts exactly one governed Content Project (#133). */
   opportunityProjects?: OpportunityProjects;
   supersede?: (oldRunId: string, newRunId: string) => void;
@@ -510,12 +516,21 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
         });
         ctx.writeFile("eligibility.json", `${JSON.stringify(eligibility, null, 2)}\n`);
 
-        const { promising, discarded } = filterPromisingItems({
-          items: eligibility.items,
-          targets: deps.store.listSourceTargets(),
+        const { promising, discarded, audit } = await selectPromisingItems({
+          eligibleItems: eligibility.items,
           brandProfile: brandProfile!,
-          now: deps.now(),
+          ...(deps.selectionJudger ? { judger: deps.selectionJudger } : {}),
+          deterministicSelector: ({ item }) =>
+            filterPromisingItems({
+              items: [item],
+              targets: deps.store.listSourceTargets(),
+              brandProfile: brandProfile!,
+              now: deps.now(),
+            }).promising.length > 0,
         });
+        if (audit.length > 0) {
+          ctx.writeFile("enrichment-selection.json", `${JSON.stringify(audit, null, 2)}\n`);
+        }
         ctx.writeFile("promising-items.json", `${JSON.stringify(promising, null, 2)}\n`);
         ctx.writeFile("discarded-items.json", `${JSON.stringify(discarded, null, 2)}\n`);
 
