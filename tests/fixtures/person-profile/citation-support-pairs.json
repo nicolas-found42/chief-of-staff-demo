@@ -1,0 +1,556 @@
+{
+  "reviewed": "2026-10-03",
+  "note": "Frozen labeled corpus for the #504 citation-support shadow gate.",
+  "pairs": [
+    {
+      "id": "cit-001",
+      "category": "exact-support",
+      "expected": "supported",
+      "rationale": "The passage restates the claim word for word, so the citation fully supports it.",
+      "claimStatement": "Avery Stone led the Vellum Robotics platform team through the 2024 migration to a new event bus.",
+      "passage": "Avery Stone led the Vellum Robotics platform team through the 2024 migration to a new event bus.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-002",
+      "category": "exact-support",
+      "expected": "supported",
+      "rationale": "Every element of the claim (name, employer, title, year) appears verbatim in the passage.",
+      "claimStatement": "In 2025, Blake Harbour worked as a senior staff engineer at ExampleCode.",
+      "passage": "In 2025, Blake Harbour worked as a senior staff engineer at ExampleCode.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-003",
+      "category": "exact-support",
+      "expected": "supported",
+      "rationale": "The passage is an exact match for the claim about the open-source library.",
+      "claimStatement": "Priya Nandi maintains the ExampleCode streaming connector used by several internal pipelines.",
+      "passage": "Priya Nandi maintains the ExampleCode streaming connector used by several internal pipelines.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-004",
+      "category": "exact-support",
+      "expected": "supported",
+      "rationale": "The conference talk description states verbatim what the claim asserts.",
+      "claimStatement": "Avery Stone presented a talk on distributed tracing at the 2023 Vellum Robotics engineering summit.",
+      "passage": "Avery Stone presented a talk on distributed tracing at the 2023 Vellum Robotics engineering summit.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-005",
+      "category": "exact-support",
+      "expected": "supported",
+      "rationale": "The article title and byline match the claim exactly.",
+      "claimStatement": "Blake Harbour published an article titled \"Idempotent Delivery in Practice\" in 2022.",
+      "passage": "Blake Harbour published an article titled \"Idempotent Delivery in Practice\" in 2022.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-006",
+      "category": "exact-support",
+      "expected": "supported",
+      "rationale": "The passage restates the mentorship claim word for word.",
+      "claimStatement": "Priya Nandi mentored five junior engineers during her tenure at Vellum Robotics.",
+      "passage": "Priya Nandi mentored five junior engineers during her tenure at Vellum Robotics.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-007",
+      "category": "paraphrase-support",
+      "expected": "supported",
+      "rationale": "The passage uses different wording for the same assertion, so the citation supports the claim in substance.",
+      "claimStatement": "Avery Stone led the reliability group at Vellum Robotics.",
+      "passage": "At Vellum Robotics, Avery Stone spearheaded the reliability group, setting its roadmap and hiring plan.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-008",
+      "category": "paraphrase-support",
+      "expected": "supported",
+      "rationale": "\"Designed and shipped\" is a paraphrase of \"built\", so the claim is supported.",
+      "claimStatement": "Blake Harbour built the notification service that ExampleCode runs in production today.",
+      "passage": "While at ExampleCode, Blake Harbour designed and shipped the notification service that the company runs in production today.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-009",
+      "category": "paraphrase-support",
+      "expected": "supported",
+      "rationale": "\"Chief architect\" is a paraphrase of \"technical lead\", so the citation supports the claim.",
+      "claimStatement": "Priya Nandi was the technical lead for the billing rewrite at ExampleCode.",
+      "passage": "The ExampleCode billing rewrite succeeded largely because Priya Nandi served as its chief architect.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-010",
+      "category": "paraphrase-support",
+      "expected": "supported",
+      "rationale": "\"Runs the ML platform group\" is a paraphrase of \"manages the machine learning platform team\".",
+      "claimStatement": "Avery Stone manages the machine learning platform team at Vellum Robotics.",
+      "passage": "Vellum Robotics credits Avery Stone with running its ML platform group day to day.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-011",
+      "category": "paraphrase-support",
+      "expected": "supported",
+      "rationale": "\"Keynote address\" is a paraphrase of \"opening talk\", so the passage supports the claim.",
+      "claimStatement": "Blake Harbour delivered the opening talk at the ExampleCode developer conference in 2024.",
+      "passage": "The 2024 ExampleCode developer conference opened with a keynote address given by Blake Harbour.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-012",
+      "category": "paraphrase-support",
+      "expected": "supported",
+      "rationale": "\"Wrote the deployment tooling\" is a paraphrase of \"authored the deployment tools\".",
+      "claimStatement": "Priya Nandi authored the deployment tools adopted across ExampleCode's infrastructure org.",
+      "passage": "Engineers across ExampleCode's infrastructure org deploy with tooling that Priya Nandi wrote.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-013",
+      "category": "cross-language-support",
+      "expected": "supported",
+      "rationale": "The Spanish-language passage asserts the same fact as the English claim, so the citation supports it across languages.",
+      "claimStatement": "Avery Stone led the search infrastructure team at Vellum Robotics in 2024.",
+      "passage": "En 2024, Avery Stone dirigió el equipo de infraestructura de búsqueda en Vellum Robotics.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-014",
+      "category": "cross-language-support",
+      "expected": "supported",
+      "rationale": "The French-language profile entry states the same role and employer as the English claim.",
+      "claimStatement": "Priya Nandi works as a principal engineer at ExampleCode.",
+      "passage": "Priya Nandi occupe le poste d'ingénieure principale chez ExampleCode.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-015",
+      "category": "mention-vs-built",
+      "expected": "insufficient",
+      "rationale": "A mention of a project does not establish that the person built it, so the passage cannot confirm the claim.",
+      "claimStatement": "Avery Stone built the Vellum Robotics feature-flag service.",
+      "passage": "The Vellum Robotics feature-flag service came up repeatedly during the design review Avery Stone attended.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-016",
+      "category": "mention-vs-built",
+      "expected": "insufficient",
+      "rationale": "Being quoted in connection with a system is not evidence of having built it.",
+      "claimStatement": "Blake Harbour built ExampleCode's data lake ingestion pipeline.",
+      "passage": "\"The ingestion pipeline is our biggest source of surprises,\" Blake Harbour said in an interview about ExampleCode's data platform.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-017",
+      "category": "mention-vs-built",
+      "expected": "insufficient",
+      "rationale": "The passage places the person near the library without saying they authored it.",
+      "claimStatement": "Priya Nandi created the ExampleCode retry library.",
+      "passage": "Priya Nandi's team discusses the retry library frequently in planning documents archived by ExampleCode.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-018",
+      "category": "mention-vs-built",
+      "expected": "insufficient",
+      "rationale": "Appearing on a podcast that discusses a tool does not establish the person wrote the tool.",
+      "claimStatement": "Avery Stone wrote the Vellum Robotics incident-response bot.",
+      "passage": "On the Vellum Robotics engineering podcast, Avery Stone fielded questions about how the incident-response bot changed on-call work.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-019",
+      "category": "mention-vs-built",
+      "expected": "insufficient",
+      "rationale": "A thank-you acknowledgement is not attribution of authorship.",
+      "claimStatement": "Blake Harbour built the ExampleCode schema registry.",
+      "passage": "The ExampleCode schema registry README thanks Blake Harbour for feedback on its compatibility rules.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-020",
+      "category": "mention-vs-built",
+      "expected": "insufficient",
+      "rationale": "Reviewing a paper does not mean the reviewer built the system the paper describes.",
+      "claimStatement": "Priya Nandi built the observability platform described in that paper.",
+      "passage": "Priya Nandi is listed among the reviewers of a paper describing an observability platform used at scale.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-021",
+      "category": "founding-vs-affiliation",
+      "expected": "insufficient",
+      "rationale": "Working at the company during its founding era is not the same as founding it.",
+      "claimStatement": "Avery Stone co-founded Vellum Robotics.",
+      "passage": "Avery Stone joined Vellum Robotics in its first year as one of the earliest engineers on the payroll.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-022",
+      "category": "founding-vs-affiliation",
+      "expected": "insufficient",
+      "rationale": "Teaching at the school is employment, not founding it.",
+      "claimStatement": "Blake Harbour founded the ExampleCode engineering academy.",
+      "passage": "Blake Harbour teaches the distributed systems course at the ExampleCode engineering academy.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-023",
+      "category": "founding-vs-affiliation",
+      "expected": "insufficient",
+      "rationale": "Being an early employee does not establish founder status.",
+      "claimStatement": "Priya Nandi founded the Vellum Robotics platform division.",
+      "passage": "Priya Nandi was among the first hires onto Vellum Robotics' newly created platform division.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-024",
+      "category": "founding-vs-affiliation",
+      "expected": "insufficient",
+      "rationale": "Organizing a meetup chapter is affiliation, not founding the conference the claim names.",
+      "claimStatement": "Blake Harbour founded the ExampleCode developer conference.",
+      "passage": "Blake Harbour organizes the local meetup chapter that feeds talks into the ExampleCode developer conference.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-025",
+      "category": "founding-vs-affiliation",
+      "expected": "supported",
+      "rationale": "The passage explicitly states the person founded the organization named in the claim.",
+      "claimStatement": "Priya Nandi founded the streaming-analytics startup called Delta Mill.",
+      "passage": "Priya Nandi founded Delta Mill, a streaming-analytics startup, in 2021 and served as its first CEO.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-026",
+      "category": "past-vs-current",
+      "expected": "insufficient",
+      "rationale": "A past-tense passage cannot establish the person's current role, so the claim is not supported.",
+      "claimStatement": "Avery Stone currently works as a staff engineer at Vellum Robotics.",
+      "passage": "Avery Stone worked as a staff engineer at Vellum Robotics from 2019 to 2023.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-027",
+      "category": "past-vs-current",
+      "expected": "insufficient",
+      "rationale": "The passage describes a former position, which cannot confirm a present-tense claim.",
+      "claimStatement": "Blake Harbour is the director of infrastructure at ExampleCode.",
+      "passage": "Blake Harbour served as director of infrastructure at ExampleCode until stepping down in 2022.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-028",
+      "category": "past-vs-current",
+      "expected": "insufficient",
+      "rationale": "A past award does not establish a current title.",
+      "claimStatement": "Priya Nandi currently holds the title of distinguished engineer at ExampleCode.",
+      "passage": "In 2021, Priya Nandi received ExampleCode's engineer of the year award while holding a senior title.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-029",
+      "category": "past-vs-current",
+      "expected": "insufficient",
+      "rationale": "\"Used to run\" denotes a past responsibility only, so it cannot support the current-role claim.",
+      "claimStatement": "Avery Stone runs the Vellum Robotics build infrastructure today.",
+      "passage": "Back in 2020, Avery Stone used to run the Vellum Robotics build infrastructure before it moved to a dedicated team.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-030",
+      "category": "past-vs-current",
+      "expected": "insufficient",
+      "rationale": "The passage's \"was\" construction marks the role as historical, not current.",
+      "claimStatement": "Blake Harbour is ExampleCode's technical spokesperson.",
+      "passage": "Blake Harbour was the public face of ExampleCode's developer relations efforts during its growth years.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-031",
+      "category": "past-vs-current",
+      "expected": "insufficient",
+      "rationale": "A previously held title cannot establish the current title claimed.",
+      "claimStatement": "Priya Nandi is presently a VP of engineering.",
+      "passage": "Priya Nandi once held the title of VP of engineering at a mid-sized logistics company.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-032",
+      "category": "negation",
+      "expected": "contradicted",
+      "rationale": "The passage explicitly denies what the claim asserts, so the citation contradicts the claim.",
+      "claimStatement": "Avery Stone led the Vellum Robotics mobile team.",
+      "passage": "Contrary to some profiles, Avery Stone never led the Vellum Robotics mobile team.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-033",
+      "category": "negation",
+      "expected": "contradicted",
+      "rationale": "The passage directly states the person did not work at the company named in the claim.",
+      "claimStatement": "Blake Harbour worked as an engineer at ExampleCode.",
+      "passage": "Blake Harbour has confirmed that he never worked at ExampleCode in any capacity.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-034",
+      "category": "negation",
+      "expected": "contradicted",
+      "rationale": "The source explicitly refutes the attribution of the open-source project to the person.",
+      "claimStatement": "Priya Nandi created the ExampleCode migration framework.",
+      "passage": "The ExampleCode migration framework was created by another team; Priya Nandi is not its creator.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-035",
+      "category": "negation",
+      "expected": "contradicted",
+      "rationale": "The passage states the person did not found the organization the claim says they founded.",
+      "claimStatement": "Avery Stone founded the Delta Mill analytics startup.",
+      "passage": "Delta Mill's official history lists different founders and notes that Avery Stone was not among them.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-036",
+      "category": "negation",
+      "expected": "contradicted",
+      "rationale": "The source flatly denies the claimed degree.",
+      "claimStatement": "Blake Harbour holds a PhD in computer science.",
+      "passage": "Blake Harbour has stated publicly that he does not hold a PhD in computer science or any other field.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-037",
+      "category": "fragment",
+      "expected": "insufficient",
+      "rationale": "The passage is a name-and-title fragment with no predicate establishing employment, so it cannot support the claim.",
+      "claimStatement": "Avery Stone currently works at Vellum Robotics as a platform engineer.",
+      "passage": "Avery Stone — Platform Engineer. (see slides)",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-038",
+      "category": "fragment",
+      "expected": "insufficient",
+      "rationale": "A bare citation-style listing without a verb carries no assertion that can support the claim.",
+      "claimStatement": "Blake Harbour led the ExampleCode search team in 2023.",
+      "passage": "\"Blake Harbour, ExampleCode Search\" — conference attendee listing, 2023.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-039",
+      "category": "fragment",
+      "expected": "insufficient",
+      "rationale": "A photo caption fragment with no predicate cannot establish the claimed role.",
+      "claimStatement": "Priya Nandi manages the Vellum Robotics data platform team.",
+      "passage": "Priya Nandi, Vellum Robotics data platform. [photo]",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-040",
+      "category": "fragment",
+      "expected": "insufficient",
+      "rationale": "The passage is a truncated heading with no assertion, so it cannot support the employment claim.",
+      "claimStatement": "Avery Stone joined ExampleCode as a senior engineer in 2024.",
+      "passage": "Related: Avery Stone, ExampleCode (2024)",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-041",
+      "category": "repeated-ambiguity",
+      "expected": "insufficient",
+      "rationale": "The passage could plausibly describe two different appearances of the same content, so it cannot uniquely confirm the claim.",
+      "claimStatement": "Avery Stone delivered two distinct talks at the 2024 ExampleCode conference.",
+      "passage": "The 2024 ExampleCode conference schedule lists a talk by Avery Stone; the same title appears again later in the printed program.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-042",
+      "category": "repeated-ambiguity",
+      "expected": "insufficient",
+      "rationale": "Because the identical passage could occur twice in the corpus, a single occurrence cannot establish the claimed uniqueness.",
+      "claimStatement": "Blake Harbour is the only ExampleCode engineer to have published that blog post.",
+      "passage": "ExampleCode's blog contains a post by Blake Harbour; an identical byline line appears elsewhere in the archive.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-043",
+      "category": "self-report",
+      "expected": "insufficient",
+      "rationale": "An assertion on the person's own profile is self-reported and not independently established, so it cannot support the claim on its own.",
+      "claimStatement": "Avery Stone led a 40-person organization at Vellum Robotics.",
+      "passage": "On his own profile page, Avery Stone writes: \"I led a 40-person organization at Vellum Robotics.\"",
+      "attribution": "self-report",
+      "publishedStatus": "claimed"
+    },
+    {
+      "id": "cit-044",
+      "category": "self-report",
+      "expected": "insufficient",
+      "rationale": "A self-authored bio assertion is not independent evidence for the claimed credential.",
+      "claimStatement": "Priya Nandi holds a master's degree from a top-ten engineering school.",
+      "passage": "Priya Nandi's self-written bio states that she holds a master's degree from a top-ten engineering school.",
+      "attribution": "self-report",
+      "publishedStatus": "claimed"
+    },
+    {
+      "id": "cit-045",
+      "category": "self-report",
+      "expected": "insufficient",
+      "rationale": "A self-reported patent count has not been independently verified and cannot support the claim.",
+      "claimStatement": "Blake Harbour is named on six granted patents.",
+      "passage": "In his personal website's about section, Blake Harbour says he is named on six granted patents.",
+      "attribution": "self-report",
+      "publishedStatus": "claimed"
+    },
+    {
+      "id": "cit-046",
+      "category": "self-report",
+      "expected": "insufficient",
+      "rationale": "A first-person testimonial on the person's own page is self-report, not third-party confirmation.",
+      "claimStatement": "Avery Stone increased Vellum Robotics' deployment frequency by ten times.",
+      "passage": "Avery Stone's own newsletter reads: \"Under my leadership, Vellum Robotics increased deployment frequency tenfold.\"",
+      "attribution": "self-report",
+      "publishedStatus": "claimed"
+    },
+    {
+      "id": "cit-047",
+      "category": "self-report",
+      "expected": "insufficient",
+      "rationale": "The claim rests solely on the person's own account of the project's impact.",
+      "claimStatement": "Priya Nandi's open-source library has over ten thousand weekly downloads.",
+      "passage": "Priya Nandi states in her project README: \"This library has over ten thousand weekly downloads.\"",
+      "attribution": "self-report",
+      "publishedStatus": "claimed"
+    },
+    {
+      "id": "cit-048",
+      "category": "archive-capture",
+      "expected": "insufficient",
+      "rationale": "The archived passage is undated, so it cannot establish that the role holds for the current claim.",
+      "claimStatement": "Avery Stone currently serves as Vellum Robotics' engineering manager for search.",
+      "passage": "An archived copy of a team page lists Avery Stone as engineering manager for search at Vellum Robotics. (capture undated)",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-049",
+      "category": "archive-capture",
+      "expected": "insufficient",
+      "rationale": "Without a capture date, the archived bio cannot establish present employment at the company.",
+      "claimStatement": "Blake Harbour is presently employed at ExampleCode.",
+      "passage": "A wayback snapshot shows a bio reading \"Blake Harbour, engineer at ExampleCode.\" (no capture timestamp recorded)",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-050",
+      "category": "archive-capture",
+      "expected": "insufficient",
+      "rationale": "The undated archive cannot establish that the title is current for the present-tense claim.",
+      "claimStatement": "Priya Nandi currently holds the title of principal engineer.",
+      "passage": "An archived résumé page shows Priya Nandi with the title principal engineer. (page undated)",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-051",
+      "category": "structured-credential",
+      "expected": "supported",
+      "rationale": "The record lists the degree, institution, and date explicitly, which is sufficient to support the credential claim.",
+      "claimStatement": "Avery Stone earned a bachelor's degree in computer science from Harborview University in 2015.",
+      "passage": "Credential record: Degree — B.S. Computer Science; Institution — Harborview University; Date — May 2015.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-052",
+      "category": "structured-credential",
+      "expected": "supported",
+      "rationale": "Explicit credential, institution, and date lines fully support the master's degree claim.",
+      "claimStatement": "Priya Nandi holds a master's degree in software engineering from Delta Institute, awarded in 2018.",
+      "passage": "Credential record: Degree — M.S. Software Engineering; Institution — Delta Institute; Date — June 2018.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-053",
+      "category": "structured-credential",
+      "expected": "supported",
+      "rationale": "The certification, issuer, and year are each stated explicitly, supporting the claim.",
+      "claimStatement": "Blake Harbour obtained a cloud architecture certification from the Open Systems Board in 2022.",
+      "passage": "Credential record: Certification — Cloud Architecture Professional; Issuer — Open Systems Board; Date — March 2022.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-054",
+      "category": "structured-credential",
+      "expected": "supported",
+      "rationale": "The doctorate, institution, and completion year are explicitly listed, so the claim is supported.",
+      "claimStatement": "Priya Nandi completed a PhD in distributed systems at Harborview University in 2021.",
+      "passage": "Credential record: Degree — PhD, Distributed Systems; Institution — Harborview University; Date — August 2021.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    },
+    {
+      "id": "cit-055",
+      "category": "structured-credential",
+      "expected": "insufficient",
+      "rationale": "The passage describes the program itself, not the person's participation, so it cannot establish the credential was earned.",
+      "claimStatement": "Blake Harbour completed the advanced reliability engineering certificate at Delta Institute.",
+      "passage": "Program description: The Delta Institute advanced reliability engineering certificate covers fault injection, capacity planning, and postmortem practice over a twelve-week term.",
+      "attribution": "third-party",
+      "publishedStatus": "supported"
+    }
+  ]
+}
