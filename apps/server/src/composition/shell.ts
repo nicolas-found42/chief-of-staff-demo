@@ -78,6 +78,7 @@ import {
   modelBrandProfileProposer,
 } from "../modules/content-scout/brand-profile.js";
 import { modelOpportunityRanker } from "../modules/content-scout/model.js";
+import { modelStoryPairJudger } from "../modules/content-scout/grouping-model.js";
 import { modelSelectionJudger } from "../modules/content-scout/selection-model.js";
 import { WorkspaceContentProjects } from "../content-projects/projects.js";
 import {
@@ -576,6 +577,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         },
       }),
     ranker: testContentScout?.ranker ?? modelOpportunityRanker(contentScoutCompleteJson),
+    ...(testContentScout
+      ? {}
+      : { storyPairJudger: modelStoryPairJudger(contentScoutCompleteJson) }),
     ...(testContentScout
       ? {}
       : { selectionJudger: modelSelectionJudger(contentScoutCompleteJson) }),

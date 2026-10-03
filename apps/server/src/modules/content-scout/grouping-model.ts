@@ -25,13 +25,26 @@ export const GROUPING_PAIR_BUDGET = 100;
 
 /**
  * A pair merges only when the same-story probability clears this threshold.
+ * Rev-2 live measurement (solar-pro4, 57-pair corpus, 2026-10-10): 16/16
+ * same-recall, zero different-pair false merges; the cut sits at 0.85
+ * because both ambiguous-labeled pairs scored exactly 0.80 and every
+ * same-labeled pair sits at >=0.95, so the higher cut is free on recall.
  * Frozen on the reviewed corpus at tests/fixtures/content-scout/grouping-pairs.json
- * through scripts/content-scout-grouping-eval.mts; never tuned without
+ * through scripts/content-scout-grouping-eval.mts; never tune without
  * re-running that comparison. Below the threshold — including ambiguous and
  * failed judgments — the pair stays separate (#502: uncertain relationships
  * never merge).
  */
-export const GROUPING_VERDICT_THRESHOLD = 0.8;
+export const GROUPING_VERDICT_THRESHOLD = 0.85;
+
+/**
+ * Rev-2 companion cap: a pair merges only when the model's own ambiguity
+ * probability stays at or below this. A confidently-same verdict with
+ * non-trivial ambiguity is exactly the profile of the pairs rev 2 improved
+ * on; the cap costs nothing on the corpus and encodes "uncertain
+ * relationships never merge" directly (#502).
+ */
+export const GROUPING_AMBIGUITY_CAP = 0.15;
 
 const PairVerdictWireSchema = z.object({
   same: z.number().min(0).max(1),
@@ -89,11 +102,16 @@ export function candidatePairs(
   return scored.slice(0, budget).map(({ left, right }) => [left, right]);
 }
 
-/** Whether one recorded verdict supports a same-story merge for this pair. */
+/** Whether one recorded verdict supports a same-story merge for this pair:
+ *  same clears the frozen cut AND the model's own ambiguity probability
+ *  stays under the frozen cap — an uncertain relationship never merges,
+ *  even when the model leans same (#502). */
 export function sameStoryVerdict(verdict: PairVerdict | undefined, revision: number): boolean {
   if (!verdict || revision !== GROUPING_QUESTION_REVISION) return false;
-  const { same } = verdict;
-  return Number.isFinite(same) && same >= 0 && same <= 1 && same >= GROUPING_VERDICT_THRESHOLD;
+  const { same, ambiguous } = verdict;
+  if (!Number.isFinite(same) || same < 0 || same > 1) return false;
+  if (same < GROUPING_VERDICT_THRESHOLD) return false;
+  return !(Number.isFinite(ambiguous) && ambiguous > GROUPING_AMBIGUITY_CAP);
 }
 
 /** Merge judged pairs into partition groups over the item ids. Groups are

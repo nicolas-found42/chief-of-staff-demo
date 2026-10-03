@@ -17,6 +17,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { makeCompleteJson } from "../apps/server/src/llm/providers.js";
 import {
+  GROUPING_AMBIGUITY_CAP,
   GROUPING_PAIR_BUDGET,
   GROUPING_QUESTION_REVISION,
   GROUPING_VERDICT_THRESHOLD,
@@ -159,7 +160,7 @@ async function main(): Promise<void> {
   );
   for (const miss of misses) console.log(`  ${miss}`);
   console.log(
-    `threshold: ${GROUPING_VERDICT_THRESHOLD}  budget: ${GROUPING_PAIR_BUDGET}  questionRevision: ${GROUPING_QUESTION_REVISION}`,
+    `threshold: ${GROUPING_VERDICT_THRESHOLD}  ambiguityCap: ${GROUPING_AMBIGUITY_CAP}  budget: ${GROUPING_PAIR_BUDGET}  questionRevision: ${GROUPING_QUESTION_REVISION}`,
   );
   const gatePasses = falsePositives === 0 && truePositives > sameCount / 2;
   console.log(gatePasses ? "gate: PASS" : "gate: FAIL — keep deterministic grouping and report");
