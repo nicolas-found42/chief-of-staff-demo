@@ -283,6 +283,25 @@ export class ContentScoutStore {
       : { eligible: false };
   }
 
+  /** Evidence URLs retained on decisions inside the cooldown window, with the
+   *  canonical key each was decided under (#502): the reconciliation input
+   *  that lets a regrouped story find its cooled-off predecessor without any
+   *  new stored state. */
+  recentDecisionEvidence(windowDays = 7): { canonicalKey: string; evidenceUrls: string[] }[] {
+    const cutoff = this.now().getTime() - windowDays * 86_400_000;
+    const byKey = new Map<string, Set<string>>();
+    for (const decision of this.readState().opportunityDecisions) {
+      if (Date.parse(decision.decidedAt) <= cutoff) continue;
+      const urls = byKey.get(decision.canonicalKey) ?? new Set<string>();
+      for (const reference of decision.evidence ?? []) urls.add(reference.canonicalUrl);
+      byKey.set(decision.canonicalKey, urls);
+    }
+    return [...byKey].map(([canonicalKey, urls]) => ({
+      canonicalKey,
+      evidenceUrls: [...urls],
+    }));
+  }
+
   private recordOpportunityDecision(
     state: ContentScoutState,
     opportunity: ShortlistOpportunity,
