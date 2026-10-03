@@ -1,0 +1,287 @@
+{
+  "grp-001": {
+    "same": 0.85,
+    "different": 0.1,
+    "ambiguous": 0.05
+  },
+  "grp-002": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-003": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-004": {
+    "same": 0.95,
+    "different": 0.03,
+    "ambiguous": 0.02
+  },
+  "grp-005": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-006": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-007": {
+    "same": 0.9,
+    "different": 0.05,
+    "ambiguous": 0.05
+  },
+  "grp-008": {
+    "same": 0.85,
+    "different": 0.05,
+    "ambiguous": 0.1
+  },
+  "grp-009": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-010": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-011": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-012": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-013": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-014": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-015": {
+    "same": 0,
+    "different": 0.95,
+    "ambiguous": 0.05
+  },
+  "grp-016": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-017": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-018": {
+    "same": 0,
+    "different": 0.98,
+    "ambiguous": 0.02
+  },
+  "grp-019": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-020": {
+    "same": 0.05,
+    "different": 0.85,
+    "ambiguous": 0.1
+  },
+  "grp-021": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-022": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-023": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-024": {
+    "same": 0,
+    "different": 0.99,
+    "ambiguous": 0.01
+  },
+  "grp-025": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-026": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-027": {
+    "same": 0,
+    "different": 0.95,
+    "ambiguous": 0.05
+  },
+  "grp-028": {
+    "same": 0.05,
+    "different": 0.85,
+    "ambiguous": 0.1
+  },
+  "grp-029": {
+    "same": 0.92,
+    "different": 0.05,
+    "ambiguous": 0.03
+  },
+  "grp-030": {
+    "same": 0.15,
+    "different": 0.25,
+    "ambiguous": 0.6
+  },
+  "grp-031": {
+    "same": 0.05,
+    "different": 0.85,
+    "ambiguous": 0.1
+  },
+  "grp-032": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-033": {
+    "same": 0.05,
+    "different": 0.15,
+    "ambiguous": 0.8
+  },
+  "grp-034": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-035": {
+    "same": 0,
+    "different": 0.95,
+    "ambiguous": 0.05
+  },
+  "grp-036": {
+    "same": 0.85,
+    "different": 0.05,
+    "ambiguous": 0.1
+  },
+  "grp-037": {
+    "same": 0.85,
+    "different": 0.05,
+    "ambiguous": 0.1
+  },
+  "grp-038": {
+    "same": 0.65,
+    "different": 0.2,
+    "ambiguous": 0.15
+  },
+  "grp-039": {
+    "same": 0.05,
+    "different": 0.9,
+    "ambiguous": 0.05
+  },
+  "grp-040": {
+    "same": 0.35,
+    "different": 0.25,
+    "ambiguous": 0.4
+  },
+  "grp-041": {
+    "same": 0.25,
+    "different": 0.35,
+    "ambiguous": 0.4
+  },
+  "grp-042": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-043": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-044": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-045": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-046": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-047": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-048": {
+    "same": 0.95,
+    "different": 0.03,
+    "ambiguous": 0.02
+  },
+  "grp-049": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-050": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-051": {
+    "same": 0.95,
+    "different": 0.05,
+    "ambiguous": 0
+  },
+  "grp-052": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-053": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-054": {
+    "same": 1,
+    "different": 0,
+    "ambiguous": 0
+  },
+  "grp-055": {
+    "same": 0.95,
+    "different": 0.03,
+    "ambiguous": 0.02
+  },
+  "grp-056": {
+    "same": 0,
+    "different": 1,
+    "ambiguous": 0
+  },
+  "grp-057": {
+    "same": 0.3,
+    "different": 0.25,
+    "ambiguous": 0.45
+  }
+}

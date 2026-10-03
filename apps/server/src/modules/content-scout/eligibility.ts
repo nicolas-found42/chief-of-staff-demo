@@ -1,12 +1,22 @@
 import { createHash } from "node:crypto";
 import type {
   BrandProfileRevision,
+  OpportunityEarlyFollowUp,
   RankedOpportunity,
   SourceAdapterState,
   SourceItem,
   SourceStoryGroup,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
+import {
+  GROUPING_PAIR_BUDGET,
+  GROUPING_QUESTION_REVISION,
+  applyPairVerdicts,
+  candidatePairs,
+  sameStoryVerdict,
+  type StoryGroupingAudit,
+  type StoryPairJudger,
+} from "./grouping-model.js";
 
 const ELIGIBILITY_WINDOW_MS = 7 * 86_400_000;
 
@@ -22,6 +32,11 @@ export interface EligibilityResult {
   items: SourceItem[];
   storyGroups: SourceStoryGroup[];
   exclusions: { sourceItemId: string; reason: EligibilityExclusionReason }[];
+}
+
+export interface StoryGroupingOutcome {
+  groups: SourceStoryGroup[];
+  audit: StoryGroupingAudit;
 }
 
 function hash(value: string): string {
@@ -81,28 +96,23 @@ function storyTokens(item: SourceItem): string[] {
 
 const STOP_WORDS = new Set(["the", "and", "for", "from", "with", "that", "this", "what", "into"]);
 
-const MIN_SHARED_STORY_TOKENS = 2;
-const MIN_STORY_JACCARD = 0.18;
-
 function storySeed(item: SourceItem): string {
   return item.storyKey?.trim().toLowerCase() || storyTokens(item).slice(0, 16).join("-");
 }
 
-function sameInferredStory(left: SourceItem, right: SourceItem): boolean {
-  const leftKey = left.storyKey?.trim().toLowerCase();
-  const rightKey = right.storyKey?.trim().toLowerCase();
-  if (leftKey || rightKey) return Boolean(leftKey && rightKey && leftKey === rightKey);
-
-  const leftTokens = new Set(storyTokens(left));
-  const rightTokens = new Set(storyTokens(right));
-  const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length;
-  if (shared < MIN_SHARED_STORY_TOKENS) return false;
-  const union = new Set([...leftTokens, ...rightTokens]).size;
-  return union > 0 && shared / union >= MIN_STORY_JACCARD;
-}
-
-function inferredGroupSeed(groupItems: SourceItem[]): string {
-  return storySeed(groupItems[0]!);
+/** Deterministic group seed (#502): adapter storyKeys when every member has
+ *  one, else the sorted identity seeds of all members. A pure function of
+ *  membership, so the same items produce the same canonical key regardless of
+ *  collection order. */
+function groupSeed(groupItems: SourceItem[]): string {
+  const keyed = groupItems.filter((item) => item.storyKey?.trim());
+  if (keyed.length === groupItems.length && keyed.length > 0) {
+    return [...new Set(keyed.map((item) => item.storyKey!.trim().toLowerCase()))].sort().join("|");
+  }
+  return groupItems
+    .map((item) => item.storyKey?.trim().toLowerCase() || storySeed(item))
+    .sort()
+    .join("|");
 }
 
 function hasUnsupportedClaim(item: SourceItem): boolean {
@@ -163,19 +173,140 @@ export function determineEligibility(input: {
     items.push(item);
   }
 
-  const groupedItems: SourceItem[][] = [];
+  /* Deterministic fallback grouping without a semantic judger (#502): items
+     with a matching adapter storyKey join that group; everything else stays a
+     singleton, so identity never depends on collection order. */
+  const keyedGroups = new Map<string, SourceItem[]>();
+  const unkeyedItems: SourceItem[] = [];
   for (const item of items) {
-    const matching = groupedItems.find((group) =>
-      group.some((peer) => sameInferredStory(peer, item)),
-    );
-    if (matching) matching.push(item);
-    else groupedItems.push([item]);
+    const key = item.storyKey?.trim().toLowerCase();
+    if (key) {
+      const group = keyedGroups.get(key) ?? [];
+      group.push(item);
+      keyedGroups.set(key, group);
+    } else {
+      unkeyedItems.push(item);
+    }
   }
+  const groupedItems: SourceItem[][] = [
+    ...keyedGroups.values(),
+    ...unkeyedItems.map((item) => [item]),
+  ];
   const storyGroups = groupedItems.map((group) => ({
-    canonicalKey: `story-${hash(inferredGroupSeed(group))}`,
+    canonicalKey: `story-${hash(groupSeed(group))}`,
     sourceItemIds: group.map((item) => item.id),
   }));
   return { items, storyGroups, exclusions };
+}
+
+/** Semantic story grouping (#502): deterministic eligibility has run; the
+ *  remaining work compares bounded plausible pairs of eligible unkeyed items
+ *  for the same specific development. Keyed items keep their exact storyKey
+ *  group and never cross into semantic groups; ambiguous, skipped, failed and
+ *  over-budget pairs stay separate; a temporary provider failure leaves the
+ *  usable deterministic result in place of the affected judgments. */
+export async function determineStoryGroups(input: {
+  eligibleItems: SourceItem[];
+  judger?: StoryPairJudger;
+  budget?: number;
+}): Promise<StoryGroupingOutcome> {
+  const budget = input.budget ?? GROUPING_PAIR_BUDGET;
+  const keyedGroups = new Map<string, SourceItem[]>();
+  const unkeyedItems: SourceItem[] = [];
+  for (const item of input.eligibleItems) {
+    const key = item.storyKey?.trim().toLowerCase();
+    if (key) {
+      const group = keyedGroups.get(key) ?? [];
+      group.push(item);
+      keyedGroups.set(key, group);
+    } else {
+      unkeyedItems.push(item);
+    }
+  }
+
+  const audit: StoryGroupingAudit = {
+    questionRevision: GROUPING_QUESTION_REVISION,
+    budget,
+    eligibleUnkeyedItems: unkeyedItems.length,
+    pairsEvaluated: 0,
+    pairsSkipped: 0,
+    semanticGroups: 0,
+    singletonGroups: 0,
+    judgerFailures: 0,
+    pairs: [],
+  };
+
+  const totalPlausiblePairs = candidatePairs(unkeyedItems, {
+    budget: Number.POSITIVE_INFINITY,
+  }).length;
+  const pairs = candidatePairs(unkeyedItems, { budget });
+  audit.pairsSkipped = Math.max(0, totalPlausiblePairs - pairs.length);
+
+  const verdicts = new Map<string, { same: number; different: number; ambiguous: number }>();
+  if (input.judger && pairs.length > 0) {
+    const itemById = new Map(unkeyedItems.map((item) => [item.id, item]));
+    for (const [leftId, rightId] of pairs) {
+      const verdict = await input.judger({
+        left: itemById.get(leftId)!,
+        right: itemById.get(rightId)!,
+      });
+      audit.pairsEvaluated += 1;
+      if (verdict === null) {
+        audit.judgerFailures += 1;
+        continue;
+      }
+      verdicts.set(`${leftId}|${rightId}`, verdict);
+      audit.pairs.push({
+        left: leftId,
+        right: rightId,
+        verdict,
+        merged: sameStoryVerdict(verdict, GROUPING_QUESTION_REVISION),
+        compared: true,
+        questionRevision: GROUPING_QUESTION_REVISION,
+      });
+    }
+  } else {
+    audit.pairsSkipped += pairs.length;
+  }
+
+  const partitions = applyPairVerdicts(unkeyedItems, pairs, verdicts, GROUPING_QUESTION_REVISION);
+  audit.semanticGroups = partitions.filter((group) => group.size > 1).length;
+  audit.singletonGroups = partitions.filter((group) => group.size === 1).length;
+
+  const semanticItems = new Map<string, SourceItem>();
+  for (const item of unkeyedItems) semanticItems.set(item.id, item);
+  const groupItems: SourceItem[][] = [
+    ...keyedGroups.values(),
+    ...partitions.map((group) => [...group].sort().map((id) => semanticItems.get(id)!)),
+  ];
+  const groups = groupItems.map((group) => ({
+    canonicalKey: `story-${hash(groupSeed(group))}`,
+    sourceItemIds: group.map((item) => item.id),
+  }));
+  return { groups, audit };
+}
+
+/** Cool-down reconciliation for regrouped stories (#502): a new semantic
+ *  group's canonical key is membership-derived, so added coverage changes the
+ *  key. When the base disposition says eligible only because no decision
+ *  carries the NEW key, a group whose evidence shares a Source Item URL with
+ *  a decision still inside the cooldown window is the same story under a new
+ *  key, and the cooldown holds. A key that already matches a recent decision
+ *  is left to the base disposition untouched; a demonstrably different story
+ *  (no evidence overlap) is never caught by this. */
+export function storyGroupCooldownDisposition(
+  base: { eligible: false } | { eligible: true; earlyFollowUp: OpportunityEarlyFollowUp | null },
+  canonicalKey: string,
+  evidenceUrls: string[],
+  recentDecisions: { canonicalKey: string; evidenceUrls: string[] }[],
+): { eligible: false } | { eligible: true; earlyFollowUp: OpportunityEarlyFollowUp | null } {
+  if (!base.eligible) return base;
+  if (recentDecisions.some((decision) => decision.canonicalKey === canonicalKey)) return base;
+  const evidence = new Set(evidenceUrls);
+  const collision = recentDecisions.some((decision) =>
+    decision.evidenceUrls.some((url) => evidence.has(url)),
+  );
+  return collision ? { eligible: false } : base;
 }
 
 export function enforceOpportunityIdentity(input: {

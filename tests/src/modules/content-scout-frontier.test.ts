@@ -894,7 +894,7 @@ describe("Content Scout frontier contracts", () => {
             materialDevelopment: null,
             urgency: "A distinct forward-looking angle.",
             explanation: "The materially different angle is recorded.",
-            sourceItemIds: ["eligible-rss", "eligible-instagram"],
+            sourceItemIds: ["eligible-instagram", "eligible-rss"],
             sourceUrls: ["https://wire.example/acme-rule", "https://instagram.example/p/acme-rule"],
             experimentalEvidence: false,
             confidence: 0.75,
@@ -909,6 +909,14 @@ describe("Content Scout frontier contracts", () => {
       now: () => new Date(START),
       adapters: [available, experimental],
       ranker: enforcingRanker,
+      /* Controlled semantic response (#502): the two Infinite Slop items are
+         the same development; every other judged pair is different. */
+      storyPairJudger: async ({ left, right }) => {
+        const same = [left.title, right.title].every((title) =>
+          title?.toLowerCase().includes("infinite slop"),
+        );
+        return { same: same ? 0.95 : 0.05, different: same ? 0.9 : 0.03, ambiguous: 0.02 };
+      },
       log: () => undefined,
     });
     host.acceptBrandProfile({
@@ -936,7 +944,7 @@ describe("Content Scout frontier contracts", () => {
     expect(rankedItemIds).toEqual(["eligible-instagram", "eligible-rss"]);
     expect(rankedStoryGroups).toEqual([
       expect.objectContaining({
-        sourceItemIds: ["eligible-rss", "eligible-instagram"],
+        sourceItemIds: ["eligible-instagram", "eligible-rss"],
       }),
     ]);
     const first = host.activeShortlist()!;
@@ -967,19 +975,22 @@ describe("Content Scout frontier contracts", () => {
       ),
     ).toEqual(identityByAngle);
 
+    /* Archiving the instagram member target removes that Source Item from
+       collection entirely (#502): the remaining evidence forms its own group
+       under a recomputed deterministic identity — same items, same key — so
+       the shortlist still surfaces the story, now as the rss-only group. */
     const instagramTarget = host
       .listSourceTargets()
       .find((target) => target.adapterId === "instagram")!;
     host.setSourceTargetState(instagramTarget.id, "archived");
     await host.scoutNow();
     await host.idle();
-    expect(
-      new Map(
-        host
-          .activeShortlist()!
-          .opportunities.map((opportunity) => [opportunity.angle, opportunity.id]),
-      ),
-    ).toEqual(identityByAngle);
+    const after = host.activeShortlist()!;
+    expect(after.opportunities.map((opportunity) => opportunity.angle).sort()).toEqual([
+      "forecast",
+      "practical_implication",
+    ]);
+    expect(after.opportunities[0].sourceItemIds).toEqual(["eligible-rss"]);
   });
 
   it("continues recovered collection inside the original retry budget", async () => {

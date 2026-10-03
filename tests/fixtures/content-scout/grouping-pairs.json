@@ -1,0 +1,1146 @@
+{
+  "reviewed": "2026-10-03",
+  "note": "Frozen labeled pair corpus for the #502 story-grouping promotion gate. All companies, products and events are fictional and safe to retain. expected is the hand label judged independently of any model: would a reader say both items report the SAME specific event or development? ambiguous means the texts alone cannot establish it. Thresholds freeze from the gate comparison in scripts/content-scout-grouping-eval.mts, never the reverse.",
+  "pairs": [
+    {
+      "id": "grp-001",
+      "category": "paraphrase_same_launch",
+      "expected": "same",
+      "rationale": "Both report the Harrow Loop launch with depot count; second is a paraphrase.",
+      "left": {
+        "title": "Vellum Robotics unveils Harrow Loop routing system",
+        "body": "Vellum Robotics unveiled the Harrow Loop, an autonomous route planner for warehouse vehicles, at its first developer summit.",
+        "description": null,
+        "publishedAt": "2026-09-20T10:00:00.000Z",
+        "canonicalUrl": "https://wire.example/harrow-loop-unveil"
+      },
+      "right": {
+        "title": "The Harrow Loop launch: autonomous route planner now available at twelve depots",
+        "body": "Vellum's Harrow Loop autonomous routing system went live this week, initially serving twelve depot pilots.",
+        "description": null,
+        "publishedAt": "2026-09-20T14:00:00.000Z",
+        "canonicalUrl": "https://depotnews.example/harrow-loop-live"
+      }
+    },
+    {
+      "id": "grp-002",
+      "category": "paraphrase_same_launch",
+      "expected": "same",
+      "rationale": "Same Atlas platform GA, two outlets, same day.",
+      "left": {
+        "title": "Example Labs takes Atlas data platform to general availability",
+        "body": "Example Labs said its Atlas data platform is now generally available after a nine-month beta with forty design partners.",
+        "description": null,
+        "publishedAt": "2026-09-18T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/atlas-ga"
+      },
+      "right": {
+        "title": "Atlas is GA: Example Labs opens its data platform to everyone",
+        "body": "After a beta that ran nine months and forty design partners, Example Labs has opened Atlas to all customers.",
+        "description": null,
+        "publishedAt": "2026-09-18T11:30:00.000Z",
+        "canonicalUrl": "https://dataweekly.example/atlas-ga"
+      }
+    },
+    {
+      "id": "grp-003",
+      "category": "paraphrase_same_launch",
+      "expected": "same",
+      "rationale": "Both describe the Meridian partnership pilot in Lisbon.",
+      "left": {
+        "title": "Halden Systems and Meridian Foods partner on cold-chain pilots",
+        "body": "Halden Systems will outfit Meridian Foods' Lisbon distribution center with cold-chain tracking cells starting in October.",
+        "description": null,
+        "publishedAt": "2026-09-16T08:00:00.000Z",
+        "canonicalUrl": "https://coldchain.example/halden-meridian"
+      },
+      "right": {
+        "title": "Meridian Foods picks Halden for Lisbon cold-chain rollout",
+        "body": "Meridian Foods confirmed a October pilot with Halden Systems at its Lisbon distribution center, its first cold-chain automation partner.",
+        "description": null,
+        "publishedAt": "2026-09-16T12:00:00.000Z",
+        "canonicalUrl": "https://grocerytech.example/meridian-halden"
+      }
+    },
+    {
+      "id": "grp-004",
+      "category": "paraphrase_same_launch",
+      "expected": "same",
+      "rationale": "Same recall of reflective marking tape on two AMR models.",
+      "left": {
+        "title": "Recall: reflective tape bundled with two Halden AMR models degrades at night",
+        "body": "Halden Systems recalled the retroreflector tape shipped with its Mover-2 and Mover-3 vehicles after night-visibility field reports.",
+        "description": null,
+        "publishedAt": "2026-09-12T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/halden-tape-recall"
+      },
+      "right": {
+        "title": "Halden recalls marking tape on Mover-2 and Mover-3 fleets",
+        "body": "The tape recall affects Halden's Mover-2 and Mover-3 autonomous vehicles; replacement kits ship next month.",
+        "description": null,
+        "publishedAt": "2026-09-12T15:00:00.000Z",
+        "canonicalUrl": "https://fleetnews.example/halden-recall"
+      }
+    },
+    {
+      "id": "grp-005",
+      "category": "paraphrase_same_launch",
+      "expected": "same",
+      "rationale": "Both report the same Series C by Vellum with identical amount and lead investor.",
+      "left": {
+        "title": "Vellum Robotics raises $120M Series C led by Northgate",
+        "body": "Vellum Robotics closed a $120 million Series C led by Northgate Capital to expand its depot automation fleet.",
+        "description": null,
+        "publishedAt": "2026-09-10T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/vellum-series-c"
+      },
+      "right": {
+        "title": "Depot automation firm Vellum lands $120M led by Northgate",
+        "body": "Northgate Capital led a $120 million Series C in Vellum Robotics, the largest depot-automation raise this quarter.",
+        "description": null,
+        "publishedAt": "2026-09-10T17:00:00.000Z",
+        "canonicalUrl": "https://venturebeatexample.com/vellum-120m"
+      }
+    },
+    {
+      "id": "grp-006",
+      "category": "paraphrase_same_launch",
+      "expected": "same",
+      "rationale": "Same outage event at the Frankfurt facility, reported by two outlets.",
+      "left": {
+        "title": "Coolr sensing outage idles Meridian's Frankfurt cold store for a day",
+        "body": "A sensing-stack outage in Coolr's platform idled Meridian Foods' Frankfurt cold store for roughly a day last week.",
+        "description": null,
+        "publishedAt": "2026-09-08T10:00:00.000Z",
+        "canonicalUrl": "https://logisticsexample.com/frankfurt-outage"
+      },
+      "right": {
+        "title": "Frankfurt cold store resumes after Coolr platform outage",
+        "body": "Meridian's Frankfurt facility restarted after a day-long outage traced to Coolr's sensing platform.",
+        "description": null,
+        "publishedAt": "2026-09-08T18:00:00.000Z",
+        "canonicalUrl": "https://coldchain.example/frankfurt-resume"
+      }
+    },
+    {
+      "id": "grp-007",
+      "category": "paraphrase_same_launch",
+      "expected": "same",
+      "rationale": "Same certification announcement for the Docksafe controller.",
+      "left": {
+        "title": "Docksafe interlock controller earns TUV certification",
+        "body": "The Docksafe pedestrian-gate interlock controller passed TUV functional-safety certification, its maker announced.",
+        "description": null,
+        "publishedAt": "2026-09-06T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/docksafe-tuv"
+      },
+      "right": {
+        "title": "TUV certificate clears Docksafe dock controller for EU sites",
+        "body": "Docksafe's interlock controller can now ship to EU loading docks after TUV functional-safety approval.",
+        "description": null,
+        "publishedAt": "2026-09-06T13:00:00.000Z",
+        "canonicalUrl": "https://complianceweekly.example/docksafe-eu"
+      }
+    },
+    {
+      "id": "grp-008",
+      "category": "paraphrase_same_launch",
+      "expected": "same",
+      "rationale": "Same open TCO model release by the same research group.",
+      "left": {
+        "title": "Research group open-sources a mixed-fleet warehouse TCO model",
+        "body": "A logistics research group released an open total-cost-of-ownership model calibrated on nine warehouse deployments.",
+        "description": null,
+        "publishedAt": "2026-09-04T09:00:00.000Z",
+        "canonicalUrl": "https://researchwire.example/tco-model"
+      },
+      "right": {
+        "title": "New open model prices mixed AMR and conveyor fleets",
+        "body": "The nine-deployment-calibrated TCO model for mixed fleets is now public under an Apache license.",
+        "description": null,
+        "publishedAt": "2026-09-04T16:00:00.000Z",
+        "canonicalUrl": "https://automationdigest.example/tco-open"
+      }
+    },
+    {
+      "id": "grp-009",
+      "category": "same_company_different_product",
+      "expected": "different",
+      "rationale": "Harrow Loop routing versus Beacon telemetry: different products from Vellum.",
+      "left": {
+        "title": "Vellum Robotics unveils Harrow Loop routing system",
+        "body": "Vellum Robotics unveiled the Harrow Loop autonomous route planner for warehouse vehicles at its developer summit.",
+        "description": null,
+        "publishedAt": "2026-09-20T10:00:00.000Z",
+        "canonicalUrl": "https://wire.example/harrow-loop-unveil"
+      },
+      "right": {
+        "title": "Vellum ships Beacon fleet telemetry dashboard",
+        "body": "Vellum's Beacon telemetry dashboard reached general availability, adding per-vehicle energy reporting.",
+        "description": null,
+        "publishedAt": "2026-09-21T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/vellum-beacon-ga"
+      }
+    },
+    {
+      "id": "grp-010",
+      "category": "same_company_different_product",
+      "expected": "different",
+      "rationale": "Atlas data platform versus Beacon messaging SDK: different Example Labs products.",
+      "left": {
+        "title": "Example Labs takes Atlas data platform to general availability",
+        "body": "Example Labs' Atlas data platform is generally available after a nine-month beta.",
+        "description": null,
+        "publishedAt": "2026-09-18T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/atlas-ga"
+      },
+      "right": {
+        "title": "Example Labs launches Beacon messaging SDK for logistics apps",
+        "body": "The Beacon SDK adds driver messaging to logistics applications and is available today for iOS and Android.",
+        "description": null,
+        "publishedAt": "2026-09-18T15:00:00.000Z",
+        "canonicalUrl": "https://mobilewire.example/beacon-sdk"
+      }
+    },
+    {
+      "id": "grp-011",
+      "category": "same_company_different_product",
+      "expected": "different",
+      "rationale": "Mover-3 vehicle launch versus Mover-2 tape recall: different developments.",
+      "left": {
+        "title": "Halden Systems unveils the Mover-3 pallet vehicle",
+        "body": "Halden's Mover-3 doubles pallet throughput of its predecessor with a new lifting stage.",
+        "description": null,
+        "publishedAt": "2026-09-14T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/mover3-launch"
+      },
+      "right": {
+        "title": "Recall: reflective tape bundled with two Halden AMR models degrades at night",
+        "body": "Halden recalled retroreflector tape shipped with Mover-2 and Mover-3 vehicles after night-visibility reports.",
+        "description": null,
+        "publishedAt": "2026-09-12T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/halden-tape-recall"
+      }
+    },
+    {
+      "id": "grp-012",
+      "category": "same_company_different_product",
+      "expected": "different",
+      "rationale": "Coolr sensing platform outage versus Coolr Coolpeak launch: different developments.",
+      "left": {
+        "title": "Coolr sensing outage idles Meridian's Frankfurt cold store for a day",
+        "body": "A sensing-stack outage in Coolr's platform idled Meridian's Frankfurt cold store for about a day.",
+        "description": null,
+        "publishedAt": "2026-09-08T10:00:00.000Z",
+        "canonicalUrl": "https://logisticsexample.com/frankfurt-outage"
+      },
+      "right": {
+        "title": "Coolr launches Coolpeak defrost scheduling for cold stores",
+        "body": "Coolpeak schedules defrost cycles against energy prices, Coolr announced at the refrigeration expo.",
+        "description": null,
+        "publishedAt": "2026-09-09T09:00:00.000Z",
+        "canonicalUrl": "https://refrigtech.example/coolpeak-launch"
+      }
+    },
+    {
+      "id": "grp-013",
+      "category": "same_company_different_product",
+      "expected": "different",
+      "rationale": "Docksafe controller certification versus Docksafe Cloud monitoring: different products.",
+      "left": {
+        "title": "Docksafe interlock controller earns TUV certification",
+        "body": "Docksafe's pedestrian-gate interlock controller passed TUV functional-safety certification.",
+        "description": null,
+        "publishedAt": "2026-09-06T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/docksafe-tuv"
+      },
+      "right": {
+        "title": "Docksafe Cloud adds live bypass monitoring for multi-site docks",
+        "body": "Docksafe Cloud now streams live bypass alerts across sites, the company said in its product update.",
+        "description": null,
+        "publishedAt": "2026-09-05T10:00:00.000Z",
+        "canonicalUrl": "https://dockops.example/docksafe-cloud"
+      }
+    },
+    {
+      "id": "grp-014",
+      "category": "same_company_different_product",
+      "expected": "different",
+      "rationale": "Vellum Series C funding versus Vellum university hiring program: unrelated developments at one company.",
+      "left": {
+        "title": "Vellum Robotics raises $120M Series C led by Northgate",
+        "body": "Vellum Robotics closed a $120 million Series C led by Northgate Capital.",
+        "description": null,
+        "publishedAt": "2026-09-10T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/vellum-series-c"
+      },
+      "right": {
+        "title": "Vellum Robotics opens a depot-technician academy with three universities",
+        "body": "The academy trains depot technicians on mobile-robot maintenance across three partner universities.",
+        "description": null,
+        "publishedAt": "2026-09-11T09:00:00.000Z",
+        "canonicalUrl": "https://edwire.example/vellum-academy"
+      }
+    },
+    {
+      "id": "grp-015",
+      "category": "same_event_different_year",
+      "expected": "different",
+      "rationale": "2024 Series A versus the 2026 Series C: different rounds years apart.",
+      "left": {
+        "title": "Vellum Robotics raises $8M Series A (2024)",
+        "body": "Vellum Robotics announced an $8 million Series A in March 2024 to build its first depot pilot.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/vellum-series-a-2024"
+      },
+      "right": {
+        "title": "Vellum Robotics raises $120M Series C led by Northgate",
+        "body": "Vellum Robotics closed a $120 million Series C led by Northgate Capital in September 2026.",
+        "description": null,
+        "publishedAt": "2026-09-10T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/vellum-series-c"
+      }
+    },
+    {
+      "id": "grp-016",
+      "category": "same_event_different_year",
+      "expected": "different",
+      "rationale": "Atlas Conf 2025 versus Atlas Conf 2026: consecutive editions, different events.",
+      "left": {
+        "title": "Atlas Conf 2025 drew 900 attendees to Rotterdam",
+        "body": "Example Labs' Atlas Conf 2025 wrapped in Rotterdam with 900 attendees and 30 sessions.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/atlas-conf-2025"
+      },
+      "right": {
+        "title": "Atlas Conf 2026 opens registration with a partner track",
+        "body": "Registration opened for Atlas Conf 2026, adding a partner certification track this year.",
+        "description": null,
+        "publishedAt": "2026-09-19T09:00:00.000Z",
+        "canonicalUrl": "https://dataweekly.example/atlas-conf-2026"
+      }
+    },
+    {
+      "id": "grp-017",
+      "category": "same_event_different_year",
+      "expected": "different",
+      "rationale": "Mover-2 launch (2024) versus Mover-3 launch (2026): product generations.",
+      "left": {
+        "title": "Halden ships first Mover-2 units (2024)",
+        "body": "Halden shipped its first Mover-2 pallet vehicles to two pilot depots in late 2024.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/mover2-2024"
+      },
+      "right": {
+        "title": "Halden Systems unveils the Mover-3 pallet vehicle",
+        "body": "The Mover-3 doubles pallet throughput of the Mover-2 with a new lifting stage.",
+        "description": null,
+        "publishedAt": "2026-09-14T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/mover3-launch"
+      }
+    },
+    {
+      "id": "grp-018",
+      "category": "same_event_different_year",
+      "expected": "different",
+      "rationale": "Meridian Rotterdam retrofit (2024) versus Lisbon pilot (2026): different sites and years.",
+      "left": {
+        "title": "Meridian Foods retrofits Rotterdam cold store (2024)",
+        "body": "Meridian's 2024 Rotterdam retrofit added basic telematics to its cold-store fleet.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/meridian-rotterdam-2024"
+      },
+      "right": {
+        "title": "Halden Systems and Meridian Foods partner on cold-chain pilots",
+        "body": "Halden will outfit Meridian's Lisbon distribution center with cold-chain tracking cells in October.",
+        "description": null,
+        "publishedAt": "2026-09-16T08:00:00.000Z",
+        "canonicalUrl": "https://coldchain.example/halden-meridian"
+      }
+    },
+    {
+      "id": "grp-019",
+      "category": "same_event_different_year",
+      "expected": "different",
+      "rationale": "2025 safety benchmark versus 2026 edition: different report years.",
+      "left": {
+        "title": "Warehouse automation safety benchmark 2025 published",
+        "body": "The 2025 safety benchmark ranked 22 fleets on incident and bypass rates.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/safety-benchmark-2025"
+      },
+      "right": {
+        "title": "2026 warehouse safety benchmark adds near-miss reporting",
+        "body": "The 2026 edition expands the safety benchmark to 30 fleets and adds near-miss reporting scores.",
+        "description": null,
+        "publishedAt": "2026-09-17T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/benchmark-2026"
+      }
+    },
+    {
+      "id": "grp-020",
+      "category": "same_event_different_year",
+      "expected": "different",
+      "rationale": "Coolpeak 1.0 (2025) versus Coolpeak 2.0 (2026): different releases.",
+      "left": {
+        "title": "Coolpeak 1.0 brought price-aware defrost to five sites (2025)",
+        "body": "Coolr's Coolpeak 1.0 ran price-aware defrost at five pilot sites through 2025.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/coolpeak-2025"
+      },
+      "right": {
+        "title": "Coolr launches Coolpeak defrost scheduling for cold stores",
+        "body": "Coolpeak's general-availability release adds tariff feeds and multi-site scheduling.",
+        "description": null,
+        "publishedAt": "2026-09-09T09:00:00.000Z",
+        "canonicalUrl": "https://refrigtech.example/coolpeak-launch"
+      }
+    },
+    {
+      "id": "grp-021",
+      "category": "same_topic_different_events",
+      "expected": "different",
+      "rationale": "Lisbon pilot versus Rotterdam energy retrofit: different Meridian site projects.",
+      "left": {
+        "title": "Halden Systems and Meridian Foods partner on cold-chain pilots",
+        "body": "Halden will outfit Meridian's Lisbon distribution center with cold-chain tracking cells.",
+        "description": null,
+        "publishedAt": "2026-09-16T08:00:00.000Z",
+        "canonicalUrl": "https://coldchain.example/halden-meridian"
+      },
+      "right": {
+        "title": "Meridian Foods cuts refrigerated-aisle energy use 18% in Rotterdam",
+        "body": "Meridian's Rotterdam site reported an 18% energy reduction after an aisle-level retrofit completed this summer.",
+        "description": null,
+        "publishedAt": "2026-09-12T09:00:00.000Z",
+        "canonicalUrl": "https://energynews.example/meridian-rotterdam"
+      }
+    },
+    {
+      "id": "grp-022",
+      "category": "same_topic_different_events",
+      "expected": "different",
+      "rationale": "Two distinct outage incidents: Frankfurt cold store versus Rotterdam palletizer hall.",
+      "left": {
+        "title": "Coolr sensing outage idles Meridian's Frankfurt cold store for a day",
+        "body": "A sensing-stack outage idled Meridian's Frankfurt cold store for about a day.",
+        "description": null,
+        "publishedAt": "2026-09-08T10:00:00.000Z",
+        "canonicalUrl": "https://logisticsexample.com/frankfurt-outage"
+      },
+      "right": {
+        "title": "Palletizer hall outage traced to warehouse network switch at Meridian Rotterdam",
+        "body": "Meridian's Rotterdam palletizer hall lost eight hours to a failed network switch, not its robots.",
+        "description": null,
+        "publishedAt": "2026-09-09T10:00:00.000Z",
+        "canonicalUrl": "https://logisticsexample.com/rotterdam-switch"
+      }
+    },
+    {
+      "id": "grp-023",
+      "category": "same_topic_different_events",
+      "expected": "different",
+      "rationale": "Vellum depot pilot in Memphis versus Vellum night-shift picking in Memphis is NOT this pair: this pair is Memphis pilot versus a Seattle deployment by a different operator.",
+      "left": {
+        "title": "Vellum pilots night-shift picking at two Memphis depots",
+        "body": "Vellum's picking cells will run night shifts at two Memphis depots through the end of the year.",
+        "description": null,
+        "publishedAt": "2026-09-20T10:00:00.000Z",
+        "canonicalUrl": "https://wire.example/vellum-memphis"
+      },
+      "right": {
+        "title": "Cascadia Grocer runs overnight restocking robots in Seattle flagship",
+        "body": "Cascadia Grocer's Seattle flagship began overnight restocking with robots from a different vendor last week.",
+        "description": null,
+        "publishedAt": "2026-09-19T10:00:00.000Z",
+        "canonicalUrl": "https://retailwire.example/cascadia-seattle"
+      }
+    },
+    {
+      "id": "grp-024",
+      "category": "same_topic_different_events",
+      "expected": "different",
+      "rationale": "Tape recall (Halden) versus battery-pack recall (Coolr): different recalls by different companies.",
+      "left": {
+        "title": "Recall: reflective tape bundled with two Halden AMR models degrades at night",
+        "body": "Halden recalled retroreflector tape on Mover-2 and Mover-3 vehicles.",
+        "description": null,
+        "publishedAt": "2026-09-12T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/halden-tape-recall"
+      },
+      "right": {
+        "title": "Coolr recalls third-party battery packs used in Cooltrack badges",
+        "body": "Coolr recalled a lot of third-party battery packs shipped in Cooltrack temperature badges.",
+        "description": null,
+        "publishedAt": "2026-09-13T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/coolr-battery-recall"
+      }
+    },
+    {
+      "id": "grp-025",
+      "category": "same_topic_different_events",
+      "expected": "different",
+      "rationale": "EU dock-safety guidance versus a US insurer premium framework: related topics, different jurisdictions and events.",
+      "left": {
+        "title": "Draft EU guidance would require certified stop functions on shared-floor robots",
+        "body": "Draft guidance published in Brussels would require third-party-certified stop functions with an 18-month transition.",
+        "description": null,
+        "publishedAt": "2026-09-16T09:00:00.000Z",
+        "canonicalUrl": "https://eupolicyexample.com/shared-floor-draft"
+      },
+      "right": {
+        "title": "US insurer publishes premium-adjustment framework for warehouse automation",
+        "body": "A major US insurer will pilot premium adjustments scoring certified stops, bypass logging and training cadence.",
+        "description": null,
+        "publishedAt": "2026-09-17T09:00:00.000Z",
+        "canonicalUrl": "https://insurancewire.example/warehouse-premiums"
+      }
+    },
+    {
+      "id": "grp-026",
+      "category": "same_topic_different_events",
+      "expected": "different",
+      "rationale": "TUV certification of Docksafe versus an unrelated CE marking of a competitor controller.",
+      "left": {
+        "title": "Docksafe interlock controller earns TUV certification",
+        "body": "Docksafe's interlock controller passed TUV functional-safety certification for EU loading docks.",
+        "description": null,
+        "publishedAt": "2026-09-06T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/docksafe-tuv"
+      },
+      "right": {
+        "title": "Gatelock.controller completes CE marking for its yard interlock",
+        "body": "Gatelock announced CE marking completion for its yard interlock controller, separate from the dock product line.",
+        "description": null,
+        "publishedAt": "2026-09-07T09:00:00.000Z",
+        "canonicalUrl": "https://complianceweekly.example/gatelock-ce"
+      }
+    },
+    {
+      "id": "grp-027",
+      "category": "mention_vs_launch",
+      "expected": "different",
+      "rationale": "One text mentions a rumored platform; the other announces its launch. Mention is not launch.",
+      "left": {
+        "title": "Analyst note mentions a rumored 'Beacon' telemetry product at Vellum",
+        "body": "The analyst note briefly mentions that Vellum is rumored to be preparing a telemetry product code-named Beacon.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://analystnotes.example/vellum-rumor"
+      },
+      "right": {
+        "title": "Vellum ships Beacon fleet telemetry dashboard",
+        "body": "Vellum's Beacon telemetry dashboard reached general availability with per-vehicle energy reporting.",
+        "description": null,
+        "publishedAt": "2026-09-21T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/vellum-beacon-ga"
+      }
+    },
+    {
+      "id": "grp-028",
+      "category": "mention_vs_launch",
+      "expected": "different",
+      "rationale": "Podcast mention of a planned Atlas feature versus the actual GA announcement.",
+      "left": {
+        "title": "Podcast: Example Labs CEO hints Atlas will open to everyone 'soon'",
+        "body": "In a podcast interview the CEO hinted an upcoming opening of Atlas beyond design partners, without a date.",
+        "description": null,
+        "publishedAt": "2026-09-02T09:00:00.000Z",
+        "canonicalUrl": "https://podcasts.example/atlas-hint"
+      },
+      "right": {
+        "title": "Example Labs takes Atlas data platform to general availability",
+        "body": "Atlas is now generally available after a nine-month beta with forty design partners.",
+        "description": null,
+        "publishedAt": "2026-09-18T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/atlas-ga"
+      }
+    },
+    {
+      "id": "grp-029",
+      "category": "mention_vs_launch",
+      "expected": "different",
+      "rationale": "Conference slide mentions planned Lisbon pilot; the news item reports it starting.",
+      "left": {
+        "title": "Slide deck from logistics expo lists Meridian Lisbon as a 'planned 2026 pilot'",
+        "body": "A slide in Halden's expo deck lists Meridian Lisbon among planned 2026 pilots, with no dates.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://expodecks.example/halden-planned"
+      },
+      "right": {
+        "title": "Halden Systems and Meridian Foods partner on cold-chain pilots",
+        "body": "Halden will outfit Meridian's Lisbon distribution center with cold-chain tracking cells starting in October.",
+        "description": null,
+        "publishedAt": "2026-09-16T08:00:00.000Z",
+        "canonicalUrl": "https://coldchain.example/halden-meridian"
+      }
+    },
+    {
+      "id": "grp-030",
+      "category": "mention_vs_launch",
+      "expected": "different",
+      "rationale": "Job posting mentions an unannounced Mover-3; the launch item announces it.",
+      "left": {
+        "title": "Halden job listing mentions 'next-generation pallet platform' in development",
+        "body": "A Halden engineering job listing references an unannounced next-generation pallet platform in development.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://jobboards.example/halden-listing"
+      },
+      "right": {
+        "title": "Halden Systems unveils the Mover-3 pallet vehicle",
+        "body": "Halden unveiled the Mover-3 pallet vehicle with double the throughput of the Mover-2.",
+        "description": null,
+        "publishedAt": "2026-09-14T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/mover3-launch"
+      }
+    },
+    {
+      "id": "grp-031",
+      "category": "mention_vs_launch",
+      "expected": "different",
+      "rationale": "Regulatory register entry mentions upcoming guidance; the news item reports its publication.",
+      "left": {
+        "title": "EU register lists a forthcoming guidance file on shared-floor robots",
+        "body": "The register entry lists a forthcoming guidance file with no text, expected later this session.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://eupolicyexample.com/register-entry"
+      },
+      "right": {
+        "title": "Draft EU guidance would require certified stop functions on shared-floor robots",
+        "body": "The published draft requires third-party-certified stop functions with an 18-month transition.",
+        "description": null,
+        "publishedAt": "2026-09-16T09:00:00.000Z",
+        "canonicalUrl": "https://eupolicyexample.com/shared-floor-draft"
+      }
+    },
+    {
+      "id": "grp-032",
+      "category": "explicit_negation",
+      "expected": "different",
+      "rationale": "Acquisition denied versus acquisition asserted: negation flips the claim.",
+      "left": {
+        "title": "Meridian Foods denies it is acquiring Coolr",
+        "body": "Meridian Foods said it is not acquiring sensing vendor Coolr, calling the report speculative.",
+        "description": null,
+        "publishedAt": "2026-09-14T09:00:00.000Z",
+        "canonicalUrl": "https://marketswire.example/meridian-denial"
+      },
+      "right": {
+        "title": "Meridian Foods to acquire cold-chain sensing vendor Coolr",
+        "body": "Meridian Foods agreed to acquire Coolr, the two companies confirmed in a joint statement.",
+        "description": null,
+        "publishedAt": "2026-09-14T12:00:00.000Z",
+        "canonicalUrl": "https://marketswire.example/meridian-coolr"
+      }
+    },
+    {
+      "id": "grp-033",
+      "category": "explicit_negation",
+      "expected": "different",
+      "rationale": "No layoffs asserted versus layoffs reported.",
+      "left": {
+        "title": "Halden says reports of depot-division layoffs are false",
+        "body": "Halden said claims that its depot division cut 200 jobs are false and headcount is unchanged.",
+        "description": null,
+        "publishedAt": "2026-09-15T09:00:00.000Z",
+        "canonicalUrl": "https://laborwire.example/halden-no-layoffs"
+      },
+      "right": {
+        "title": "Halden depot division cuts 200 jobs in restructuring",
+        "body": "Halden's depot division cut 200 positions as part of a restructuring, according to an internal memo.",
+        "description": null,
+        "publishedAt": "2026-09-15T08:00:00.000Z",
+        "canonicalUrl": "https://laborwire.example/halden-layoffs"
+      }
+    },
+    {
+      "id": "grp-034",
+      "category": "explicit_negation",
+      "expected": "different",
+      "rationale": "Not-recalled versus recalled.",
+      "left": {
+        "title": "Coolr says its Cooltrack badges are not affected by the battery recall",
+        "body": "Coolr stated Cooltrack badge lots sold in Europe are not affected by the battery-pack recall.",
+        "description": null,
+        "publishedAt": "2026-09-13T15:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/coolr-not-affected"
+      },
+      "right": {
+        "title": "Coolr recalls third-party battery packs used in Cooltrack badges",
+        "body": "Coolr recalled a lot of third-party battery packs shipped in Cooltrack temperature badges.",
+        "description": null,
+        "publishedAt": "2026-09-13T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/coolr-battery-recall"
+      }
+    },
+    {
+      "id": "grp-035",
+      "category": "explicit_negation",
+      "expected": "different",
+      "rationale": "Denied delay versus confirmed delay of the Mover-3.",
+      "left": {
+        "title": "Halden denies Mover-3 launch delay rumors",
+        "body": "Halden called reports of a Mover-3 delay inaccurate and reaffirmed its September launch date.",
+        "description": null,
+        "publishedAt": "2026-09-02T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/mover3-no-delay"
+      },
+      "right": {
+        "title": "Halden pushes Mover-3 launch to Q4 citing supplier constraints",
+        "body": "Halden confirmed the Mover-3 launch moved to the fourth quarter because of a supplier constraint.",
+        "description": null,
+        "publishedAt": "2026-09-03T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/mover3-delay"
+      }
+    },
+    {
+      "id": "grp-036",
+      "category": "explicit_negation",
+      "expected": "different",
+      "rationale": "Denied breach versus confirmed breach of the Beacon beta.",
+      "left": {
+        "title": "Vellum says no customer data was exposed in the Beacon beta",
+        "body": "Vellum stated that no customer data was exposed during the Beacon beta incident reviewed last week.",
+        "description": null,
+        "publishedAt": "2026-09-22T09:00:00.000Z",
+        "canonicalUrl": "https://securitywire.example/beacon-no-exposure"
+      },
+      "right": {
+        "title": "Vellum confirms Beacon beta exposed telemetry for two customers",
+        "body": "Vellum confirmed the Beacon beta briefly exposed telemetry for two customers and notified regulators.",
+        "description": null,
+        "publishedAt": "2026-09-22T12:00:00.000Z",
+        "canonicalUrl": "https://securitywire.example/beacon-exposure"
+      }
+    },
+    {
+      "id": "grp-037",
+      "category": "ambiguous_mix",
+      "expected": "ambiguous",
+      "rationale": "Both may describe the same pilot or two pilots at the same customer; texts alone cannot establish it.",
+      "left": {
+        "title": "Automation pilot expands at a Meridian site",
+        "body": "A cold-chain automation pilot at Meridian expanded to a second hall this month, the integrator said.",
+        "description": null,
+        "publishedAt": "2026-09-18T09:00:00.000Z",
+        "canonicalUrl": "https://logisticsexample.com/meridian-expand"
+      },
+      "right": {
+        "title": "Meridian cold-chain tracking reaches second hall",
+        "body": "Cold-chain tracking at Meridian now covers a second distribution hall following a successful phase one.",
+        "description": null,
+        "publishedAt": "2026-09-18T14:00:00.000Z",
+        "canonicalUrl": "https://coldchain.example/second-hall"
+      }
+    },
+    {
+      "id": "grp-038",
+      "category": "ambiguous_mix",
+      "expected": "ambiguous",
+      "rationale": "Could be the same funding or two tranches; the texts alone do not say.",
+      "left": {
+        "title": "Depot robotics startup lands new capital",
+        "body": "A depot robotics startup backed by Northgate closed new funding this week, people familiar said.",
+        "description": null,
+        "publishedAt": "2026-09-10T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/new-capital"
+      },
+      "right": {
+        "title": "Vellum Robotics raises $120M Series C led by Northgate",
+        "body": "Vellum Robotics closed a $120 million Series C led by Northgate Capital.",
+        "description": null,
+        "publishedAt": "2026-09-10T17:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/vellum-series-c"
+      }
+    },
+    {
+      "id": "grp-039",
+      "category": "ambiguous_mix",
+      "expected": "ambiguous",
+      "rationale": "An unnamed grocery chain's shelf-scanning rollout could be the same program as the named one.",
+      "left": {
+        "title": "A grocery chain expands shelf-scanning robots to 60 stores",
+        "body": "One of the largest grocery chains is expanding shelf-scanning robots to 60 more stores, its vendor said.",
+        "description": null,
+        "publishedAt": "2026-09-19T09:00:00.000Z",
+        "canonicalUrl": "https://retailwire.example/shelf-scan-60"
+      },
+      "right": {
+        "title": "Grocery chain standardizes on shelf-scanning robots chainwide",
+        "body": "A 400-store grocery chain will standardize shelf scanning on a single robotics vendor after an 18-store trial.",
+        "description": null,
+        "publishedAt": "2026-08-30T09:00:00.000Z",
+        "canonicalUrl": "https://retailwire.example/shelf-scan-standard"
+      }
+    },
+    {
+      "id": "grp-040",
+      "category": "ambiguous_mix",
+      "expected": "ambiguous",
+      "rationale": "An unnamed inspection-robotics license pilot may or may not be the port authority scheme.",
+      "left": {
+        "title": "Metro authority drafts licensing for heavy inspection drones",
+        "body": "A metropolitan authority is drafting a licensing scheme for heavy inspection drones over its ports.",
+        "description": null,
+        "publishedAt": "2026-08-30T09:00:00.000Z",
+        "canonicalUrl": "https://dronewire.example/metro-licensing"
+      },
+      "right": {
+        "title": "Port authority pilots licensing scheme for heavy inspection drones",
+        "body": "A port authority will pilot a licensing scheme with weight classes, night endorsements and an incident portal.",
+        "description": null,
+        "publishedAt": "2026-08-30T12:00:00.000Z",
+        "canonicalUrl": "https://dronewire.example/port-licensing"
+      }
+    },
+    {
+      "id": "grp-041",
+      "category": "ambiguous_mix",
+      "expected": "ambiguous",
+      "rationale": "The 'forthcoming addendum' benchmark could be the same one as the safety benchmark; texts alone cannot resolve it.",
+      "left": {
+        "title": "Insurer and vendor co-publish safety benchmark, methodology pending",
+        "body": "An insurer and a vendor co-published a 30-fleet safety benchmark with methodology 'described in a forthcoming addendum.'",
+        "description": null,
+        "publishedAt": "2026-08-26T13:00:00.000Z",
+        "canonicalUrl": "https://insurancewire.example/benchmark-pending"
+      },
+      "right": {
+        "title": "2026 warehouse safety benchmark adds near-miss reporting",
+        "body": "The 2026 safety benchmark covers 30 fleets and adds near-miss reporting scores.",
+        "description": null,
+        "publishedAt": "2026-09-17T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/benchmark-2026"
+      }
+    },
+    {
+      "id": "grp-042",
+      "category": "funding_rounds",
+      "expected": "different",
+      "rationale": "Series B (2025) versus Series C (2026): different rounds.",
+      "left": {
+        "title": "Vellum Robotics raises $35M Series B (2025)",
+        "body": "Vellum's $35 million Series B in November 2025 funded its first ten production depots.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/vellum-series-b"
+      },
+      "right": {
+        "title": "Vellum Robotics raises $120M Series C led by Northgate",
+        "body": "Vellum Robotics closed a $120 million Series C led by Northgate Capital in September 2026.",
+        "description": null,
+        "publishedAt": "2026-09-10T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/vellum-series-c"
+      }
+    },
+    {
+      "id": "grp-043",
+      "category": "funding_rounds",
+      "expected": "different",
+      "rationale": "Series A (2024) versus Series B (2025): different rounds.",
+      "left": {
+        "title": "Vellum Robotics raises $8M Series A (2024)",
+        "body": "Vellum's $8 million Series A in March 2024 funded its first depot pilot.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/vellum-series-a-2024"
+      },
+      "right": {
+        "title": "Vellum Robotics raises $35M Series B (2025)",
+        "body": "Vellum's $35 million Series B in November 2025 funded its first ten production depots.",
+        "description": null,
+        "publishedAt": "2026-09-02T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/vellum-series-b"
+      }
+    },
+    {
+      "id": "grp-044",
+      "category": "funding_rounds",
+      "expected": "different",
+      "rationale": "Halden seed round (2023) versus Halden growth round (2026): different events.",
+      "left": {
+        "title": "Halden Systems raises $3M seed round (2023)",
+        "body": "Halden's 2023 seed round of $3 million funded the first Mover prototype.",
+        "description": null,
+        "publishedAt": "2026-09-01T09:00:00.000Z",
+        "canonicalUrl": "https://archiveexample.com/halden-seed"
+      },
+      "right": {
+        "title": "Halden Systems lands $75M growth round co-led by two funds",
+        "body": "Halden announced a $75 million growth round co-led by Harborline and Steeple in August 2026.",
+        "description": null,
+        "publishedAt": "2026-09-15T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/halden-growth"
+      }
+    },
+    {
+      "id": "grp-045",
+      "category": "funding_rounds",
+      "expected": "different",
+      "rationale": "Coolr Series A versus Meridian corporate bond program: different instruments and companies.",
+      "left": {
+        "title": "Coolr raises $12M Series A for cold-chain sensing",
+        "body": "Coolr's $12 million Series A will scale production of its Cooltrack sensing badges.",
+        "description": null,
+        "publishedAt": "2026-09-05T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/coolr-series-a"
+      },
+      "right": {
+        "title": "Meridian Foods opens a €300M corporate bond program",
+        "body": "Meridian Foods opened a €300 million bond program to refinance distribution-center debt.",
+        "description": null,
+        "publishedAt": "2026-09-06T09:00:00.000Z",
+        "canonicalUrl": "https://bondswire.example/meridian-bonds"
+      }
+    },
+    {
+      "id": "grp-046",
+      "category": "funding_rounds",
+      "expected": "different",
+      "rationale": "Series C (2026) versus later secondary sale (2026): different transactions.",
+      "left": {
+        "title": "Vellum Robotics raises $120M Series C led by Northgate",
+        "body": "Vellum Robotics closed a $120 million Series C led by Northgate Capital.",
+        "description": null,
+        "publishedAt": "2026-09-10T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/vellum-series-c"
+      },
+      "right": {
+        "title": "Northgate sells part of its Vellum stake in a secondary sale",
+        "body": "Northgate sold a minority slice of its Vellum holding in a secondary transaction at a higher valuation.",
+        "description": null,
+        "publishedAt": "2026-09-25T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/northgate-secondary"
+      }
+    },
+    {
+      "id": "grp-047",
+      "category": "funding_rounds",
+      "expected": "different",
+      "rationale": "Same company, same program, different tranches reported weeks apart.",
+      "left": {
+        "title": "Meridian draws first €100M tranche of bond program",
+        "body": "Meridian Foods drew the first €100 million tranche of its bond program in early September.",
+        "description": null,
+        "publishedAt": "2026-09-08T09:00:00.000Z",
+        "canonicalUrl": "https://bondswire.example/meridian-tranche-1"
+      },
+      "right": {
+        "title": "Meridian draws second €150M tranche as program completes",
+        "body": "The second €150 million tranche completed Meridian's €250 million drawdown in late September.",
+        "description": null,
+        "publishedAt": "2026-09-26T09:00:00.000Z",
+        "canonicalUrl": "https://bondswire.example/meridian-tranche-2"
+      }
+    },
+    {
+      "id": "grp-048",
+      "category": "funding_rounds",
+      "expected": "same",
+      "rationale": "Same round reported by two outlets: the 2026 growth round.",
+      "left": {
+        "title": "Halden Systems lands $75M growth round co-led by two funds",
+        "body": "Halden announced a $75 million growth round co-led by Harborline and Steeple in August 2026.",
+        "description": null,
+        "publishedAt": "2026-09-15T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/halden-growth"
+      },
+      "right": {
+        "title": "Harborline and Steeple co-lead $75M round in pallet-robot maker Halden",
+        "body": "The $75 million growth round in Halden Systems was co-led by Harborline and Steeple, terms disclosed Monday.",
+        "description": null,
+        "publishedAt": "2026-09-15T14:00:00.000Z",
+        "canonicalUrl": "https://venturebeatexample.com/halden-75m"
+      }
+    },
+    {
+      "id": "grp-049",
+      "category": "funding_rounds",
+      "expected": "same",
+      "rationale": "Same Series C reported by two outlets.",
+      "left": {
+        "title": "Vellum Robotics raises $120M Series C led by Northgate",
+        "body": "Vellum Robotics closed a $120 million Series C led by Northgate Capital to expand depot automation.",
+        "description": null,
+        "publishedAt": "2026-09-10T09:00:00.000Z",
+        "canonicalUrl": "https://fundingwire.example/vellum-series-c"
+      },
+      "right": {
+        "title": "Depot automation firm Vellum lands $120M led by Northgate",
+        "body": "Northgate Capital led a $120 million Series C in Vellum Robotics, the largest depot-automation raise this quarter.",
+        "description": null,
+        "publishedAt": "2026-09-10T17:00:00.000Z",
+        "canonicalUrl": "https://venturebeatexample.com/vellum-120m"
+      }
+    },
+    {
+      "id": "grp-050",
+      "category": "short_update_plus_long_report",
+      "expected": "same",
+      "rationale": "A one-line update and a long report describe the same Rotterdam energy result.",
+      "left": {
+        "title": "Meridian Rotterdam energy retrofit: 18% reported",
+        "body": "Meridian's Rotterdam site reports an 18% energy cut.",
+        "description": null,
+        "publishedAt": "2026-09-12T08:00:00.000Z",
+        "canonicalUrl": "https://energysheet.example/rotterdam-18"
+      },
+      "right": {
+        "title": "Inside Meridian's Rotterdam retrofit: how aisle-level controls cut energy 18%",
+        "body": "A six-month retrofit at Meridian's Rotterdam cold store replaced hall-wide refrigeration with aisle-level controls. The operator now publishes monthly data: an 18% cut against the prior-year baseline, with defrost cycles shifted off-peak and door-heater duty cycles halved. Engineers attribute most of the saving to aisle zoning, with the remainder from price-aware defrost scheduling introduced in the same program.",
+        "description": null,
+        "publishedAt": "2026-09-12T09:00:00.000Z",
+        "canonicalUrl": "https://energynews.example/meridian-rotterdam"
+      }
+    },
+    {
+      "id": "grp-051",
+      "category": "short_update_plus_long_report",
+      "expected": "same",
+      "rationale": "A brief safety note and a long investigation cover the same palletizer incident.",
+      "left": {
+        "title": "Palletizer injury under review at regional co-op",
+        "body": "A palletizer injury at a regional co-op is under regulator review.",
+        "description": null,
+        "publishedAt": "2026-09-18T08:00:00.000Z",
+        "canonicalUrl": "https://safetysheet.example/palletizer-note"
+      },
+      "right": {
+        "title": "Regulator opens review after palletizer crush injury at regional grocery co-op",
+        "body": "A regional grocery co-op confirmed that a palletizer crush injury is under regulator review. Interim findings cite a bypassed light curtain and a missing lockout procedure on the night shift. The co-op has paused palletizer operations at the site, engaged an external safety auditor, and committed to publishing the audit's corrective actions when the review closes.",
+        "description": null,
+        "publishedAt": "2026-09-18T10:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/palletizer-review"
+      }
+    },
+    {
+      "id": "grp-052",
+      "category": "short_update_plus_long_report",
+      "expected": "same",
+      "rationale": "A one-line filing note and a long analysis cover the same proxy vote.",
+      "left": {
+        "title": "Example Labs proxy vote passes at 71%",
+        "body": "Example Labs' proxy vote passed with 71% support.",
+        "description": null,
+        "publishedAt": "2026-09-16T08:00:00.000Z",
+        "canonicalUrl": "https://proxysheet.example/example-labs-71"
+      },
+      "right": {
+        "title": "What Example Labs' 71% proxy vote means for its data-platform roadmap",
+        "body": "Example Labs' annual meeting approved the shareholder proposal with 71% of votes cast. The measure commits the board to annual reporting on data-platform revenue mix, the metric investors have pressed for since the Atlas beta. Management had recommended against the proposal, arguing existing disclosures sufficed; the vote signals investors want the roadmap tied to measurable platform revenue rather than headline customer counts.",
+        "description": null,
+        "publishedAt": "2026-09-16T09:30:00.000Z",
+        "canonicalUrl": "https://marketsanalysis.example/example-labs-proxy"
+      }
+    },
+    {
+      "id": "grp-053",
+      "category": "identical_text",
+      "expected": "same",
+      "rationale": "Verbatim duplicate from a syndication partner.",
+      "left": {
+        "title": "Docksafe interlock controller earns TUV certification",
+        "body": "The Docksafe pedestrian-gate interlock controller passed TUV functional-safety certification.",
+        "description": null,
+        "publishedAt": "2026-09-06T09:00:00.000Z",
+        "canonicalUrl": "https://safetywire.example/docksafe-tuv"
+      },
+      "right": {
+        "title": "Docksafe interlock controller earns TUV certification",
+        "body": "The Docksafe pedestrian-gate interlock controller passed TUV functional-safety certification.",
+        "description": null,
+        "publishedAt": "2026-09-06T09:00:00.000Z",
+        "canonicalUrl": "https://syndication.example/docksafe-tuv"
+      }
+    },
+    {
+      "id": "grp-054",
+      "category": "identical_text",
+      "expected": "same",
+      "rationale": "Verbatim wire copy republished under a second masthead.",
+      "left": {
+        "title": "Vellum pilots night-shift picking at two Memphis depots",
+        "body": "Vellum's picking cells will run night shifts at two Memphis depots through the end of the year.",
+        "description": null,
+        "publishedAt": "2026-09-20T10:00:00.000Z",
+        "canonicalUrl": "https://wire.example/vellum-memphis"
+      },
+      "right": {
+        "title": "Vellum pilots night-shift picking at two Memphis depots",
+        "body": "Vellum's picking cells will run night shifts at two Memphis depots through the end of the year.",
+        "description": null,
+        "publishedAt": "2026-09-20T10:30:00.000Z",
+        "canonicalUrl": "https://memphisledger.example/vellum-memphis"
+      }
+    },
+    {
+      "id": "grp-055",
+      "category": "paraphrase_same_launch",
+      "expected": "same",
+      "rationale": "Same AGV hospital pilot reported by two outlets.",
+      "left": {
+        "title": "Automated guided vehicles join hospital supply runs",
+        "body": "Three regional hospitals began AGV supply runs between pharmacy and wards, shaped by nurse-union feedback.",
+        "description": null,
+        "publishedAt": "2026-09-04T10:00:00.000Z",
+        "canonicalUrl": "https://healthwire.example/hospital-agv"
+      },
+      "right": {
+        "title": "Hospital AGV deliveries start at three sites",
+        "body": "Pharmacy-to-ward AGV deliveries started at three regional hospitals after union consultation.",
+        "description": null,
+        "publishedAt": "2026-09-04T15:00:00.000Z",
+        "canonicalUrl": "https://medtechweekly.example/agv-start"
+      }
+    },
+    {
+      "id": "grp-056",
+      "category": "same_company_different_product",
+      "expected": "different",
+      "rationale": "Atlas GA versus Atlas Conf 2026: one is a product release, the other a conference edition.",
+      "left": {
+        "title": "Example Labs takes Atlas data platform to general availability",
+        "body": "Example Labs' Atlas data platform is generally available after a nine-month beta.",
+        "description": null,
+        "publishedAt": "2026-09-18T09:00:00.000Z",
+        "canonicalUrl": "https://wire.example/atlas-ga"
+      },
+      "right": {
+        "title": "Atlas Conf 2026 opens registration with a partner track",
+        "body": "Registration opened for Atlas Conf 2026 with a new partner certification track.",
+        "description": null,
+        "publishedAt": "2026-09-19T09:00:00.000Z",
+        "canonicalUrl": "https://dataweekly.example/atlas-conf-2026"
+      }
+    },
+    {
+      "id": "grp-057",
+      "category": "ambiguous_mix",
+      "expected": "ambiguous",
+      "rationale": "Two short notes about 'sensing upgrade' work at Meridian; same project or different phases is not determinable.",
+      "left": {
+        "title": "Meridian completes a sensing upgrade in Lisbon",
+        "body": "Meridian's Lisbon site completed a sensing upgrade ahead of schedule, its integrator said.",
+        "description": null,
+        "publishedAt": "2026-09-22T09:00:00.000Z",
+        "canonicalUrl": "https://coldchain.example/lisbon-sensing"
+      },
+      "right": {
+        "title": "Sensing hardware refresh lands at a Meridian distribution center",
+        "body": "A Meridian distribution center finished a sensing hardware refresh this week, vendor documents show.",
+        "description": null,
+        "publishedAt": "2026-09-22T15:00:00.000Z",
+        "canonicalUrl": "https://logisticsexample.com/meridian-refresh"
+      }
+    }
+  ]
+}
