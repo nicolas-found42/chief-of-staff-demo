@@ -28,9 +28,12 @@ interface RecordedVerdicts {
 
 const corpusRoot = join(import.meta.dirname, "../../../tests/fixtures/content-scout");
 const corpus = JSON.parse(readFileSync(join(corpusRoot, "grouping-pairs.json"), "utf8")) as Corpus;
-const recorded = JSON.parse(
-  readFileSync(join(corpusRoot, "grouping-pairs-verdicts.json"), "utf8"),
-) as RecordedVerdicts;
+const recorded = (
+  JSON.parse(readFileSync(join(corpusRoot, "grouping-pairs-verdicts.json"), "utf8")) as {
+    note: string;
+    measured: RecordedVerdicts;
+  }
+).measured;
 
 function verdictFor(expected: CorpusPair["expected"]): PairVerdict {
   switch (expected) {
