@@ -108,12 +108,26 @@ test("meeting history — collected back to the oldest Transcript, the home says
   request,
 }) => {
   // A month-old meeting, and a Transcript whose meetingDate is a day older —
-  // the bound the one backward read reaches back to (issue #152).
+  // the bound the one backward read reaches back to (issue #152). The
+  // transcript states its meetingDate as a bare calendar day (the shape the
+  // transcript-owned store treats as date-only), so its Meeting lands in
+  // history rather than being classified by a wall-clock timestamp.
+  // The hermetic clock is parked in the past by earlier composition, so it is
+  // pinned here to the fixture's own day: the meetings below classify
+  // completed and render in Recent whatever day the suite runs, and the
+  // later journeys that seed "today" meetings inherit a real-today clock.
   const historyDay = new Date();
   historyDay.setHours(15, 0, 0, 0);
   historyDay.setDate(historyDay.getDate() - 30);
   const startAt = historyDay.toISOString();
   const boundDay = new Date(historyDay.getTime() - 24 * 60 * 60 * 1000);
+  expect(
+    (
+      await request.post("/api/test/meeting-brief/set-now", {
+        data: { now: new Date().toISOString() },
+      })
+    ).ok(),
+  ).toBe(true);
   const transcript = {
     id: "drive_history_r1",
     source: {
@@ -128,7 +142,7 @@ test("meeting history — collected back to the oldest Transcript, the home says
     ingestedAt: new Date().toISOString(),
     extractorVersion: 1,
     normalizedText: "Old planning transcript text.",
-    meetingDate: boundDay.toISOString(),
+    meetingDate: boundDay.toISOString().slice(0, 10),
     occurrence: null,
     speakers: [],
     speakerIdentityMappings: [],
@@ -173,14 +187,19 @@ test("meeting history — collected back to the oldest Transcript, the home says
   const oldMeeting = store.meetings.find((meeting) => meeting.title === "Old planning");
   if (!oldMeeting) throw new Error("the history read did not record the old Meeting");
   // #154 orphan dating: the unmatched Transcript (title-alone-never-links per
-  // #153) owns a Meeting dated at its meetingDate (boundDay), which predates
-  // the Calendar meeting, so history begins there.
-  expect(store.historyBeginsAt).toBe(boundDay.toISOString());
+  // #153) owns a Meeting dated at its meetingDate (boundDay, anchored midday
+  // UTC by the store), which predates the Calendar meeting, so history begins
+  // there.
+  expect(store.historyBeginsAt).toBe(`${boundDay.toISOString().slice(0, 10)}T12:00:00.000Z`);
 
   // The home states where history begins; the old Meeting is not today's.
+  // The Calendar Meeting's own row carries the title ("Old planning"); the
+  // transcript-owned shell is named for the file ("Old planning notes") and
+  // dates at the bound day's midday anchor.
   await page.goto("/meetings");
   await expect(page.getByText(/Recorded meeting history begins/)).toBeVisible();
   await expect(page.getByRole("link", { name: "Old planning", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Old planning notes", exact: true })).toBeVisible();
 });
 
 test("meeting wizard journey — home lists today's Meetings from the store, Brief journey, legacy surface gone", async ({
