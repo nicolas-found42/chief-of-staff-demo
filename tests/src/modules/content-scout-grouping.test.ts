@@ -87,21 +87,36 @@ describe("candidatePairs", () => {
 describe("sameStoryVerdict", () => {
   it("requires the same probability to clear the frozen threshold", () => {
     expect(
-      sameStoryVerdict({ same: GROUPING_VERDICT_THRESHOLD, different: 0.05, ambiguous: 0.05 }, 1),
+      sameStoryVerdict(
+        { same: GROUPING_VERDICT_THRESHOLD, different: 0.05, ambiguous: 0.05 },
+        GROUPING_QUESTION_REVISION,
+      ),
     ).toBe(true);
     expect(
       sameStoryVerdict(
         { same: GROUPING_VERDICT_THRESHOLD - 0.01, different: 0.5, ambiguous: 0.05 },
-        1,
+        GROUPING_QUESTION_REVISION,
       ),
     ).toBe(false);
   });
 
   it("returns false for missing, out-of-range, or revision-mismatched verdicts", () => {
-    expect(sameStoryVerdict(undefined, 1)).toBe(false);
-    expect(sameStoryVerdict({ same: Number.NaN, different: 0.2, ambiguous: 0.2 }, 1)).toBe(false);
-    expect(sameStoryVerdict({ same: 1.5, different: 0.2, ambiguous: 0.2 }, 1)).toBe(false);
-    expect(sameStoryVerdict({ same: 0.99, different: 0.2, ambiguous: 0.2 }, 2)).toBe(false);
+    expect(sameStoryVerdict(undefined, GROUPING_QUESTION_REVISION)).toBe(false);
+    expect(
+      sameStoryVerdict(
+        { same: Number.NaN, different: 0.2, ambiguous: 0.2 },
+        GROUPING_QUESTION_REVISION,
+      ),
+    ).toBe(false);
+    expect(
+      sameStoryVerdict({ same: 1.5, different: 0.2, ambiguous: 0.2 }, GROUPING_QUESTION_REVISION),
+    ).toBe(false);
+    expect(
+      sameStoryVerdict(
+        { same: 0.99, different: 0.2, ambiguous: 0.2 },
+        GROUPING_QUESTION_REVISION + 1,
+      ),
+    ).toBe(false);
   });
 });
 
@@ -124,14 +139,14 @@ describe("applyPairVerdicts", () => {
         ["a|c", { same: 0.2, different: 0.7, ambiguous: 0.1 }],
         ["b|c", { same: 0.5, different: 0.3, ambiguous: 0.2 }],
       ]),
-      1,
+      GROUPING_QUESTION_REVISION,
     );
     expect(groups.map((group) => [...group].sort())).toEqual([["a", "b"], ["c"]]);
   });
 
   it("keeps items in separate groups when a verdict is missing", () => {
     const items = [item("a", "one"), item("b", "two")];
-    const groups = applyPairVerdicts(items, [["a", "b"]], new Map(), 1);
+    const groups = applyPairVerdicts(items, [["a", "b"]], new Map(), GROUPING_QUESTION_REVISION);
     expect(groups.map((group) => [...group].sort())).toEqual([["a"], ["b"]]);
   });
 
@@ -157,7 +172,7 @@ describe("applyPairVerdicts", () => {
         ["c", "d"],
       ],
       verdicts,
-      1,
+      GROUPING_QUESTION_REVISION,
     );
     const reversed = applyPairVerdicts(
       [...items].reverse(),
@@ -170,7 +185,7 @@ describe("applyPairVerdicts", () => {
         ["c", "d"],
       ],
       verdicts,
-      1,
+      GROUPING_QUESTION_REVISION,
     );
     const normalize = (partition: Set<string>[]) =>
       partition
@@ -195,7 +210,7 @@ describe("applyPairVerdicts", () => {
         ["b|c", { same: 0.95, different: 0.03, ambiguous: 0.02 }],
         ["a|b", { same: 0.2, different: 0.6, ambiguous: 0.2 }],
       ]),
-      1,
+      GROUPING_QUESTION_REVISION,
     );
     const membership = new Set(groups.map((group) => [...group].sort().join("|")));
     /* c joins a's clique first-fit; b stays a singleton because its pair with

@@ -10,11 +10,12 @@ import { parseResultShape } from "../../llm/failure.js";
    deterministic pair budget, and merging judged pairs into groups. */
 
 /**
- * Question revision 1: one rubric defines the three-level same-story verdict
- * for a pair of Source Items. Any wording change bumps the revision — never
- * edit in place.
+ * Question revision 2: revision 1 plus explicit negation and
+ * mention-vs-event rules with worked examples. Rev 1 failed its live gate on
+ * negation pairs (scored same=1.0 against the event they denied) and
+ * mention-vs-launch pairs; rev 2 exists to clear exactly those (#502).
  */
-export const GROUPING_QUESTION_REVISION = 1;
+export const GROUPING_QUESTION_REVISION = 2;
 
 /**
  * Per-Run ceiling on pair judgments (#503 §Implementation Decisions carries
@@ -169,7 +170,18 @@ export function modelStoryPairJudger(getCompleteJson: () => CompleteJson): Story
           "- same: both items report the same specific event or development (same actor, same product/project, same occurrence).",
           "- different: the items describe clearly different developments, even when the topic, company or product names match.",
           "- ambiguous: the texts alone do not establish whether the events are the same.",
-          "Related-but-distinct is different, not same: different products from one company, the same product across years, or a mention versus a confirmed launch.",
+          "",
+          "Polarity rules — apply before anything else:",
+          "- If one text denies, negates, or contradicts what the other asserts (denies, denies rumors of, says it is not, says no data was exposed, calls a report false),",
+          "  the pair is different — the texts take opposite positions on the same question, so they cannot both report the same event.",
+          "- If one text only mentions, rumors, plans, or lists a thing (a slide listing a planned pilot, a job listing, a CEO hint, a register entry)",
+          "  and the other text reports that thing as happening or shipped, the pair is different: a mention is not the occurrence.",
+          "- Quote-check the polarity: find what each text actually asserts, then compare the assertions, not the topic words.",
+          "",
+          "Worked examples:",
+          '- "Acme denies it is acquiring Coolr" vs "Acme to acquire Coolr" -> different (opposite polarity on the same question).',
+          '- "Deck lists Meridian Lisbon as a planned pilot" vs "Meridian starts Lisbon pilot with Halden" -> different (plan versus occurrence).',
+          '- "Vellum unveils the Harrow Loop routing system" vs "The Harrow Loop routing launch went live at twelve depots" -> same (both report the launch).',
         ].join("\n"),
         user: [
           '<source-item untrusted="true">',
