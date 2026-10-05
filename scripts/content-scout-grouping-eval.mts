@@ -12,6 +12,7 @@
  *
  * Usage:
  *   pnpm exec tsx scripts/content-scout-grouping-eval.mts
+ *   pnpm exec tsx scripts/content-scout-grouping-eval.mts --judgments tests/fixtures/content-scout/grouping-pairs-verdicts.json
  *   pnpm exec tsx scripts/content-scout-grouping-eval.mts --live --model upstage/solar-pro4 --record /tmp/verdicts.json
  */
 import { readFile, writeFile } from "node:fs/promises";
@@ -53,6 +54,7 @@ function parseArgs(argv: string[]) {
     live: false,
     model: "upstage/solar-pro4",
     record: null as string | null,
+    judgments: null as string | null,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -62,6 +64,7 @@ function parseArgs(argv: string[]) {
     else if (arg === "--live") options.live = true;
     else if (arg === "--model") options.model = argv[++i] ?? options.model;
     else if (arg === "--record") options.record = argv[++i] ?? options.record;
+    else if (arg === "--judgments") options.judgments = argv[++i] ?? options.judgments;
   }
   return options;
 }
@@ -98,6 +101,7 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
     console.log("content-scout-grouping-eval — #502 promotion gate over the frozen pair corpus");
+    console.log("  --judgments <file.json>  replay recorded verdicts (default: bundled fixture)");
     process.exit(0);
   }
   const corpusRoot = new URL("../tests/fixtures/content-scout/", import.meta.url);
@@ -132,9 +136,13 @@ async function main(): Promise<void> {
       console.log(`recorded verdicts to ${options.record}`);
     }
   } else {
-    verdicts = JSON.parse(
-      await readFile(new URL("grouping-pairs-verdicts.json", corpusRoot), "utf8"),
-    ) as Recorded;
+    const recorded = JSON.parse(
+      await readFile(
+        options.judgments ?? new URL("grouping-pairs-verdicts.json", corpusRoot),
+        "utf8",
+      ),
+    ) as { measured?: Recorded };
+    verdicts = recorded.measured ?? (recorded as Recorded);
   }
 
   let truePositives = 0;
