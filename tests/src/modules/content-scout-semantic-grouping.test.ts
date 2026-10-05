@@ -162,7 +162,7 @@ describe("Semantic story grouping (#502)", () => {
       pairs: { left: string; right: string; merged: boolean; verdict: { same: number } | null }[];
     };
     expect(audit.pairsEvaluated).toBe(3);
-    expect(audit.questionRevision).toBe(1);
+    expect(audit.questionRevision).toBe(2);
     const atlasPair = audit.pairs.find(
       (pair) => pair.left === "rss:atlas-a" && pair.right === "rss:atlas-b",
     )!;
