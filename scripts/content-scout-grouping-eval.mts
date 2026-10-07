@@ -16,6 +16,7 @@
  *   pnpm exec tsx scripts/content-scout-grouping-eval.mts --live --model upstage/solar-pro4 --record /tmp/verdicts.json
  */
 import { readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { makeCompleteJson } from "../apps/server/src/llm/providers.js";
 import {
   GROUPING_AMBIGUITY_CAP,
@@ -48,6 +49,46 @@ interface CorpusPair {
 }
 
 type Recorded = Record<string, PairVerdict>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function loadRecordedVerdicts(path: string): Promise<Recorded> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(path, "utf8"));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Unable to read recorded verdicts from ${path}: ${detail}`, { cause: error });
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`Invalid recorded verdicts in ${path}: expected a JSON object.`);
+  }
+  const verdicts = "measured" in parsed ? parsed.measured : parsed;
+  if (!isRecord(verdicts)) {
+    throw new Error(`Invalid recorded verdicts in ${path}: expected "measured" to be an object.`);
+  }
+  for (const [pairId, verdict] of Object.entries(verdicts)) {
+    if (!isRecord(verdict)) {
+      throw new Error(`Invalid recorded verdicts in ${path}: pair "${pairId}" must be an object.`);
+    }
+    for (const field of ["same", "different", "ambiguous"] as const) {
+      const probability = verdict[field];
+      if (
+        typeof probability !== "number" ||
+        !Number.isFinite(probability) ||
+        probability < 0 ||
+        probability > 1
+      ) {
+        throw new Error(
+          `Invalid recorded verdicts in ${path}: pair "${pairId}" must have ${field} probability from 0 to 1.`,
+        );
+      }
+    }
+  }
+  return verdicts as Recorded;
+}
 
 function parseArgs(argv: string[]) {
   const options = {
@@ -136,13 +177,9 @@ async function main(): Promise<void> {
       console.log(`recorded verdicts to ${options.record}`);
     }
   } else {
-    const recorded = JSON.parse(
-      await readFile(
-        options.judgments ?? new URL("grouping-pairs-verdicts.json", corpusRoot),
-        "utf8",
-      ),
-    ) as { measured?: Recorded };
-    verdicts = recorded.measured ?? (recorded as Recorded);
+    const judgmentsPath =
+      options.judgments ?? fileURLToPath(new URL("grouping-pairs-verdicts.json", corpusRoot));
+    verdicts = await loadRecordedVerdicts(judgmentsPath);
   }
 
   let truePositives = 0;
