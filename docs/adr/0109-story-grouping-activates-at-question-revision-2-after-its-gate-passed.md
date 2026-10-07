@@ -15,7 +15,12 @@ a companion cap — a pair also needs the model's own `ambiguous` probability at
 encodes "uncertain relationships never merge" directly in code. Both constants carry their
 measurement in their doc comments, and `tests/fixtures/content-scout/grouping-pairs-verdicts.json`
 now holds the measured revision-2 verdicts, so
-`scripts/content-scout-grouping-eval.mts --judgments <that file>` replays the gate offline.
+`pnpm exec tsx scripts/content-scout-grouping-eval.mts --judgments <file.json>` replays offline
+from either a flat pair-ID-to-verdict map written by live `--record` or an object whose `measured`
+property holds that map. Every verdict has `same`, `different`, and
+`ambiguous` probabilities from 0 to 1. Replay reports the selected file path; a missing path,
+malformed JSON, or unsupported verdict shape exits with an input error rather than falling back to
+the bundled measurement. `--live` and `--judgments` are mutually exclusive.
 
 Production composition now wires `modelStoryPairJudger` on the contentDiscovery purpose. The
 deterministic half of ADR-0106 stands unchanged: adapter `storyKey` groups stay authoritative,
