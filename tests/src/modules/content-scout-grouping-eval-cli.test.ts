@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,6 +45,22 @@ function createIsolatedDefaultFixture(root: string, verdicts?: string) {
   symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"), "dir");
 }
 
+function createRecordedVerdicts(replayExpected: boolean) {
+  const corpus = JSON.parse(
+    readFileSync(join(repoRoot, "tests/fixtures/content-scout/grouping-pairs.json"), "utf8"),
+  ) as { pairs: Array<{ id: string; expected: string }> };
+  return Object.fromEntries(
+    corpus.pairs.map((pair) => [
+      pair.id,
+      {
+        same: Number(replayExpected && pair.expected === "same"),
+        different: Number(!replayExpected || pair.expected !== "same"),
+        ambiguous: 0,
+      },
+    ]),
+  );
+}
+
 describe("content-scout grouping evaluation CLI", () => {
   it("replays the bundled nested verdict fixture through the real entrypoint", () => {
     const result = runCli([]);
@@ -44,6 +68,97 @@ describe("content-scout grouping evaluation CLI", () => {
     expect(result.stdout).toContain("pairs: 57  same-labeled: 16");
     expect(result.stdout).toContain("true merges: 16  false merges: 0  missed merges: 0");
     expect(result.stdout).toContain("gate: PASS");
+  });
+
+  it("replays the selected flat --record file offline and attributes the output to it", () => {
+    const root = mkdtempSync(join(tmpdir(), "grouping-replay-"));
+    const selected = join(root, "selected.json");
+    writeFileSync(selected, `${JSON.stringify(createRecordedVerdicts(true))}\n`);
+    try {
+      const result = runCli(["--judgments", selected]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`judgments: ${selected}`);
+      expect(result.stdout).toContain("true merges: 16  false merges: 0  missed merges: 0");
+      expect(result.stdout).toContain("gate: PASS");
+
+      writeFileSync(selected, `${JSON.stringify(createRecordedVerdicts(false))}\n`);
+      const changed = runCli(["--judgments", selected]);
+      expect(changed.status).toBe(1);
+      expect(changed.stdout).toContain("true merges: 0  false merges: 0  missed merges: 16");
+      expect(changed.stdout).toContain("gate: FAIL");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("replays a selected measured wrapper through --judgments", () => {
+    const root = mkdtempSync(join(tmpdir(), "grouping-replay-measured-"));
+    const selected = join(root, "measured.json");
+    writeFileSync(selected, `${JSON.stringify({ measured: createRecordedVerdicts(true) })}\n`);
+    try {
+      const result = runCli(["--judgments", selected]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`judgments: ${selected}`);
+      expect(result.stdout).toContain("true merges: 16  false merges: 0  missed merges: 0");
+      expect(result.stdout).toContain("gate: PASS");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a missing --judgments value instead of using the bundled fixture", () => {
+    const result = runCli(["--judgments"]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("--judgments requires a file path");
+    expect(result.stdout).not.toContain("gate:");
+  });
+
+  it("does not consume the next option as a --judgments path", () => {
+    const result = runCli(["--judgments", "--help"]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("--judgments requires a file path");
+  });
+
+  it("reports nonexistent, malformed, and unsupported selected replay files", () => {
+    const root = mkdtempSync(join(tmpdir(), "grouping-replay-invalid-"));
+    const missing = join(root, "missing.json");
+    const malformed = join(root, "malformed.json");
+    const unsupported = join(root, "unsupported.json");
+    writeFileSync(malformed, "{");
+    writeFileSync(
+      unsupported,
+      JSON.stringify({ pair_1: { same: "yes", different: 0, ambiguous: 0 } }),
+    );
+    try {
+      for (const path of [missing, malformed, unsupported]) {
+        const result = runCli(["--judgments", path]);
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(path);
+        expect(result.stdout).not.toContain("gate:");
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("documents supported replay formats in help and keeps replay offline", () => {
+    const help = runCli(["--help"]);
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain("default: bundled fixture");
+    expect(help.stdout).toContain("flat pair-id map");
+    expect(help.stdout).toContain("measured");
+
+    const root = mkdtempSync(join(tmpdir(), "grouping-replay-mode-"));
+    const selected = join(root, "selected.json");
+    writeFileSync(selected, `${JSON.stringify(createRecordedVerdicts(true))}\n`);
+    try {
+      const live = runCli(["--live", "--judgments", selected]);
+      expect(live.status).not.toBe(0);
+      expect(live.stderr).toContain("cannot be combined");
+      expect(live.stdout).not.toContain("gate:");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("reports unreadable verdict input as an actionable input error", () => {

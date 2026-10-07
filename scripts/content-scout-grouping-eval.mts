@@ -105,7 +105,13 @@ function parseArgs(argv: string[]) {
     else if (arg === "--live") options.live = true;
     else if (arg === "--model") options.model = argv[++i] ?? options.model;
     else if (arg === "--record") options.record = argv[++i] ?? options.record;
-    else if (arg === "--judgments") options.judgments = argv[++i] ?? options.judgments;
+    else if (arg === "--judgments") {
+      const path = argv[++i];
+      if (!path || path.startsWith("-")) {
+        throw new Error("--judgments requires a file path.");
+      }
+      options.judgments = path;
+    }
   }
   return options;
 }
@@ -142,8 +148,18 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
     console.log("content-scout-grouping-eval — #502 promotion gate over the frozen pair corpus");
-    console.log("  --judgments <file.json>  replay recorded verdicts (default: bundled fixture)");
+    console.log(
+      "  --judgments <file.json>  replay recorded verdicts offline (default: bundled fixture)",
+    );
+    console.log("    accepts a flat pair-id map or an object with a measured pair-id map");
+    console.log("    each pair has same, different, and ambiguous probabilities from 0 to 1");
+    console.log(
+      "  --live                     collect fresh model judgments (cannot combine with --judgments)",
+    );
     process.exit(0);
+  }
+  if (options.live && options.judgments) {
+    throw new Error("--live and --judgments cannot be combined; replay is offline.");
   }
   const corpusRoot = new URL("../tests/fixtures/content-scout/", import.meta.url);
   const corpus = JSON.parse(await readFile(new URL("grouping-pairs.json", corpusRoot), "utf8")) as {
@@ -180,6 +196,7 @@ async function main(): Promise<void> {
     const judgmentsPath =
       options.judgments ?? fileURLToPath(new URL("grouping-pairs-verdicts.json", corpusRoot));
     verdicts = await loadRecordedVerdicts(judgmentsPath);
+    console.log(`judgments: ${judgmentsPath}`);
   }
 
   let truePositives = 0;
@@ -212,4 +229,9 @@ async function main(): Promise<void> {
   if (!gatePasses) process.exit(1);
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 2;
+}
