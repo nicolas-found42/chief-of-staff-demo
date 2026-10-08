@@ -373,7 +373,7 @@ export interface GoogleConnection {
   verifySetup(): Promise<SetupCheck>;
   /** Google's consent screen, or the state that says why there isn't one yet. */
   authUrl(): AuthUrlAccess;
-  completeSignIn(code: string): Promise<void>;
+  completeSignIn(code: string, mayCommit: () => boolean): Promise<boolean>;
   disconnect(): void;
   /** Drop the remembered state; the next `state()` asks Google again. */
   invalidate(): void;
@@ -572,7 +572,7 @@ export function openGoogleConnection(
       return { ok: true, url: googleAuthUrl(config, port) };
     },
 
-    async completeSignIn(code: string): Promise<void> {
+    async completeSignIn(code: string, mayCommit: () => boolean): Promise<boolean> {
       let grant: { refreshToken: string; grantedScopes: string[] };
       try {
         grant = await exchange(configStore.get(), port, code);
@@ -589,8 +589,11 @@ export function openGoogleConnection(
       if (missing.length > 0) {
         throw new IncompleteGrantError(missing);
       }
+      // A disconnect or newer sign-in can supersede the exchange while Google is answering.
+      if (!mayCommit()) return false;
       configStore.setGoogleRefreshToken(grant.refreshToken);
       remembered = null;
+      return true;
     },
 
     disconnect(): void {

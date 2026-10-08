@@ -16,6 +16,7 @@ import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../config.js";
 import { registerApi } from "../api/router.js";
 import { registerStaticServing } from "../api/static.js";
+import { registerLocalRequestBoundary } from "../api/local-request-boundary.js";
 import { registerRelayRoutes } from "../relay/routes.js";
 import { seedRelayBaseUrlFromEnv } from "../relay/state.js";
 import { registerMeetingBriefHubSpotRoutes } from "../modules/meeting-brief-generator/hubspot/routes.js";
@@ -897,6 +898,7 @@ the oldest Transcript. */
     meetingDebrief,
   ];
   const app = fastify({ logger: false });
+  registerLocalRequestBoundary(app, port);
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     reply.code(error.statusCode ?? 500).send({ error: error.message });

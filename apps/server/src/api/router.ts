@@ -1,4 +1,5 @@
 import type { PersonResearchQueue } from "../person-profile/research-queue.js";
+import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import {
   DEFAULT_MODELS,
@@ -113,6 +114,9 @@ const MAX_RUN_PAGE = 200;
 
 export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promise<void> {
   const runs = ctx.runs;
+  // One owner, one pending sign-in. Restarting or starting again invalidates the old attempt.
+  let pendingSignIn: { state: string; expiresAt: number } | null = null;
+  let signInGeneration = 0;
   app.get("/api/health", async () => ({ ok: true }));
 
   /** Module pages keep engine pagination; unified history also includes the
@@ -390,6 +394,8 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
      is held: Google reuses the last-granted account silently, so switching
      accounts and recovering from a rejected token both start here. */
   app.post("/api/google/disconnect", async () => {
+    signInGeneration += 1;
+    pendingSignIn = null;
     ctx.google.disconnect();
     await ctx.onConfigChanged();
     return ctx.google.state();
@@ -406,7 +412,12 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       reply.code(400).send({ error: googleFailureHint(access.state) });
       return;
     }
-    return { authUrl: access.url };
+    const state = randomBytes(32).toString("hex");
+    signInGeneration += 1;
+    pendingSignIn = { state, expiresAt: Date.now() + 10 * 60_000 };
+    const authUrl = new URL(access.url);
+    authUrl.searchParams.set("state", state);
+    return { authUrl: authUrl.href };
   });
 
   app.get("/api/google/picker-token", async (_request, reply) => {
@@ -424,7 +435,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   });
 
   app.get("/api/google/callback", async (request, reply) => {
-    const query = request.query as { code?: string; error?: string };
+    const query = request.query as { code?: string; error?: string; state?: string };
     if (query.error || !query.code) {
       /* `access_denied` has one cause worth naming: the account that just
          signed in is not on the consent screen's Test users list, so Google
@@ -434,8 +445,27 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       reply.redirect(`/settings?google=${reason}`);
       return;
     }
+    if (
+      !pendingSignIn ||
+      typeof query.code !== "string" ||
+      query.state !== pendingSignIn.state ||
+      Date.now() >= pendingSignIn.expiresAt
+    ) {
+      reply.redirect("/settings?google=state_mismatch");
+      return;
+    }
+    // Consume before exchanging: simultaneous callbacks and retries cannot reuse this attempt.
+    const generation = signInGeneration;
+    pendingSignIn = null;
     try {
-      await ctx.google.completeSignIn(query.code);
+      const committed = await ctx.google.completeSignIn(
+        query.code,
+        () => generation === signInGeneration,
+      );
+      if (!committed) {
+        reply.redirect("/settings?google=state_mismatch");
+        return;
+      }
       await ctx.onConfigChanged();
       reply.redirect("/settings?google=connected");
     } catch (error) {
