@@ -17,6 +17,7 @@ import {
   peopleDiscoveryModule,
 } from "../../../apps/server/src/modules/content-research/module";
 import { CONTENT_RESEARCH_MODULE_ID } from "@chief-of-staff-demo/shared";
+import { HnAlgoliaSourceAdapter } from "../../../apps/server/src/modules/content-research/adapters/hn";
 import type { RecoveryState } from "../../../apps/server/src/engine/module";
 import type { RunMeta } from "@chief-of-staff-demo/shared";
 import type { PeopleDiscoverer } from "../../../apps/server/src/modules/content-research/ports";
@@ -577,6 +578,105 @@ describe("Content Research", () => {
     expect(rss.calls.at(-1)?.since).toBe(
       new Date(current.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(),
     );
+  });
+
+  it("retains later-page HN failures without advancing the daily period, baseline or recovery window", async () => {
+    current = new Date(NOW);
+    let recovered = false;
+    const requestedSince: string[] = [];
+    const hn = new HnAlgoliaSourceAdapter(async (value) => {
+      const url = new URL(value);
+      requestedSince.push(url.searchParams.get("numericFilters") ?? "");
+      const page = Number(url.searchParams.get("page"));
+      return {
+        url: value,
+        status: page === 1 && !recovered ? 429 : 200,
+        contentType: "application/json",
+        etag: null,
+        lastModified: null,
+        retryAfter: "0",
+        body: JSON.stringify({
+          page,
+          nbPages: 2,
+          nbHits: 2,
+          hits: [
+            {
+              objectID: String(page + 1),
+              title: `Story ${page}`,
+              points: 20,
+              created_at: NOW.toISOString(),
+            },
+          ],
+        }),
+      };
+    }, now);
+    const { runs, host, people, workspaceDir } = makeHarness({ adapters: [hn] });
+    const person = watchProfile(host, people, { fullName: "Ben" });
+    const store = new ContentResearchStore(workspaceDir, now);
+    const checkpoint = new Date(NOW.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    store.setDailyCheckpoint(checkpoint);
+    store.recordSuccessfulPeriod("daily", checkpoint.slice(0, 10));
+    store.recordBaseline(person.id, [4, 6]);
+    const baseline = store.getBaseline(person.id);
+
+    const partial = await host.researchNow();
+    await host.idle();
+    expect(runs.open(partial)?.read().status).toBe("done");
+    expect(readResult(runs, partial).reports[0]?.items).toHaveLength(1);
+    expect(store.listItems()).toHaveLength(1);
+    expect(store.getBaseline(person.id)).toEqual(baseline);
+    expect(store.getDailyCheckpoint()).toBe(checkpoint);
+    expect(store.scheduleState().lastSuccessfulDailyPeriod).toBe(checkpoint.slice(0, 10));
+
+    recovered = true;
+    current = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+    const retried = await host.researchNow();
+    await host.idle();
+    expect(runs.open(retried)?.read().status).toBe("done");
+    expect(readResult(runs, retried).reports[0]?.items).toHaveLength(2);
+    const since = Math.floor((Date.parse(checkpoint) - 48 * 60 * 60 * 1000) / 1000);
+    expect(requestedSince.at(-1)).toContain(`created_at_i>=${since}`);
+    expect(store.getDailyCheckpoint()).toBe(current.toISOString());
+    expect(store.getBaseline(person.id)?.history).toHaveLength(3);
+  });
+
+  it("publishes partial HN backfill evidence when collection hits the page limit", async () => {
+    current = new Date(NOW);
+    const hn = new HnAlgoliaSourceAdapter(async (value) => {
+      const page = Number(new URL(value).searchParams.get("page"));
+      return {
+        url: value,
+        status: 200,
+        contentType: "application/json",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: JSON.stringify({
+          page,
+          nbPages: 11,
+          nbHits: 1100,
+          hits: [
+            {
+              objectID: String(page),
+              title: `Story ${page}`,
+              points: page,
+              created_at: NOW.toISOString(),
+            },
+          ],
+        }),
+      };
+    }, now);
+    const { runs, host, people, workspaceDir } = makeHarness({ adapters: [hn] });
+    watchProfile(host, people, { fullName: "Ben" });
+    const runId = await host.backfillNow(90);
+    await host.idle();
+    expect(runs.open(runId)?.read().status).toBe("done");
+    expect(readResult(runs, runId).reports[0]?.items).toHaveLength(3);
+    expect(readResult(runs, runId).adapters[0]?.errorClassifications).toContain(
+      "unsupported_capability",
+    );
+    expect(new ContentResearchStore(workspaceDir, now).listItems()).toHaveLength(10);
+    expect(host.getDailyCheckpoint()).toBeNull();
   });
 
   it("one adapter rate-limited: the Run still completes and the other platform's evidence survives", async () => {

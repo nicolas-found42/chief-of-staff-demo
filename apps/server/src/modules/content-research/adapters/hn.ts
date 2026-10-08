@@ -209,6 +209,24 @@ export class HnAlgoliaSourceAdapter implements SourceAdapter {
           continue;
         hitsById.set(hit.objectID, hit);
       }
+      if (
+        parsed.hits.length >= pageSize &&
+        (parsed.nbPages === undefined ||
+          parsed.nbHits === undefined ||
+          parsed.nbPages <= page ||
+          parsed.nbHits < parsed.hits.length)
+      ) {
+        collectionFailure = failed(
+          this.version,
+          route,
+          "response_shape_change",
+          response.status,
+          `Hacker News returned missing or inconsistent pagination metadata for full page ${page}; collection coverage is unknown.`,
+          startedAt,
+          this.now().toISOString(),
+        );
+        break;
+      }
     }
     if (!collectionFailure && (advertisedPages > maxPages || providerTruncated)) {
       collectionFailure = failed(
@@ -220,6 +238,7 @@ export class HnAlgoliaSourceAdapter implements SourceAdapter {
         startedAt,
         this.now().toISOString(),
       );
+      collectionFailure.diagnostic.affectedCapabilities = ["items"];
     }
     const hits = [...hitsById.values()];
     const finishedAt = this.now().toISOString();

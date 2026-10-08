@@ -463,6 +463,43 @@ describe("Content Research mutation recovery", () => {
     );
   });
 
+  it("keeps action errors across successful active-run polls without offering load retry", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
+      const index = researchIndex({ research: null, discovery: null });
+      index.runs.push(fromPartial({ runId: "active", status: "running" }));
+      const load = vi.fn(async () => index);
+      const container = await mountPage(
+        createElement(ContentResearchPage, {
+          client: researchClient({
+            contentResearchIndex: load,
+            addContentResearchPerson: async () => {
+              throw new Error("Watch refused");
+            },
+          }),
+        }),
+      );
+      const form = await fillWatch(container);
+      await act(async () => {
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain("Watch refused");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2100);
+      });
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain("Watch refused");
+      expect(container.textContent).not.toContain("Retry loading");
+      expect(
+        container.querySelector<HTMLInputElement>('input[aria-label="Site or feed address"]')
+          ?.value,
+      ).toBe("https://maya.example/feed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not submit a second watch while the first submission is pending", async () => {
     vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
     let finish: ((person: NamedPerson) => void) | undefined;

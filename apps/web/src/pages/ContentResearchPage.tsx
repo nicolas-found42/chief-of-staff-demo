@@ -74,7 +74,8 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
   const [index, setIndex] = useState<ContentResearchIndex | null>(null);
   const [people, setPeople] = useState<NamedPerson[] | null>(null);
   const [suggestions, setSuggestions] = useState<PersonSuggestion[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -106,10 +107,10 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
       setAllPeople(all);
       setSuggestions(sug);
       setProfiles(prf);
-      setError(null);
+      setLoadError(null);
       return true;
     } catch (err) {
-      setError(errorMessage(err));
+      setLoadError(errorMessage(err));
       return false;
     }
   }, [client]);
@@ -166,7 +167,7 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
   const act = async (action: () => Promise<unknown>, message: string): Promise<boolean> => {
     if (busy) return false;
     setBusy(true);
-    setError(null);
+    setActionError(null);
     setNotice(null);
     try {
       const result = await action();
@@ -180,7 +181,7 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
       if (await refresh()) setNotice(message);
       return true;
     } catch (err) {
-      setError(errorMessage(err));
+      setActionError(errorMessage(err));
       return false;
     } finally {
       setBusy(false);
@@ -249,10 +250,10 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         <h1 ref={headingRef} tabIndex={-1}>
           Content Research — what is resonating, for whom, and why
         </h1>
-        <p role="status" className={error ? "field-error" : "muted"}>
-          {error ?? "Loading Content Research…"}
+        <p role="status" className={loadError ? "field-error" : "muted"}>
+          {loadError ?? "Loading Content Research…"}
         </p>
-        {error && (
+        {loadError && (
           <button type="button" onClick={() => void refresh()}>
             Retry loading
           </button>
@@ -293,9 +294,14 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
       </p>
 
       <div aria-live="polite" aria-atomic="true">
-        {error && (
+        {actionError && (
           <div className="banner banner-error" role="alert">
-            {error}
+            {actionError}
+          </div>
+        )}
+        {loadError && (
+          <div className="banner banner-error" role="alert">
+            {loadError}
           </div>
         )}
         {notice && (
@@ -305,7 +311,7 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         )}
       </div>
 
-      {error && (
+      {loadError && (
         <button type="button" onClick={() => void refresh()}>
           Retry loading
         </button>

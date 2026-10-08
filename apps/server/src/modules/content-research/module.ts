@@ -584,7 +584,8 @@ export function contentResearchModule(
             items: entry.result.items.length,
           });
         }
-        rememberCollectionState(collected, deps.store);
+        if (collected.every((entry) => entry.result.kind === "completed"))
+          rememberCollectionState(collected, deps.store);
         ctx.event("collect_done", { collected: collected.length });
       });
       if (people.length === 0) {
@@ -622,7 +623,8 @@ export function contentResearchModule(
 
       // Publish: local first, then the ledger upsert, then the owner draft, then
       // the Home notification — and only a successful publish advances the
-      // checkpoint and the 90-day baselines.
+      // checkpoint and the 90-day baselines when collection is also complete.
+      const collectionComplete = collected.every((entry) => entry.result.kind === "completed");
       const dailyLevels = new Map<string, number[]>();
       for (const [personId, bucket] of perPersonItems) {
         dailyLevels.set(
@@ -639,7 +641,7 @@ export function contentResearchModule(
           deps,
           reports,
           adapterSummaries,
-          `Content Research — ${now().toISOString().slice(0, 10)} — ${reports.length} people resonating`,
+          `Content Research — ${now().toISOString().slice(0, 10)} — ${reports.length} people resonating${collectionComplete ? "" : " — partial collection"}`,
           profilePins,
         );
 
@@ -654,6 +656,10 @@ export function contentResearchModule(
           });
         }
 
+        if (!collectionComplete) {
+          ctx.event("daily_progress_deferred", { reason: "incomplete_collection" });
+          return;
+        }
         deps.store.setDailyCheckpoint(untilIso);
         deps.store.recordSuccessfulPeriod("daily", untilIso.slice(0, 10));
         for (const [personId, levels] of dailyLevels) {
@@ -673,7 +679,12 @@ export function contentResearchModule(
         reports.length === 0
           ? "No resonance — no people"
           : `${reports.length} people — ${summaryParts || "no items"}`;
-      return { status: "done", summary };
+      return {
+        status: "done",
+        summary: collectionComplete
+          ? summary
+          : `${summary} — partial collection; daily progress unchanged`,
+      };
     },
   };
 }
@@ -768,7 +779,10 @@ export function contentResearchBackfillModule(
            to succeed empty — but only when nothing at all could honor it. */
         const collectedCount = collected.length;
         const unsupportedCount = collected.filter(
-          (c) => c.result.outcome === "unsupported_capability",
+          (c) =>
+            c.result.outcome === "unsupported_capability" &&
+            (c.adapter.state === "coming_later" ||
+              !(c.adapter.backfillWindowsDays ?? []).includes(windowDays)),
         ).length;
         if (collectedCount > 0 && unsupportedCount === collectedCount) {
           throw new StageFailure(
