@@ -12,6 +12,8 @@ const port = 4997;
 beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "cos-request-boundary-"));
   shell = await composeShell({ workspaceDir: directory, port });
+  // Unit CI has no web bundle. Prove the hook reaches a non-API handler directly.
+  shell.app.get("/boundary-navigation-probe", async () => ({ page: "local-navigation" }));
 });
 
 afterEach(async () => {
@@ -118,6 +120,8 @@ describe("the composed local server request boundary", () => {
         })
       ).statusCode,
     ).toBe(403);
-    expect((await shell.app.inject({ url: "/tasks", headers })).statusCode).toBe(200);
+    const navigation = await shell.app.inject({ url: "/boundary-navigation-probe", headers });
+    expect(navigation.statusCode).toBe(200);
+    expect(navigation.json()).toEqual({ page: "local-navigation" });
   });
 });

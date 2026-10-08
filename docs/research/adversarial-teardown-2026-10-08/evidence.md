@@ -136,3 +136,29 @@ Image: sha256:62d8abd5186f0900f80725211094814ae7f71ab6c93246fb08290bbcd3e5e564
 The uppercase, doubled-slash and encoded-slash controls return the SPA HTML, not API data.
 The encoded letters that Fastify matches to API routes now return 403. Initial replay before
 server readiness saw a closed connection; rerun after the listening log succeeded.
+
+## E14 clean-unit harness correction
+
+CI run 37757790966 at `8584954227de7cd688f363a1ff887e3d9fc46327`:
+Node 26 job 113246513827 reports the new non-API navigation assertion failed with
+`expected 404 to be 200` at line 121. Node 22's same shard also failed;
+required `check`, `e2e`, `image` passed. This was the local prebuilt web bundle masking
+an unintended unit-test prerequisite.
+
+After changing the probe to assert a deterministic non-API handler's exact response,
+the actual web bundle was renamed into the isolated scratch directory for the narrow run,
+then restored in a `finally` block:
+
+```text
+ Test Files  1 passed (1)
+      Tests  17 passed (17)
+   Duration  2.35s (import 65%, transform 27%, tests 8%)
+```
+
+## E15 final whole-tree gate after clean-unit correction
+
+```text
+ Test Files  298 passed (298)
+      Tests  3625 passed (3625)
+   Duration  66.40s (tests 61%, import 32%, transform 5%, environment 2%)
+```

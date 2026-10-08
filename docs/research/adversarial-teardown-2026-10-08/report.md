@@ -81,6 +81,16 @@ failed (an accessibility timeout, two missing trace artifacts, and a changed tes
 A stable serial rerun passed all 142. These were harness interference, not product findings.
 After X08, all invalidated checks were run again against the changed code.
 
+Clean-install CI exposed one more harness dependency at head
+`8584954227de7cd688f363a1ff887e3d9fc46327`,
+[run 37757790966](https://github.com/nicolas-found42/chief-of-staff-demo/actions/runs/37757790966):
+the new unit test expected `/tasks` HTML although unit CI builds only the shared package.
+Both Node 22 and 26 returned 404; `check`, `e2e` and `image` passed. The unit boundary test now
+registers a deterministic non-API handler and asserts its exact successful response to cross-site
+navigation. Real `/tasks` HTML remains checked by the browser suite and production replay.
+All 17 boundary tests pass with the local web bundle temporarily absent (E14), then restored.
+No production code, CI configuration or assertion was weakened to resolve this test dependency.
+
 ## Research, alternatives and eligibility
 
 Research used the configured Firecrawl MCP and Jev, never added either to project runtime or
@@ -148,6 +158,11 @@ Calls supplied bounded public-source excerpts, synthetic records, diffs and actu
   synchronous token write, and manifest/lockfile diffs are absent. No concrete residual defect was
   found by the escalation reviewer. The automated gate's low confidence remains recorded rather
   than hidden or retried for a preferred verdict; the bounded claims stand on these direct checks.
+- Clean-unit correction gate reviewed the actual subsequent test delta and final 66.40s check
+  output: composite .83925, `safe_to_apply=.69`, escalation for test-gap confidence .14.
+  Both claims verified (.46/.76 confidence), no contradiction. Stronger review confirms this
+  asserts the boundary's intended non-API handler behavior more precisely without a prebuilt
+  bundle; real HTML remains covered independently. No production files changed in this correction.
 
 ## Coverage and limits
 
@@ -168,7 +183,7 @@ Verified after X08 against the current implementation:
 
 | Command / probe | Result |
 |---|---|
-| `pnpm run check` | All static gates, 12 lint-policy probes, 298 test files / 3,625 unit tests pass; 73.57s. Baseline was 3,593 tests / 65.73s; durations are host/load-specific, not a performance benchmark. |
+| `pnpm run check` | All static gates, 12 lint-policy probes, 298 test files / 3,625 unit tests pass; 66.40s after the clean-unit correction. Baseline was 3,593 tests / 65.73s; durations are host/load-specific, not a performance benchmark. |
 | `pnpm run test:e2e` | All 142 Chromium journeys pass; 2.6 minutes. Both two-editor holdouts, real form refusal, reconnect guidance and existing accessibility/reflow journeys pass. |
 | `docker compose build` | Both canonical app and relay images build. |
 | Isolated `up -d --no-build --force-recreate`, HTTP and UI replay, `restart app` | Health body is `{"ok":true}`; built HTML/JS asset served; Task capture/edit succeeds; refused writes preserve exact record values; restart preserves id/title/notes/status/version. |
@@ -176,7 +191,7 @@ Verified after X08 against the current implementation:
 | `git diff --check` and targeted jgrep review | No whitespace errors; relevant boundary and versioned-save ranges inspected. Both searches exit 0; no errors treated as clean results. |
 
 Production image: `sha256:62d8abd5186f0900f80725211094814ae7f71ab6c93246fb08290bbcd3e5e564`.
-Actual current outputs and earlier failures are in [the evidence ledger](evidence.md), E09–E13.
+Actual current outputs and earlier failures are in [the evidence ledger](evidence.md), E09–E15.
 Local raw logs and screenshot remain in `.scratch/teardown-2026-10-08/`.
 The judgment disposition is above. Subsequent current-head GitHub CI and merge identity are
 recorded on the pull request and final delivery; local green alone is not the remote merge gate.
