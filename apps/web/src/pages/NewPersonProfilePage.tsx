@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { PersonProfile } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
@@ -30,6 +30,13 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
      nothing is created or researched while it shows (UX audit F4). */
   const [duplicate, setDuplicate] = useState<PersonProfile | null>(null);
   const [heldCreation, setHeldCreation] = useState<"manual" | "lookup" | null>(null);
+  const inputGeneration = useRef(0);
+  useEffect(
+    () => () => {
+      ++inputGeneration.current;
+    },
+    [],
+  );
 
   /* One list read per mount backs every duplicate check. A read that fails
      answers "no match" rather than blocking creation: the warning is a
@@ -59,7 +66,10 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
       explicit confirmation instead of silently duplicating a person (and its
       research); answers true when the creation is now held. */
   const holdOnDuplicate = async (name: string, kind: "manual" | "lookup"): Promise<boolean> => {
+    const generation = inputGeneration.current;
     const existing = await findExistingByName(name);
+    // Editing during the read cancels this submission, including its warning.
+    if (generation !== inputGeneration.current) return true;
     if (!existing) return false;
     setDuplicate(existing);
     setHeldCreation(kind);
@@ -70,6 +80,7 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
      #458): editing any identity field invalidates it, so "Create anyway" can
      only ever create the person the user actually confirmed. */
   const releaseHeldCreation = () => {
+    ++inputGeneration.current;
     setDuplicate(null);
     setHeldCreation(null);
   };

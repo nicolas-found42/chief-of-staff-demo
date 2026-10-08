@@ -1,0 +1,50 @@
+{
+  "research-screen1": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"tool\": \"jev_screen\",\n  \"model\": \"typesafe/jev-1.13-20260917\",\n  \"provider\": \"openrouter\",\n  \"probabilities\": {\n    \"injection\": 0.09,\n    \"substance\": 0.98,\n    \"relevance\": 0.81\n  },\n  \"thresholds\": {\n    \"block_at\": 0.75,\n    \"review_at\": 0.25\n  },\n  \"recommendation\": {\n    \"action\": \"pass\",\n    \"reason\": \"no signals above thresholds\"\n  },\n  \"usage\": {\n    \"input_tokens\": 9924,\n    \"output_tokens\": 57\n  }\n}"
+      }
+    ]
+  },
+  "research-screen2": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"tool\": \"jev_screen\",\n  \"model\": \"typesafe/jev-1.13-20260917\",\n  \"provider\": \"openrouter\",\n  \"probabilities\": {\n    \"injection\": 0.07,\n    \"substance\": 0.87,\n    \"relevance\": 0.52\n  },\n  \"thresholds\": {\n    \"block_at\": 0.75,\n    \"review_at\": 0.25\n  },\n  \"recommendation\": {\n    \"action\": \"pass\",\n    \"reason\": \"no signals above thresholds\"\n  },\n  \"usage\": {\n    \"input_tokens\": 12186,\n    \"output_tokens\": 57\n  }\n}"
+      }
+    ]
+  },
+  "finding-classify": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"tool\": \"jev_classify\",\n  \"model\": \"typesafe/jev-1.13-20260917\",\n  \"provider\": \"openrouter\",\n  \"summary\": {\n    \"items\": 4,\n    \"auto\": 3,\n    \"review\": 1,\n    \"invalid_response\": 0,\n    \"by_class\": {\n      \"defect\": 2,\n      \"unresolved\": 1,\n      \"opportunity\": 1\n    }\n  },\n  \"thresholds\": {\n    \"auto_accept\": 0.85,\n    \"minimum_margin\": 0.5\n  },\n  \"results\": [\n    {\n      \"id\": \"F1\",\n      \"classification\": \"defect\",\n      \"probabilities\": {\n        \"defect\": 0.99,\n        \"friction\": 0,\n        \"opportunity\": 0,\n        \"unresolved\": 0.01\n      },\n      \"confidence\": 0.98,\n      \"margin\": 0.98,\n      \"top_probability\": 0.99,\n      \"decision\": \"auto\"\n    },\n    {\n      \"id\": \"F2\",\n      \"classification\": \"defect\",\n      \"probabilities\": {\n        \"defect\": 0.91,\n        \"friction\": 0.03,\n        \"opportunity\": 0.01,\n        \"unresolved\": 0.05\n      },\n      \"confidence\": 0.88,\n      \"margin\": 0.86,\n      \"top_probability\": 0.91,\n      \"decision\": \"auto\"\n    },\n    {\n      \"id\": \"F3\",\n      \"classification\": \"unresolved\",\n      \"probabilities\": {\n        \"defect\": 0,\n        \"friction\": 0,\n        \"opportunity\": 0,\n        \"unresolved\": 1\n      },\n      \"confidence\": 0.99,\n      \"margin\": 1,\n      \"top_probability\": 1,\n      \"decision\": \"auto\"\n    },\n    {\n      \"id\": \"O1\",\n      \"classification\": \"opportunity\",\n      \"probabilities\": {\n        \"defect\": 0.01,\n        \"friction\": 0.02,\n        \"opportunity\": 0.65,\n        \"unresolved\": 0.32\n      },\n      \"confidence\": 0.54,\n      \"margin\": 0.33,\n      \"top_probability\": 0.65,\n      \"decision\": \"review\"\n    }\n  ],\n  \"usage\": {\n    \"input_tokens\": 918,\n    \"output_tokens\": 195\n  }\n}"
+      }
+    ]
+  },
+  "decision": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"tool\": \"jev_decide\",\n  \"model\": \"typesafe/jev-1.13-20260917\",\n  \"provider\": \"openrouter\",\n  \"recommendation\": {\n    \"selected\": \"zod-local\",\n    \"escaped\": false,\n    \"confidence\": 1,\n    \"probabilities\": {\n      \"investigate\": 0,\n      \"ask_user\": 0,\n      \"retain\": 0,\n      \"zod-local\": 1,\n      \"none\": 0,\n      \"fastify-json-schema\": 0\n    },\n    \"contradicted_requirements\": []\n  },\n  \"requirements_checked\": 3,\n  \"checks\": [\n    {\n      \"candidate\": \"zod-local\",\n      \"requirement\": 0,\n      \"answer\": \"supported\"\n    },\n    {\n      \"candidate\": \"zod-local\",\n      \"requirement\": 1,\n      \"answer\": \"supported\"\n    },\n    {\n      \"candidate\": \"zod-local\",\n      \"requirement\": 2,\n      \"answer\": \"supported\"\n    },\n    {\n      \"candidate\": \"fastify-json-schema\",\n      \"requirement\": 0,\n      \"answer\": \"supported\"\n    },\n    {\n      \"candidate\": \"fastify-json-schema\",\n      \"requirement\": 1,\n      \"answer\": \"supported\"\n    },\n    {\n      \"candidate\": \"fastify-json-schema\",\n      \"requirement\": 2,\n      \"answer\": \"supported\"\n    },\n    {\n      \"candidate\": \"retain\",\n      \"requirement\": 0,\n      \"answer\": \"contradicted\"\n    },\n    {\n      \"candidate\": \"retain\",\n      \"requirement\": 1,\n      \"answer\": \"supported\"\n    },\n    {\n      \"candidate\": \"retain\",\n      \"requirement\": 2,\n      \"answer\": \"supported\"\n    }\n  ],\n  \"warnings\": [],\n  \"usage\": {\n    \"input_tokens\": 2023,\n    \"output_tokens\": 455\n  }\n}"
+      }
+    ]
+  },
+  "patch-review": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"tool\": \"jev_review\",\n  \"model\": \"typesafe/jev-1.13-20260917\",\n  \"provider\": \"openrouter\",\n  \"truncated\": false,\n  \"safe_to_apply\": 0.45,\n  \"scores\": {\n    \"correctness\": {\n      \"score\": 1.48,\n      \"confidence\": 0.22,\n      \"probabilities\": {\n        \"0\": 0.03,\n        \"1\": 0.46,\n        \"2\": 0.51\n      }\n    },\n    \"spec_match\": {\n      \"score\": 1.78,\n      \"confidence\": 0.68,\n      \"probabilities\": {\n        \"0\": 0,\n        \"1\": 0.21,\n        \"2\": 0.79\n      }\n    },\n    \"test_gap\": {\n      \"score\": 0.93,\n      \"confidence\": 0.61,\n      \"probabilities\": {\n        \"0\": 0.17,\n        \"1\": 0.74,\n        \"2\": 0.09\n      }\n    },\n    \"blast_radius\": {\n      \"score\": 1.95,\n      \"confidence\": 0.92,\n      \"probabilities\": {\n        \"0\": 0,\n        \"1\": 0.05,\n        \"2\": 0.95\n      }\n    }\n  },\n  \"weights\": {\n    \"correctness\": 0.4,\n    \"spec_match\": 0.3,\n    \"test_gap\": 0.15,\n    \"blast_radius\": 0.15\n  },\n  \"thresholds\": {\n    \"auto_accept\": 0.8,\n    \"review_at\": 0.5,\n    \"composite_floor\": 0.7\n  },\n  \"action\": \"escalate\",\n  \"composite\": 0.6469999999999999,\n  \"reason_codes\": [\n    \"confidence_below_review\",\n    \"safe_to_apply_below_review\"\n  ],\n  \"limiting_rubrics\": [\n    \"correctness\"\n  ],\n  \"usage\": {\n    \"input_tokens\": 6590,\n    \"output_tokens\": 79\n  }\n}"
+      }
+    ]
+  },
+  "probe-verify": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"tool\": \"jev_verify\",\n  \"model\": \"typesafe/jev-1.13-20260917\",\n  \"provider\": \"openrouter\",\n  \"auto_accept\": 0.8,\n  \"subject_at\": 0.5,\n  \"summary\": {\n    \"verified\": 2,\n    \"contradicted\": 0,\n    \"unsupported\": 0,\n    \"needs_review\": 1\n  },\n  \"results\": [\n    {\n      \"id\": \"claim0\",\n      \"claim\": \"The original source-probe CLI includes excluded/unavailable routes in its 'answered as documented' total and treats unprobed in-production routes as failed.\",\n      \"verdict\": \"verified\",\n      \"probabilities\": {\n        \"supports\": 0.6,\n        \"contradicts\": 0.39,\n        \"says_nothing\": 0.01\n      },\n      \"confidence\": 0.4,\n      \"action\": \"review\",\n      \"supporting_evidence\": \"before-code\",\n      \"same_subject\": 0.89\n    },\n    {\n      \"id\": \"claim1\",\n      \"claim\": \"The proposed reporting change is within person-profile research verification scope and does not add a retrieval tool.\",\n      \"verdict\": \"verified\",\n      \"probabilities\": {\n        \"supports\": 0.99,\n        \"contradicts\": 0,\n        \"says_nothing\": 0.01\n      },\n      \"confidence\": 0.98,\n      \"action\": \"auto\",\n      \"supporting_evidence\": \"scope\",\n      \"same_subject\": 0.64\n    }\n  ],\n  \"usage\": {\n    \"input_tokens\": 2127,\n    \"output_tokens\": 216\n  }\n}"
+      }
+    ]
+  }
+}

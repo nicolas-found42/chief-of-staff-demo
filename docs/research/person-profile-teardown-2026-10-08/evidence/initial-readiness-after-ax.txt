@@ -1,0 +1,171 @@
+Browser tab: 1, Title: "Synthetic Teardown Person · Chief of Staff", URL: "http://127.0.0.1:4397/people/person_73c7d02327c4".
+1 AXWebArea Synthetic Teardown Person · Chief of Staff, URL: 127.0.0.1:4397/people/person_73c7d02327c4
+	2 container root
+		3 link Description: Skip to main content, Value: 127.0.0.1:4397/people/person_73c7d02327c4#main
+		4 container
+			5 link Description: Found42 — Chief of Staff, Value: 127.0.0.1:4397/
+			6 container app-nav
+				7 container Products
+					8 link Description: Content Engine, Value: 127.0.0.1:4397/content-scout
+					9 link Description: Content Research, Value: 127.0.0.1:4397/content-research
+					10 link Description: Person Profiles, Value: 127.0.0.1:4397/people
+					11 link Description: Meeting Wizard, Value: 127.0.0.1:4397/meetings
+					12 link Description: Tasks, Value: 127.0.0.1:4397/tasks
+				13 container Settings
+					14 link Description: Settings, Value: 127.0.0.1:4397/settings
+		15 container main
+			16 container
+				17 text Google is not set up. Gmail and Google Tasks need a connection; local Tasks remain available.
+				18 link Description: Set up Google, Value: 127.0.0.1:4397/onboarding?goal=meetings
+			19 heading Synthetic Teardown Person, Value: 1
+				20 text Synthetic Teardown Person
+			21 text Identity signal: LinkedIn: synthetic-person
+			22 container Person dossier
+				23 heading Research has not run yet, Value: 2
+					35 text Research has not run yet
+				36 text This saved Person Profile has no research result yet. Retained evidence will appear here after the first run.
+				24 container
+					25 text Research setup required ·  0  retained sources ·  0  retained claims
+				26 text No model provider is configured for automatic research yet.
+				27 link Description: Open Guided Setup, Value: 127.0.0.1:4397/onboarding?goal=meetings
+				28 button (disabled) Prioritise research
+				29 text Available once research setup is complete.
+				30 button (collapsed) Research settings, Secondary Actions: Expand
+					31 text Research settings
+			37 container
+				38 button (expanded) Profile maintenance and revision history, Secondary Actions: Collapse
+					39 text Profile maintenance and revision history
+				40 heading Search the public web again, Value: 2
+					41 text Search the public web again
+				42 text Runs the same search the typed-identifier lookup runs, from the identity this Profile already holds — its emails, names, handles and profile addresses. Anything new is added as a further revision; nothing already recorded is removed. A Profile a meeting minted from an email alone starts here.
+				43 button Search again
+				44 heading Current facts, Value: 2
+					45 text Current facts
+				46 definition list
+					47 container Full name
+						48 text Full name
+					49 text Synthetic Teardown Person
+					50 container Primary email
+						51 text Primary email
+					52 text teardown@example.com
+					53 container Role
+						54 text Role
+					55 text —
+					56 container Current employer
+						57 text Current employer
+					58 text —
+					59 container Background
+						60 text Background
+					61 text —
+				62 heading Correct facts, Value: 2
+					63 text Correct facts
+				64 text A correction appends a new revision; the superseded snapshot stays readable.
+				65 text Full name
+				66 text field (settable) Full name, ID: correct-full-name
+				67 text Primary email
+				68 text field (settable) Primary email
+				69 checkbox (settable, integer) Description: Clear primary email, Value: 0
+				70 text Role
+				71 text field (settable) Role, ID: correct-role
+				72 checkbox (settable, integer) Description: Clear role, Value: 0
+				73 text Current employer
+				74 text field (settable) Current employer, ID: correct-current-employer
+				75 checkbox (settable, integer) Description: Clear current employer, Value: 0
+				76 text Background
+				77 text entry area (settable) Background, ID: correct-background
+				78 checkbox (settable, integer) Description: Clear background, Value: 0
+				79 text Profile URLs
+				80 text entry area (settable) Profile URLs, ID: correct-profile-urls
+				81 text One per line or comma-separated; a stated list replaces the current one. Public evidence matches on a name alone only at medium confidence, and role, employer and social profiles are drawn from high-confidence matches — so these are what let a search populate the Profile. Handles are derived from the URLs.
+				82 checkbox (settable, integer) Description: Clear profile URLs, Value: 0
+				83 text What was wrong?
+				84 text field (settable) What was wrong?, ID: correct-note
+				85 button Append correction
+				86 heading Merge a duplicate, Value: 2
+					87 text Merge a duplicate
+				88 text Merges another Profile into this one through an audited decision; conflicting facts must be resolved explicitly and the duplicate stays readable as a redirect.
+				89 text Find duplicate person
+				90 text field (settable) Find duplicate person
+				91 text Duplicate person
+				92 pop up button (collapsed, settable) Duplicate person, Value: Choose a person from search results, ID: merge-duplicate, Secondary Actions: Expand
+					93 menu
+						94 (selected) Choose a person from search results
+				95 text Resolved full name
+				96 text field (settable) Resolved full name, ID: merge-full-name
+				97 text Resolved primary email
+				98 text field (settable) Resolved primary email
+				99 text Resolved role
+				100 text field (settable) Resolved role, ID: merge-role
+				101 text Resolved current employer
+				102 text field (settable) Resolved current employer, ID: merge-current-employer
+				103 text Resolved background
+				104 text entry area (settable) Resolved background, ID: merge-background
+				105 text Merge note
+				106 text field (settable) Merge note, ID: merge-note
+				107 button Merge profile
+				108 heading Identity signals, Value: 2
+					109 text Identity signals
+				110 content list
+					111 container
+						112 AXListMarker •
+						113 text teardown@example.com
+					114 container
+						115 AXListMarker •
+						116 text linkedin: synthetic-person
+					117 container
+						118 AXListMarker •
+						119 text https://www.linkedin.com/in/synthetic-person
+				120 heading Sites, Value: 2
+					121 text Sites
+				122 text No sites recorded.
+				123 heading Publications, Value: 2
+					124 text Publications
+				125 text No publications recorded.
+				126 heading Evidence, Value: 2
+					127 text Evidence
+				128 text No evidence recorded.
+				129 heading Diagnostics, Value: 2
+					130 text Diagnostics
+				131 text No enrichment diagnostics recorded.
+				132 heading Identity repairs, Value: 2
+					133 text Identity repairs
+				134 content list
+					135 container
+						136 AXListMarker •
+						137 text Correction  — revision  1 superseded ·  Revision 1 facts were corrected; treat that revision as superseded.
+					138 container
+						139 AXListMarker •
+						140 text Correction  — revision  2 superseded ·  Revision 2 facts were corrected; treat that revision as superseded.
+				141 heading Revision history, Value: 2
+					142 text Revision history
+				143 content list
+					144 container
+						145 AXListMarker •
+						146 button Revision 3 (current)
+							147 text Revision
+							148 text 3
+							149 text  (current)
+					150 container
+						151 AXListMarker •
+						152 button Revision 2
+							153 text Revision
+							154 text 2
+					155 container
+						156 AXListMarker •
+						157 button Revision 1
+							158 text Revision
+							159 text 1
+				160 heading Lifecycle, Value: 2
+					161 text Lifecycle
+				162 text Archiving stops new selection and consumption without destroying history. It is reversible.
+				163 button Archive profile
+				164 heading Dependent configuration, Value: 3
+					165 text Dependent configuration
+				166 text No configuration depends on this Profile.
+				167 heading Privacy delete, Value: 3
+					168 text Privacy delete
+				169 text Privacy deletion is the explicit, audited exception to otherwise immutable local history. It removes the canonical Profile, its revisions, evidence, aliases, candidates, learned mappings, structured identity decisions, active consumer links, and person-specific derived snapshots. It cannot be undone, and it never deletes remote provider data.
+				170 button Privacy delete this profile…
+		34 text Drafts are created, mail is never sent — except Meeting Briefs, which go only to your connected account.
+
+The focused UI element is 38 button (expanded) Profile maintenance and revision history, Secondary Actions: Collapse

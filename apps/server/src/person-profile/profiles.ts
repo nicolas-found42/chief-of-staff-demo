@@ -1,5 +1,5 @@
 import type { PersonDossierStore } from "./dossier-store.js";
-import { parsePersonIdentifier } from "./identifier.js";
+import { PersonIdentifierError, parsePersonIdentifier } from "./identifier.js";
 import { identifier, normalizedSignals } from "./resolver.js";
 import { socialUrl } from "./sources.js";
 import type { PersonProfileStore } from "./store.js";
@@ -586,19 +586,16 @@ export class WorkspacePersonProfiles {
             "invalid-identity-input",
             `Not a profile URL: ${value}. Correct the canonical address with primaryEmail.`,
           );
-        /* A bare "linkedin.com/in/someone" is what people paste; the scheme is
-           assumed rather than demanded, as it is for a typed identifier. */
-        const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
-        let url: URL;
+        let normalized: string;
         try {
-          url = new URL(candidate);
-        } catch {
+          normalized = parsePersonIdentifier(value).profileUrls[0]!;
+        } catch (error) {
+          if (!(error instanceof PersonIdentifierError)) throw error;
           throw new PersonProfileValidationError(
             "invalid-identity-input",
             `Not a profile URL: ${value}. Enter something like "linkedin.com/in/someone".`,
           );
         }
-        const normalized = url.toString();
         if (!urls.includes(normalized)) urls.push(normalized);
         const social = socialUrl(normalized);
         if (social?.kind === "profile" && social.handle) {

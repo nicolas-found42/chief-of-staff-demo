@@ -1,0 +1,200 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+ ❯ tests/src/api/people-lookup.test.ts (20 tests | 1 failed) 1329ms
+   ❯ POST /api/people/lookup/accept (5)
+     × names an archived identity conflict as a client refusal and recovers after restore 208ms
+ ❯ tests/src/api/people-routes.test.ts (36 tests | 13 failed) 1429ms
+   ❯ POST /api/people (6)
+     × refuses malformed creation without writing a Profile: {"fullName":42} 258ms
+     × refuses malformed creation without writing a Profile: {"fullName":"Ada","profileUrls":"https://example.com/ada"} 20ms
+     × refuses malformed creation without writing a Profile: {"fullName":"Ada","profileUrls":[42]} 46ms
+     × refuses malformed creation without writing a Profile: {"fullName":"Ada","profileUrls":["not a URL"]} 25ms
+   ❯ GET /api/people (3)
+     × refuses repeated scalar filters: query=Grace&query=Ada 23ms
+     × refuses repeated scalar filters: includeArchived=true&includeArchived=false 30ms
+   ❯ malformed person repair requests (8)
+     × refuses invalid corrections without changing state 23ms
+     × refuses invalid corrections without changing state 16ms
+     × refuses invalid merges without changing state 14ms
+     × refuses invalid detachments without changing state 22ms
+     × uses the same LinkedIn identity normalization for correction and lookup 48ms
+     × refuses invalid corrected profile URL https://linkedin.com/company/example without appending history 27ms
+     × refuses invalid corrected profile URL https://singlehost/person without appending history 12ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/src/api/people-lookup.test.ts > POST /api/people/lookup/accept > names an archived identity conflict as a client refusal and recovers after restore
+AssertionError: expected 500 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 500
+
+ ❯ tests/src/api/people-lookup.test.ts:142:32
+    140|       method: "POST", url: "/api/people/lookup/accept", payload: { ide…
+    141|     });
+    142|     expect(refused.statusCode).toBe(400);
+       |                                ^
+    143|     expect(refused.json()).toMatchObject({ error: "conflicting-identit…
+    144|     expect(store.list()).toHaveLength(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  tests/src/api/people-routes.test.ts > POST /api/people > refuses malformed creation without writing a Profile: {"fullName":42}
+ FAIL  tests/src/api/people-routes.test.ts > POST /api/people > refuses malformed creation without writing a Profile: {"fullName":"Ada","profileUrls":"https://example.com/ada"}
+ FAIL  tests/src/api/people-routes.test.ts > POST /api/people > refuses malformed creation without writing a Profile: {"fullName":"Ada","profileUrls":[42]}
+ FAIL  tests/src/api/people-routes.test.ts > POST /api/people > refuses malformed creation without writing a Profile: {"fullName":"Ada","profileUrls":["not a URL"]}
+AssertionError: expected 500 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 500
+
+ ❯ tests/src/api/people-routes.test.ts:96:33
+     94|   ])("refuses malformed creation without writing a Profile: %j", async…
+     95|     const response = await app.inject({ method: "POST", url: "/api/peo…
+     96|     expect(response.statusCode).toBe(400);
+       |                                 ^
+     97|     expect(response.json()).toHaveProperty("message");
+     98|     expect(profiles.search()).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  tests/src/api/people-routes.test.ts > GET /api/people > refuses repeated scalar filters: query=Grace&query=Ada
+AssertionError: expected 500 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 500
+
+ ❯ tests/src/api/people-routes.test.ts:140:35
+    138|       const created = await createGrace();
+    139|       const response = await app.inject({ url: `/api/people?${query}` …
+    140|       expect(response.statusCode).toBe(400);
+       |                                   ^
+    141|       expect(response.json()).toHaveProperty("message");
+    142|       expect(profiles.get(created.id)).toEqual(created);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  tests/src/api/people-routes.test.ts > GET /api/people > refuses repeated scalar filters: includeArchived=true&includeArchived=false
+AssertionError: expected 200 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 200
+
+ ❯ tests/src/api/people-routes.test.ts:140:35
+    138|       const created = await createGrace();
+    139|       const response = await app.inject({ url: `/api/people?${query}` …
+    140|       expect(response.statusCode).toBe(400);
+       |                                   ^
+    141|       expect(response.json()).toHaveProperty("message");
+    142|       expect(profiles.get(created.id)).toEqual(created);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid corrections without changing state
+ FAIL  tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid corrections without changing state
+ FAIL  tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid merges without changing state
+AssertionError: expected 500 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 500
+
+ ❯ tests/src/api/people-routes.test.ts:178:33
+    176|       payload,
+    177|     });
+    178|     expect(response.statusCode).toBe(400);
+       |                                 ^
+    179|     expect(response.json()).toHaveProperty("message");
+    180|     expect(profiles.get(created.id)).toEqual(created);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+ FAIL  tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid detachments without changing state
+AssertionError: expected 404 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 404
+
+ ❯ tests/src/api/people-routes.test.ts:178:33
+    176|       payload,
+    177|     });
+    178|     expect(response.statusCode).toBe(400);
+       |                                 ^
+    179|     expect(response.json()).toHaveProperty("message");
+    180|     expect(profiles.get(created.id)).toEqual(created);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/14]⎯
+
+ FAIL  tests/src/api/people-routes.test.ts > malformed person repair requests > uses the same LinkedIn identity normalization for correction and lookup
+AssertionError: expected [ Array(1) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
+-   "https://www.linkedin.com/in/grace-hopper",
++   "https://uk.linkedin.com/in/Grace-Hopper/?trk=public#bio",
+  ]
+
+ ❯ tests/src/api/people-routes.test.ts:193:58
+    191|     });
+    192|     expect(correction.statusCode).toBe(200);
+    193|     expect(correction.json<PersonProfile>().profileUrls).toEqual([
+       |                                                          ^
+    194|       "https://www.linkedin.com/in/grace-hopper",
+    195|     ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+ FAIL  tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid corrected profile URL https://linkedin.com/company/example without appending history
+ FAIL  tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid corrected profile URL https://singlehost/person without appending history
+AssertionError: expected 200 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 200
+
+ ❯ tests/src/api/people-routes.test.ts:216:35
+    214|         payload: { profileUrls: [url] },
+    215|       });
+    216|       expect(response.statusCode).toBe(400);
+       |                                   ^
+    217|       expect(profiles.get(created.id)).toEqual(created);
+    218|       expect(profiles.revisions(created.id)).toHaveLength(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/14]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  14 failed | 42 passed (56)
+   Start at  10:20:19
+   Duration  8.78s (import 46%, transform 28%, tests 25%)
+
+  Transform  transforming modules took 3.09s · 28% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns
+
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /Users/Nicolas/Documents/github/chief-of-
+  │ staff-demo/tests

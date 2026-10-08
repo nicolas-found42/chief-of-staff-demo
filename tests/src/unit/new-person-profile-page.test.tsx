@@ -174,6 +174,55 @@ describe("Identifier creation", () => {
 describe("Same-name duplicate warning (audit F4)", () => {
   const existing = profileFixture({ id: "person-existing", fullName: "Satya Nadella" });
 
+  it("does not create after leaving a page whose duplicate check is still pending", async () => {
+    const pending = Promise.withResolvers<PersonProfile[]>();
+    const people = vi.fn<PeopleClient["people"]>(() => pending.promise);
+    const create = vi.fn<PeopleClient["createPersonProfile"]>(async () => profileFixture());
+    const container = await mountPage(fakeClient({ people, createPersonProfile: create }));
+    await act(async () => change(container, "#profile-full-name", "New Person"));
+    await act(async () => button(container, "Create profile").click());
+    await act(async () => mounted!.root.unmount());
+    container.remove();
+    mounted = null;
+    await act(async () => pending.resolve([]));
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("does not create an edited identity using a stale duplicate check", async () => {
+    const pending = Promise.withResolvers<PersonProfile[]>();
+    const people = vi.fn<PeopleClient["people"]>(() => pending.promise);
+    const create = vi.fn<PeopleClient["createPersonProfile"]>(async () => profileFixture());
+    const container = await mountPage(fakeClient({ people, createPersonProfile: create }));
+    await act(async () => change(container, "#profile-full-name", "New Person"));
+    await act(async () => button(container, "Create profile").click());
+    await act(async () => change(container, "#profile-full-name", "Satya Nadella"));
+    await act(async () => pending.resolve([existing]));
+    expect(create).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("already exists");
+    await act(async () => button(container, "Create profile").click());
+    expect(container.textContent).toContain("Satya Nadella already exists");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("does not show a stale duplicate confirmation after the name changes", async () => {
+    const pending = Promise.withResolvers<PersonProfile[]>();
+    const people = vi.fn<PeopleClient["people"]>(() => pending.promise);
+    const accept = vi.fn<PeopleClient["acceptPersonProfileLookup"]>(async () =>
+      lookupFixture("new"),
+    );
+    const container = await mountPage(fakeClient({ people, acceptPersonProfileLookup: accept }));
+    await act(async () => {
+      change(container, "#profile-identifier", "satya@example.com");
+      change(container, "#profile-identifier-name", "Satya Nadella");
+    });
+    await act(async () => button(container, "Add and research").click());
+    await act(async () => change(container, "#profile-identifier-name", "Other Person"));
+    await act(async () => pending.resolve([existing]));
+    expect(container.textContent).not.toContain("already exists");
+    expect(accept).not.toHaveBeenCalled();
+    expect(button(container, "Add and research")).toBeDefined();
+  });
+
   it("holds an identifier accept until Create anyway, linking the existing profile", async () => {
     const accept = vi.fn<PeopleClient["acceptPersonProfileLookup"]>(async () =>
       lookupFixture("person-new"),

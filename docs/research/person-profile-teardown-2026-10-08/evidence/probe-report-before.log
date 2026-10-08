@@ -1,0 +1,63 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+ ❯ tests/src/modules/person-benchmark-cli.test.ts (22 tests | 2 failed) 1443ms
+   × source probes separate actual answers from unprobed declarations: failed=true 4ms
+   × source probes separate actual answers from unprobed declarations: failed=false 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/src/modules/person-benchmark-cli.test.ts > source probes separate actual answers from unprobed declarations: failed=true
+AssertionError: expected 'success                  in-productio…' to contain '1/2 anonymous probes passed'
+
+- Expected
++ Received
+
+- 1/2 anonymous probes passed
++ success                  in-production  200   Answered anonymously.
++ second                   in-production  503   Service unavailable.
++ missing-probe            in-production  -     No probe defined.
++ excluded                 excluded       -     Requires a key.
++
++ 2/4 routes answered as documented.
++
+
+ ❯ tests/src/modules/person-benchmark-cli.test.ts:30:27
+     28|     const result = await runBenchmarkCli(["--probe-sources"]);
+     29|     expect(result.status).toBe(fails ? 1 : 0);
+     30|     expect(result.stdout).toContain(`${fails ? 1 : 2}/2 anonymous prob…
+       |                           ^
+     31|     expect(result.stdout).toContain("1 in-production routes unprobed");
+     32|     expect(result.stdout).toContain("1 excluded/unavailable routes not…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/src/modules/person-benchmark-cli.test.ts > source probes separate actual answers from unprobed declarations: failed=false
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/src/modules/person-benchmark-cli.test.ts:29:27
+     27|   try {
+     28|     const result = await runBenchmarkCli(["--probe-sources"]);
+     29|     expect(result.status).toBe(fails ? 1 : 0);
+       |                           ^
+     30|     expect(result.stdout).toContain(`${fails ? 1 : 2}/2 anonymous prob…
+     31|     expect(result.stdout).toContain("1 in-production routes unprobed");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 20 passed (22)
+   Start at  10:26:28
+   Duration  2.38s (tests 62%, import 26%, transform 13%)
+
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /Users/Nicolas/Documents/github/chief-of-
+  │ staff-demo/tests

@@ -1,0 +1,31 @@
+$ run-p check:static test
+$ pnpm --filter @chief-of-staff-demo/shared build && pnpm --filter @chief-of-staff-demo/tests test
+$ run-p --print-label typecheck lint format:check knip workflows
+$ tsc -b
+[knip        ] $ knip
+[format:check] $ prettier --check --cache .
+[typecheck   ] $ run-p --print-label typecheck:build typecheck:web typecheck:tests typecheck:scripts
+[lint        ] $ oxlint --max-warnings 0 . && pnpm run lint:verify
+[workflows   ] $ node scripts/verify-workflow-steps.mjs
+[workflows   ] workflow steps verified in .github/workflows
+[format:check] Checking formatting...
+[typecheck   ] [typecheck:build  ] $ tsc -b packages/shared apps/server relay
+[typecheck   ] [typecheck:scripts] $ tsc -p scripts --noEmit
+[typecheck   ] [typecheck:web    ] $ tsc -p apps/web --noEmit
+[typecheck   ] [typecheck:tests  ] $ tsc -p tests --noEmit
+$ vitest run
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+[lint        ] $ node scripts/verify-lint-gates.mjs
+[lint        ] [lint-gates] 12 policy probes passed.
+[format:check] All matched files use Prettier code style!
+
+ Test Files  298 passed (298)
+      Tests  3647 passed (3647)
+   Start at  10:53:52
+   Duration  69.32s (tests 64%, import 32%, transform 2%, environment 2%)
+
+     Import  716 modules were evaluated 14540 times · 82.66s total, 32% of tracked time
+             ~18.24s faster with isolate: false — shared modules are evaluated once per worker instead of once per file
+             learn more: https://vitest.dev/guide/improving-performance#test-isolation

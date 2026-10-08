@@ -1,0 +1,544 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/people/person_73c7d02327c4",
+    "input": null,
+    "status": 200,
+    "body": {
+      "id": "person_73c7d02327c4",
+      "revision": 3,
+      "createdAt": "2026-10-08T14:21:29.473Z",
+      "updatedAt": "2026-10-08T14:29:06.776Z",
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com",
+      "emails": ["teardown@example.com"],
+      "handles": {
+        "linkedin": ["synthetic-person"]
+      },
+      "profileUrls": ["https://www.linkedin.com/in/synthetic-person"],
+      "employerHints": [],
+      "role": null,
+      "background": null,
+      "currentEmployer": null,
+      "socialProfiles": [],
+      "websites": [],
+      "feeds": [],
+      "publications": [],
+      "mentions": [],
+      "evidence": [],
+      "sourceDiagnostics": [],
+      "archivedAt": null,
+      "invalidations": [
+        {
+          "id": "inv_1",
+          "kind": "correction",
+          "affectedRevision": 1,
+          "detail": "Revision 1 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1],
+          "occurredAt": "2026-10-08T14:21:29.496Z"
+        },
+        {
+          "id": "inv_2",
+          "kind": "correction",
+          "affectedRevision": 2,
+          "detail": "Revision 2 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1, 2],
+          "occurredAt": "2026-10-08T14:29:06.776Z"
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/people/person_73c7d02327c4/revisions/1",
+    "input": null,
+    "status": 200,
+    "body": {
+      "id": "person_73c7d02327c4",
+      "revision": 1,
+      "createdAt": "2026-10-08T14:21:29.473Z",
+      "updatedAt": "2026-10-08T14:21:29.473Z",
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com",
+      "emails": ["teardown@example.com"],
+      "handles": {},
+      "profileUrls": [],
+      "employerHints": [],
+      "role": null,
+      "background": null,
+      "currentEmployer": null,
+      "socialProfiles": [],
+      "websites": [],
+      "feeds": [],
+      "publications": [],
+      "mentions": [],
+      "evidence": [],
+      "sourceDiagnostics": [],
+      "archivedAt": null
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/people/person_73c7d02327c4/revisions/2",
+    "input": null,
+    "status": 200,
+    "body": {
+      "id": "person_73c7d02327c4",
+      "revision": 2,
+      "createdAt": "2026-10-08T14:21:29.473Z",
+      "updatedAt": "2026-10-08T14:21:29.496Z",
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com",
+      "emails": ["teardown@example.com"],
+      "handles": {},
+      "profileUrls": ["https://linkedin.com/company/example"],
+      "employerHints": [],
+      "role": null,
+      "background": null,
+      "currentEmployer": null,
+      "socialProfiles": [],
+      "websites": [],
+      "feeds": [],
+      "publications": [],
+      "mentions": [],
+      "evidence": [],
+      "sourceDiagnostics": [],
+      "archivedAt": null,
+      "invalidations": [
+        {
+          "id": "inv_1",
+          "kind": "correction",
+          "affectedRevision": 1,
+          "detail": "Revision 1 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1],
+          "occurredAt": "2026-10-08T14:21:29.496Z"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people",
+    "input": {
+      "fullName": 42
+    },
+    "status": 400,
+    "body": {
+      "error": "invalid-identity-input",
+      "message": "Send a Profile object with text fields and profileUrls as an array of addresses."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people",
+    "input": {
+      "fullName": "Test",
+      "profileUrls": ["not a URL"]
+    },
+    "status": 400,
+    "body": {
+      "error": "unrecognized-identifier",
+      "message": "Not an email address or a profile URL: not a URL. Enter something like \"someone@example.com\" or \"linkedin.com/in/someone\"."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people",
+    "input": {
+      "fullName": "Test",
+      "profileUrls": [42]
+    },
+    "status": 400,
+    "body": {
+      "error": "invalid-identity-input",
+      "message": "Send a Profile object with text fields and profileUrls as an array of addresses."
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/people?query=Test&query=Other",
+    "input": null,
+    "status": 400,
+    "body": {
+      "error": "invalid-people-query",
+      "message": "The query filter must be supplied once."
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/people?includeArchived=true&includeArchived=false",
+    "input": null,
+    "status": 400,
+    "body": {
+      "error": "invalid-people-query",
+      "message": "The includeArchived filter must be supplied once."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/person_73c7d02327c4/corrections",
+    "input": {
+      "role": 42
+    },
+    "status": 400,
+    "body": {
+      "error": "invalid-identity-input",
+      "message": "Send a Profile object with text fields and profileUrls as an array of addresses."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/person_73c7d02327c4/corrections",
+    "input": {
+      "profileUrls": ["https://linkedin.com/company/example"]
+    },
+    "status": 400,
+    "body": {
+      "error": "invalid-identity-input",
+      "message": "Not a profile URL: https://linkedin.com/company/example. Enter something like \"linkedin.com/in/someone\"."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/person_73c7d02327c4/corrections",
+    "input": {
+      "profileUrls": ["https://singlehost/person"]
+    },
+    "status": 400,
+    "body": {
+      "error": "invalid-identity-input",
+      "message": "Not a profile URL: https://singlehost/person. Enter something like \"linkedin.com/in/someone\"."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/person_73c7d02327c4/merges",
+    "input": {
+      "duplicateId": {}
+    },
+    "status": 400,
+    "body": {
+      "error": "invalid-identity-input",
+      "message": "Send a Profile object with text fields and profileUrls as an array of addresses."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/person_73c7d02327c4/detachments",
+    "input": {
+      "evidenceId": []
+    },
+    "status": 400,
+    "body": {
+      "error": "invalid-identity-input",
+      "message": "Send a Profile object with text fields and profileUrls as an array of addresses."
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/people/person_73c7d02327c4",
+    "input": null,
+    "status": 200,
+    "body": {
+      "id": "person_73c7d02327c4",
+      "revision": 3,
+      "createdAt": "2026-10-08T14:21:29.473Z",
+      "updatedAt": "2026-10-08T14:29:06.776Z",
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com",
+      "emails": ["teardown@example.com"],
+      "handles": {
+        "linkedin": ["synthetic-person"]
+      },
+      "profileUrls": ["https://www.linkedin.com/in/synthetic-person"],
+      "employerHints": [],
+      "role": null,
+      "background": null,
+      "currentEmployer": null,
+      "socialProfiles": [],
+      "websites": [],
+      "feeds": [],
+      "publications": [],
+      "mentions": [],
+      "evidence": [],
+      "sourceDiagnostics": [],
+      "archivedAt": null,
+      "invalidations": [
+        {
+          "id": "inv_1",
+          "kind": "correction",
+          "affectedRevision": 1,
+          "detail": "Revision 1 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1],
+          "occurredAt": "2026-10-08T14:21:29.496Z"
+        },
+        {
+          "id": "inv_2",
+          "kind": "correction",
+          "affectedRevision": 2,
+          "detail": "Revision 2 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1, 2],
+          "occurredAt": "2026-10-08T14:29:06.776Z"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/person_73c7d02327c4/archive",
+    "input": {},
+    "status": 200,
+    "body": {
+      "id": "person_73c7d02327c4",
+      "revision": 3,
+      "createdAt": "2026-10-08T14:21:29.473Z",
+      "updatedAt": "2026-10-08T14:29:06.776Z",
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com",
+      "emails": ["teardown@example.com"],
+      "handles": {
+        "linkedin": ["synthetic-person"]
+      },
+      "profileUrls": ["https://www.linkedin.com/in/synthetic-person"],
+      "employerHints": [],
+      "role": null,
+      "background": null,
+      "currentEmployer": null,
+      "socialProfiles": [],
+      "websites": [],
+      "feeds": [],
+      "publications": [],
+      "mentions": [],
+      "evidence": [],
+      "sourceDiagnostics": [],
+      "archivedAt": "2026-10-08T14:48:04.793Z",
+      "invalidations": [
+        {
+          "id": "inv_1",
+          "kind": "correction",
+          "affectedRevision": 1,
+          "detail": "Revision 1 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1],
+          "occurredAt": "2026-10-08T14:21:29.496Z"
+        },
+        {
+          "id": "inv_2",
+          "kind": "correction",
+          "affectedRevision": 2,
+          "detail": "Revision 2 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1, 2],
+          "occurredAt": "2026-10-08T14:29:06.776Z"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/lookup/accept",
+    "input": {
+      "identifier": "teardown@example.com"
+    },
+    "status": 400,
+    "body": {
+      "error": "conflicting-identity",
+      "message": "Restore the archived Profile before reusing it."
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/person_73c7d02327c4/restore",
+    "input": {},
+    "status": 200,
+    "body": {
+      "id": "person_73c7d02327c4",
+      "revision": 3,
+      "createdAt": "2026-10-08T14:21:29.473Z",
+      "updatedAt": "2026-10-08T14:29:06.776Z",
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com",
+      "emails": ["teardown@example.com"],
+      "handles": {
+        "linkedin": ["synthetic-person"]
+      },
+      "profileUrls": ["https://www.linkedin.com/in/synthetic-person"],
+      "employerHints": [],
+      "role": null,
+      "background": null,
+      "currentEmployer": null,
+      "socialProfiles": [],
+      "websites": [],
+      "feeds": [],
+      "publications": [],
+      "mentions": [],
+      "evidence": [],
+      "sourceDiagnostics": [],
+      "archivedAt": null,
+      "invalidations": [
+        {
+          "id": "inv_1",
+          "kind": "correction",
+          "affectedRevision": 1,
+          "detail": "Revision 1 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1],
+          "occurredAt": "2026-10-08T14:21:29.496Z"
+        },
+        {
+          "id": "inv_2",
+          "kind": "correction",
+          "affectedRevision": 2,
+          "detail": "Revision 2 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1, 2],
+          "occurredAt": "2026-10-08T14:29:06.776Z"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/lookup/accept",
+    "input": {
+      "identifier": "linkedin.com/in/synthetic-person"
+    },
+    "status": 200,
+    "body": {
+      "profile": {
+        "id": "person_73c7d02327c4",
+        "revision": 3,
+        "createdAt": "2026-10-08T14:21:29.473Z",
+        "updatedAt": "2026-10-08T14:29:06.776Z",
+        "fullName": "Synthetic Teardown Person",
+        "primaryEmail": "teardown@example.com",
+        "emails": ["teardown@example.com"],
+        "handles": {
+          "linkedin": ["synthetic-person"]
+        },
+        "profileUrls": ["https://www.linkedin.com/in/synthetic-person"],
+        "employerHints": [],
+        "role": null,
+        "background": null,
+        "currentEmployer": null,
+        "socialProfiles": [],
+        "websites": [],
+        "feeds": [],
+        "publications": [],
+        "mentions": [],
+        "evidence": [],
+        "sourceDiagnostics": [],
+        "archivedAt": null,
+        "invalidations": [
+          {
+            "id": "inv_1",
+            "kind": "correction",
+            "affectedRevision": 1,
+            "detail": "Revision 1 facts were corrected; treat that revision as superseded.",
+            "affectedRevisions": [1],
+            "occurredAt": "2026-10-08T14:21:29.496Z"
+          },
+          {
+            "id": "inv_2",
+            "kind": "correction",
+            "affectedRevision": 2,
+            "detail": "Revision 2 facts were corrected; treat that revision as superseded.",
+            "affectedRevisions": [1, 2],
+            "occurredAt": "2026-10-08T14:29:06.776Z"
+          }
+        ]
+      },
+      "signals": {
+        "emails": [],
+        "fullNames": [],
+        "handles": {
+          "linkedin": ["synthetic-person"]
+        },
+        "profileUrls": ["https://www.linkedin.com/in/synthetic-person"],
+        "employerHints": []
+      },
+      "existing": true,
+      "research": {
+        "kind": "rejected-readiness",
+        "profileId": "person_73c7d02327c4",
+        "readiness": {
+          "state": "setup-required",
+          "reason": "provider-not-configured",
+          "nextAction": {
+            "label": "Open Guided Setup",
+            "href": "/onboarding?goal=meetings"
+          }
+        }
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/people/person_73c7d02327c4/dossier",
+    "input": null,
+    "status": 200,
+    "body": {
+      "dossier": null,
+      "profile": {
+        "id": "person_73c7d02327c4",
+        "revision": 3,
+        "createdAt": "2026-10-08T14:21:29.473Z",
+        "updatedAt": "2026-10-08T14:29:06.776Z",
+        "fullName": "Synthetic Teardown Person",
+        "primaryEmail": "teardown@example.com",
+        "emails": ["teardown@example.com"],
+        "handles": {
+          "linkedin": ["synthetic-person"]
+        },
+        "profileUrls": ["https://www.linkedin.com/in/synthetic-person"],
+        "employerHints": [],
+        "role": null,
+        "background": null,
+        "currentEmployer": null,
+        "socialProfiles": [],
+        "websites": [],
+        "feeds": [],
+        "publications": [],
+        "mentions": [],
+        "evidence": [],
+        "sourceDiagnostics": [],
+        "archivedAt": null,
+        "invalidations": [
+          {
+            "id": "inv_1",
+            "kind": "correction",
+            "affectedRevision": 1,
+            "detail": "Revision 1 facts were corrected; treat that revision as superseded.",
+            "affectedRevisions": [1],
+            "occurredAt": "2026-10-08T14:21:29.496Z"
+          },
+          {
+            "id": "inv_2",
+            "kind": "correction",
+            "affectedRevision": 2,
+            "detail": "Revision 2 facts were corrected; treat that revision as superseded.",
+            "affectedRevisions": [1, 2],
+            "occurredAt": "2026-10-08T14:29:06.776Z"
+          }
+        ]
+      },
+      "readiness": {
+        "state": "setup-required",
+        "reason": "provider-not-configured",
+        "nextAction": {
+          "label": "Open Guided Setup",
+          "href": "/onboarding?goal=meetings"
+        }
+      },
+      "research": null,
+      "researchDecision": {
+        "kind": "rejected-readiness",
+        "profileId": "person_73c7d02327c4",
+        "readiness": {
+          "state": "setup-required",
+          "reason": "provider-not-configured",
+          "nextAction": {
+            "label": "Open Guided Setup",
+            "href": "/onboarding?goal=meetings"
+          }
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,61 @@
+searxng                  in-production  -     No probe defined for this route.
+duckduckgo               in-production  -     No probe defined for this route.
+mojeek                   in-production  -     No probe defined for this route.
+marginalia               in-production  -     No probe defined for this route.
+wiby                     in-production  -     No probe defined for this route.
+wikipedia                in-production  -     No probe defined for this route.
+wikidata                 in-production  -     No probe defined for this route.
+bing-news                in-production  -     No probe defined for this route.
+google-news              in-production  -     No probe defined for this route.
+gdelt                    in-production  -     No probe defined for this route.
+stackexchange            in-production  -     No probe defined for this route.
+arctic-shift             in-production  -     No probe defined for this route.
+reddit-rss               in-production  -     No probe defined for this route.
+openverse                in-production  -     No probe defined for this route.
+europepmc                in-production  -     No probe defined for this route.
+openalex                 in-production  -     No probe defined for this route.
+orcid                    in-production  -     No probe defined for this route.
+orcid-record             in-production  200   Answered anonymously with the expected shape.
+dblp                     in-production  -     No probe defined for this route.
+github-users             in-production  -     No probe defined for this route.
+ror                      in-production  -     No probe defined for this route.
+gleif                    in-production  -     No probe defined for this route.
+edgar                    in-production  -     No probe defined for this route.
+internet-archive         in-production  -     No probe defined for this route.
+ia-tvnews                in-production  -     No probe defined for this route.
+wayback                  in-production  -     No probe defined for this route.
+wayback-capture          in-production  200   Answered anonymously with the expected shape.
+document-reader-ocr      in-production  -     No probe defined for this route.
+document-reader-presentations in-production  -     No probe defined for this route.
+mwmbl                    in-production  200   Answered anonymously with the expected shape.
+peertube                 in-production  200   Answered anonymously with the expected shape.
+podcast-directory        in-production  200   Answered anonymously with the expected shape.
+youtube-captions         unavailable    -     Observed 2026-09-06: every listed track returned HTTP 200 with a zero-byte body in every format (srv1, srv3, json3, vtt, ttml). Research falls back to the publisher's video description and records the gap. Local transcription would be the next route and is not installed on this host.
+podcastindex             excluded       -     A key is required, which #228 excludes even where the tier is free.
+bluesky                  in-production  200   Answered anonymously with the expected shape.
+mastodon                 in-production  200   Answered anonymously with the expected shape.
+linkedin                 excluded       -     Not a discovery provider. An anonymous page read succeeds only per client, per slug and per moment, so research reads a LinkedIn URL directly, records a login-required failure for a wall, and gives only the Profile's own walled URL one bounded render (ADR-0100); it never imports a session or uses a paid proxy.
+crossref                 in-production  200   Answered anonymously with the expected shape.
+crossref-record          in-production  200   Answered anonymously with the expected shape.
+datacite-record          in-production  200   Answered anonymously with the expected shape.
+openalex-record          in-production  200   Answered anonymously with the expected shape.
+datacite                 in-production  200   Answered anonymously with the expected shape.
+open-library             in-production  200   Answered anonymously with the expected shape.
+nppes                    in-production  200   Answered anonymously with the expected shape.
+clinicaltrials           in-production  200   Answered anonymously with the expected shape.
+nonprofit-explorer       in-production  200   Answered anonymously with the expected shape.
+tvmaze                   in-production  200   Answered anonymously with the expected shape.
+library-of-congress      in-production  200   Answered anonymously with the expected shape.
+openlibrary-record       in-production  200   Answered anonymously with the expected shape.
+europeana                excluded       -     Observed 2026-09-07 (#251): an anonymous search answered HTTP 401 {"success": false, "error": "Unauthorized"}. A key is required, which #228 excludes even where the tier is free. Not counted as expansion.
+artic                    in-production  200   Answered anonymously with the expected shape.
+commoncrawl              in-production  200   Answered anonymously with the expected shape.
+commoncrawl-capture      excluded       -     Excluded by ADR-0072: Terms of Use §2(l) forbids collecting personal information for use separately from the crawl. Research retains full documents and publishes structured personal-data claims, which collapses the distinction between retaining and building a separate store.
+instagram                excluded       -     No keyless anonymous read exists. Research records a login-required failure for an Instagram URL rather than importing a session or using a paid proxy.
+x                        excluded       -     No keyless anonymous read exists. Research records a login-required failure for an X URL rather than importing a session or using a paid proxy.
+threads                  excluded       -     No keyless anonymous read exists. Research records a login-required failure for a Threads URL rather than importing a session or using a paid proxy.
+peertube-captions        in-production  200   Answered anonymously with the expected shape.
+feed-reader              in-production  200   Answered anonymously with the expected shape.
+local-transcription      unavailable    -     Observed 2026-09-09: person research performs no audio acquisition or subprocess transcription — its readers are bounded anonymous GETs — and no usable transcription runtime is provisioned. This host carries yt-dlp and ffmpeg but no whisper-cli and no model weights; the runtime image ships whisper-cli (whisper-cpp v1.7.6) with no model file provisioned at /usr/local/share/whisper-cpp-model.bin. Caption failures fall back to the publisher's description and record transcription-failed with these requirements (issue #246).
+
+23/23 anonymous probes passed; 0 failed; 27 in-production routes unprobed; 9 excluded/unavailable routes not probed.

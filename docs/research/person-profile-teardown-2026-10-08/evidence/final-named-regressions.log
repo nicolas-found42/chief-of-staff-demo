@@ -1,0 +1,123 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people > refuses malformed creation without writing a Profile: {"fullName":42} 119ms
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people > refuses malformed creation without writing a Profile: {"fullName":"Ada","profileUrls":"https://example.com/ada"} 18ms
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people > refuses malformed creation without writing a Profile: {"fullName":"Ada","profileUrls":[42]} 4ms
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people > refuses malformed creation without writing a Profile: {"fullName":"Ada","profileUrls":["not a URL"]} 4ms
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people > creates a Profile and returns its canonical state with the first revision 6ms
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people > classifies invalid identity inputs as 400, naming the problem 6ms
+ ✓ tests/src/api/people-routes.test.ts > GET /api/people > refuses repeated scalar filters: query=Grace&query=Ada 5ms
+ ✓ tests/src/api/people-routes.test.ts > GET /api/people > refuses repeated scalar filters: includeArchived=true&includeArchived=false 5ms
+ ✓ tests/src/api/people-routes.test.ts > GET /api/people > lists Profiles and applies the search query and archive filter 6ms
+ ✓ tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid corrections without changing state 9ms
+ ✓ tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid corrections without changing state 4ms
+ ✓ tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid merges without changing state 4ms
+ ✓ tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid detachments without changing state 4ms
+ ✓ tests/src/api/people-routes.test.ts > malformed person repair requests > uses the same LinkedIn identity normalization for correction and lookup 11ms
+ ✓ tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid corrected profile URL not a URL without appending history 3ms
+ ✓ tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid corrected profile URL https://linkedin.com/company/example without appending history 3ms
+ ✓ tests/src/api/people-routes.test.ts > malformed person repair requests > refuses invalid corrected profile URL https://singlehost/person without appending history 3ms
+ ✓ tests/src/api/people-routes.test.ts > GET /api/people/:profileId > returns the current Profile state and 404 for an unknown one 3ms
+ ✓ tests/src/api/people-routes.test.ts > /api/people/:profileId lifecycle > archives and restores explicitly, with archived Profiles unavailable to new consumers 5ms
+ ✓ tests/src/api/people-routes.test.ts > /api/people/:profileId lifecycle > refuses archive and privacy deletion while a dependent configuration is active, naming its actions 4ms
+ ✓ tests/src/api/people-routes.test.ts > /api/people/:profileId lifecycle > discloses residual source documents on the confirmation refusal, before anything is deleted 3ms
+ ✓ tests/src/api/people-routes.test.ts > /api/people/:profileId lifecycle > privacy-deletes only after distinct confirmation and returns the residual-source receipt 7ms
+ ✓ tests/src/api/people-routes.test.ts > /api/people/:profileId lifecycle > performs no remote provider operation while archiving or privacy-deleting 7ms
+ ✓ tests/src/api/people-routes.test.ts > GET /api/people/:profileId/revisions > lists every revision oldest-first and serves each exact revision 4ms
+ ✓ tests/src/api/people-routes.test.ts > GET /api/people/:profileId/projection > serves purpose-specific projections and pins an exact revision on request 4ms
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people/:profileId/corrections > appends a correction revision and keeps the superseded snapshot readable 4ms
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people/:profileId/corrections > classifies failures: unknown Profile, empty correction, and taken email 4ms
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people/:profileId/corrections > accepts explicit nulls to clear false nullable facts 3ms
+ ✓ tests/src/api/people-routes.test.ts > POST /api/people/:profileId/corrections > accepts an explicit null to clear a false primary email and its current signal 3ms
+ ✓ tests/src/api/people-routes.test.ts > identity repair routes > POST /:profileId/merges merges a duplicate through an audited decision 5ms
+ ✓ tests/src/api/people-routes.test.ts > identity repair routes > POST /:profileId/merges classifies unresolved fact conflicts 5ms
+ ✓ tests/src/api/people-routes.test.ts > identity repair routes > POST /:profileId/detachments splits wrongly attached evidence to the correct Profile 6ms
+ ✓ tests/src/api/people-routes.test.ts > identity repair routes > GET /:profileId/invalidations exposes the append-only log for consumers 5ms
+ ✓ tests/src/api/people-routes.test.ts > /api/people/:profileId lifecycle over the production registry > refuses archive and privacy deletion while the confirmed owner reference pins the Profile, naming it 9ms
+ ✓ tests/src/api/people-routes.test.ts > /api/people/:profileId lifecycle over the production registry > derives residual source artifacts from catalogued transcripts and public items naming the person 29ms
+ ✓ tests/src/api/people-routes.test.ts > creation while research is blocked > still returns 201 and carries the rejected-readiness decision separately 6ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a public-only person has a separate empty Relationship history tab while research is queued 159ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a Profile without a research job exposes its ready readiness and next action 53ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a Profile without a research job exposes its setup-required readiness and next action 14ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a setup-required blocker names the missing owner confirmation and links to Settings 22ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > without a connected email the setup-required copy stays generic 14ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > initializing renders distinctly from setup-required and never asks to repeat onboarding 14ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a previous conclusion stays visible as labeled history and is never shown as the current operation's failure 56ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a real unusable-shape interruption names the extraction boundary, not a generic interruption 12ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > empty-answer copy explains the model returned no usable answer and that evidence is retained 41ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a legitimate no-supported-facts result reads differently from a no-usable-model-answer result 9ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > private-only supported evidence stays inspectable without inventing public history 84ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > private-only contested evidence stays inspectable without inventing public history 42ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a claim grounded in an archived capture shows the capture date and its bounded period 17ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a citation dates its capture in UTC and never repeats a self-domain title 22ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > dossier tabs use a single tab stop and arrow keys move selection 35ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a source opens immediately and closing it prevents a late response reopening it 31ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a source page with more outbound URLs than the stored cap retains a bounded record 9ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > current and historical dossier reads render the selected revision's stored account and evidence 65ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > an unnamed Profile explains how to name it before research can attribute evidence 39ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > a terminal unavailable conclusion names the retry step 17ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > an empty section says plainly that nothing is documented yet 11ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > audit F13: the revision selector lists the newest 50 revisions and names the rest 9ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > audit F13: Show all expands the selector to every recorded revision 19ms
+ ✓ tests/src/unit/person-dossier-page.test.tsx > audit F13: a selected revision older than the window stays in the selector 11ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > NewPersonProfilePage setup guidance > states the whole prerequisite chain in order, with the provider link 44ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > Identifier creation > passes the optional full name through to acceptPersonProfileLookup 25ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > Identifier creation > clears the previous identifier error as soon as the field changes 9ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > Same-name duplicate warning (audit F4) > does not create after leaving a page whose duplicate check is still pending 9ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > Same-name duplicate warning (audit F4) > does not create an edited identity using a stale duplicate check 11ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > Same-name duplicate warning (audit F4) > does not show a stale duplicate confirmation after the name changes 8ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > Same-name duplicate warning (audit F4) > holds an identifier accept until Create anyway, linking the existing profile 11ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > Same-name duplicate warning (audit F4) > holds a manual create until Create anyway 9ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > Same-name duplicate warning (audit F4) > reads the people list once per mount 9ms
+ ✓ tests/src/unit/new-person-profile-page.test.tsx > Same-name duplicate warning (audit F4) > never blocks creation when the people list cannot be read 9ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > source probes separate actual answers from unprobed declarations: failed=true 3ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > source probes separate actual answers from unprobed declarations: failed=false 0ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > the CLI entrypoint executes as a child process and prints usage help 2787ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > rejects unknown requested people without writing a successful empty report 84ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > refuses a rejected corpus instead of evaluating its remaining entries 4ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > rejects invalid selection: Benchmark selection is empty 3ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > rejects invalid selection: --people must select at least one person 3ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > rejects invalid selection: --limit must be a positive integer 3ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > rejects invalid selection: --limit must be a positive integer 3ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > rejects invalid selection: --limit must be a positive integer 2ms
+ ✓ tests/src/api/people-lookup.test.ts > parsePersonIdentifier > reads an email address as an email signal 69ms
+ ✓ tests/src/api/people-lookup.test.ts > parsePersonIdentifier > reads a schemeless LinkedIn address as a profile URL and a handle 5ms
+ ✓ tests/src/api/people-lookup.test.ts > parsePersonIdentifier > refuses input that is neither an email nor an address 4ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/lookup > proposes a Profile from a LinkedIn address without saving anything 101ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/lookup > searches the typed address itself and never fetches the LinkedIn page 13ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/lookup > classifies an identifier that is neither an email nor an address 19ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/lookup/accept > names an archived identity conflict as a client refusal and recovers after restore 42ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/lookup/accept > creates the stable identity immediately without waiting for public research 8ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/lookup/accept > reports a second accept against the same identity as existing 10ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/lookup/accept > accepts a typed LinkedIn identity as revision 1 without recording a correction 12ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/lookup/accept > names a reused identity that was first accepted unnamed (UX audit F5) 17ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/:profileId/enrich > re-runs the search from the identity an existing Profile already holds 11ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/:profileId/enrich > refuses an unknown Profile 3ms
+ ✓ tests/src/api/people-lookup.test.ts > POST /api/people/:profileId/enrich > refuses an archived Profile rather than reviving it by search 4ms
+ ✓ tests/src/api/people-lookup.test.ts > rejects incomplete or non-person LinkedIn identifier https://www.linkedin.com/in/ before saving 3ms
+ ✓ tests/src/api/people-lookup.test.ts > rejects incomplete or non-person LinkedIn identifier linkedin.com/in before saving 3ms
+ ✓ tests/src/api/people-lookup.test.ts > rejects incomplete or non-person LinkedIn identifier https://linkedin.com/ before saving 3ms
+ ✓ tests/src/api/people-lookup.test.ts > rejects incomplete or non-person LinkedIn identifier https://linkedin.com/company/acme before saving 3ms
+ ✓ tests/src/api/people-lookup.test.ts > rejects incomplete or non-person LinkedIn identifier https://linkedin.com/in/name/extra before saving 2ms
+ ✓ tests/src/api/people-lookup.test.ts > rejects incomplete or non-person LinkedIn identifier https://linkedin.com/in/%20 before saving 2ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > records a valid limited subset as intentional and preserves its failed evaluation 212ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > records all default corpus members excluded by --limit without an explicit --people list 222ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > rejects unsafe benchmark concurrency: [ '--mode', 'live-discovery', …(2) ] 1ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > rejects unsafe benchmark concurrency: [ '--mode', 'live-discovery', …(2) ] 0ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > rejects unsafe benchmark concurrency: [ '--mode', 'live-discovery', …(2) ] 0ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > retains public evidence without credentials and produces a separately reassessable artifact 175ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > --retry carries an eligible person and re-runs only the rest 139ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > --retry with --repeats 2 records carried people once: later repeats sample everyone fresh 174ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > --retry refuses a stamped artifact from a different run recipe 48ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > --repeats 2 writes one report per repeat plus arm statistics 145ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > --compare-stats pairs two arm statistics files and warns inside the noise band 1ms
+ ✓ tests/src/modules/person-benchmark-cli.test.ts > --seed is recorded and a non-integer seed is rejected 63ms
+
+ Test Files  5 passed (5)
+      Tests  112 passed (112)
+   Start at  10:51:46
+   Duration  7.38s (tests 44%, import 36%, transform 12%, environment 8%)
+
+    Isolate  5 workers spawned · ~355ms startup each (spawn + environment, per file)
+             at least ~533ms faster with isolate: false — reuses workers across files instead of one per file

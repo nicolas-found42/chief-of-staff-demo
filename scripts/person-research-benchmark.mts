@@ -129,7 +129,7 @@ Options
   --timeline-minutes <list>                With --reassess, assess publication snapshots (e.g. 1,2,3,5,15).
   --reassess-only-failed                   Freeze completed assessments; retry failed assessments only.
   --lineage-root <dir>                     Bounded report directory for first reassessment ancestry.
-  --probe-sources                          Probe every source route's anonymous access and exit.
+  --probe-sources                          Run configured anonymous probes; disclose unprobed routes.
   --corpus-coverage                        Print the corpus's requirement coverage and exit.
   --help                                   This text.
 
@@ -202,12 +202,16 @@ export async function runBenchmarkCli(
         writeStdout(
           `${result.route.padEnd(24)} ${result.status.padEnd(14)} ${String(result.httpStatus ?? "-").padEnd(5)} ${result.detail}\n`,
         );
-      const failed = results.filter(
-        (result) =>
-          result.status === "in-production" && (result.httpStatus !== 200 || !result.shapeOk),
+      const probed = results.filter((result) => result.probed);
+      const failed = probed.filter((result) => result.httpStatus !== 200 || !result.shapeOk);
+      const unprobed = results.filter(
+        (result) => !result.probed && result.status === "in-production",
+      );
+      const excluded = results.filter(
+        (result) => !result.probed && result.status !== "in-production",
       );
       writeStdout(
-        `\n${String(results.length - failed.length)}/${String(results.length)} routes answered as documented.\n`,
+        `\n${String(probed.length - failed.length)}/${String(probed.length)} anonymous probes passed; ${String(failed.length)} failed; ${String(unprobed.length)} in-production routes unprobed; ${String(excluded.length)} excluded/unavailable routes not probed.\n`,
       );
       return { status: failed.length ? 1 : 0, stdout, stderr };
     }
