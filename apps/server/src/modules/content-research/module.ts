@@ -28,6 +28,7 @@ import { personSourceTargets } from "./targets.js";
 import { modelDiagnosticEventDetail } from "../../llm/failure.js";
 import { errorMessage } from "../../engine/failure.js";
 import { collectContentResearch, type CollectedPersonTarget } from "./collection.js";
+import { RETRYABLE_COLLECTION_OUTCOMES } from "../../source-adapters/collection.js";
 
 export const CONTENT_RESEARCH_INTAKE = "content-research-daily";
 export const CONTENT_RESEARCH_BACKFILL_INTAKE = "content-research-backfill";
@@ -531,7 +532,12 @@ export function contentResearchModule(
       const nowDate = now();
       const checkpointRaw = deps.store.getDailyCheckpoint();
       const sinceDate = checkpointRaw
-        ? new Date(new Date(checkpointRaw).getTime() - 48 * 60 * 60 * 1000)
+        ? new Date(
+            Math.max(
+              new Date(checkpointRaw).getTime() - 48 * 60 * 60 * 1000,
+              nowDate.getTime() - 7 * 24 * 60 * 60 * 1000,
+            ),
+          )
         : new Date(nowDate.getTime() - 7 * 24 * 60 * 60 * 1000);
       const sinceIso = sinceDate.toISOString();
       const untilIso = nowDate.toISOString();
@@ -584,8 +590,7 @@ export function contentResearchModule(
             items: entry.result.items.length,
           });
         }
-        if (collected.every((entry) => entry.result.kind === "completed"))
-          rememberCollectionState(collected, deps.store);
+        rememberCollectionState(collected, deps.store);
         ctx.event("collect_done", { collected: collected.length });
       });
       if (people.length === 0) {
@@ -623,8 +628,39 @@ export function contentResearchModule(
 
       // Publish: local first, then the ledger upsert, then the owner draft, then
       // the Home notification — and only a successful publish advances the
-      // checkpoint and the 90-day baselines when collection is also complete.
+      // checkpoint under the bounded recovery policy and complete-person baselines.
       const collectionComplete = collected.every((entry) => entry.result.kind === "completed");
+      // Access/capability failures require intervention, not an ever-growing
+      // recovery window. Transient/shape failures get at most a week to recover.
+      const hasRecoverableFailure = collected.some(
+        (entry) =>
+          entry.result.kind === "failed" &&
+          (RETRYABLE_COLLECTION_OUTCOMES.has(entry.result.outcome) ||
+            entry.result.outcome === "response_shape_change"),
+      );
+      const recoveryEvents = deps.runs
+        .list({ module: CONTENT_RESEARCH_MODULE_ID })
+        .runs.filter((run) => run.intake === CONTENT_RESEARCH_INTAKE)
+        .flatMap((run) => deps.runs.detail(run.id)?.events ?? []);
+      const lastRecovery = Math.max(
+        0,
+        ...recoveryEvents
+          .filter((event) => event.type === "daily_recovery_complete")
+          .map((event) =>
+            Date.parse(typeof event.detail?.until === "string" ? event.detail.until : event.at),
+          ),
+      );
+      const recoveryStart = Math.min(
+        Date.parse(checkpointRaw ?? untilIso),
+        ...recoveryEvents
+          .filter((event) => event.type === "daily_progress_deferred")
+          .map((event) =>
+            Date.parse(typeof event.detail?.until === "string" ? event.detail.until : event.at),
+          )
+          .filter((at) => at > lastRecovery),
+      );
+      const progressDeferred =
+        hasRecoverableFailure && nowDate.getTime() - recoveryStart < 7 * 24 * 60 * 60 * 1000;
       const dailyLevels = new Map<string, number[]>();
       for (const [personId, bucket] of perPersonItems) {
         dailyLevels.set(
@@ -656,14 +692,26 @@ export function contentResearchModule(
           });
         }
 
-        if (!collectionComplete) {
-          ctx.event("daily_progress_deferred", { reason: "incomplete_collection" });
+        if (progressDeferred) {
+          ctx.event("daily_progress_deferred", {
+            reason: "incomplete_collection",
+            until: untilIso,
+          });
           return;
         }
+        ctx.event(hasRecoverableFailure ? "daily_recovery_expired" : "daily_recovery_complete", {
+          until: untilIso,
+        });
         deps.store.setDailyCheckpoint(untilIso);
         deps.store.recordSuccessfulPeriod("daily", untilIso.slice(0, 10));
         for (const [personId, levels] of dailyLevels) {
           if (levels.length === 0) continue;
+          if (
+            collected.some(
+              (entry) => entry.personId === personId && entry.result.kind !== "completed",
+            )
+          )
+            continue;
           /* One value per Run: the person's cross-platform level for the day, so
              a 90-value history really spans 90 days (spec story 12). */
           const average = levels.reduce((sum, value) => sum + value, 0) / levels.length;
@@ -683,7 +731,7 @@ export function contentResearchModule(
         status: "done",
         summary: collectionComplete
           ? summary
-          : `${summary} — partial collection; daily progress unchanged`,
+          : `${summary} — partial collection; daily progress ${progressDeferred ? "unchanged" : "advanced for healthy sources"}`,
       };
     },
   };

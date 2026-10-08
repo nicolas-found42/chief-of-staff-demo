@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { ContentResearchHost } from "../../../apps/server/src/modules/content-research/host";
 import { ContentResearchProfileRefusal } from "../../../apps/server/src/modules/content-research/host";
 import { ContentResearchStore } from "../../../apps/server/src/modules/content-research/store";
+import { ConfigStore } from "../../../apps/server/src/config";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import {
@@ -134,7 +135,7 @@ function makeAdapter(input: {
   };
 }
 
-function rateLimitedResult(): SourceCollectionResult {
+function rateLimitedResult(): Extract<SourceCollectionResult, { kind: "failed" }> {
   return {
     kind: "failed",
     outcome: "rate_limit",
@@ -250,6 +251,7 @@ interface HarnessOptions {
   searchPublic?: (query: string) => Promise<{ title: string; url: string; snippet: string }[]>;
   ownerEmail?: string | null;
   profileProjection?: (profileId: string) => PersonProfileProjection | null;
+  scheduled?: boolean;
 }
 
 /**
@@ -295,6 +297,14 @@ function makeHarness(options: HarnessOptions) {
   });
   const profileProjection =
     options.profileProjection ?? ((profileId: string) => people.project("public-safe", profileId));
+  const configStore = options.scheduled ? new ConfigStore(join(workspaceDir, "config.json")) : null;
+  configStore?.load();
+  if (configStore)
+    configStore.setModuleConfig(CONTENT_RESEARCH_MODULE_ID, {
+      ...configStore.getModuleConfig(CONTENT_RESEARCH_MODULE_ID),
+      timeZone: "UTC",
+      dailyTime: "08:00",
+    });
   const host = new ContentResearchHost({
     runs,
     workspaceDir,
@@ -309,6 +319,7 @@ function makeHarness(options: HarnessOptions) {
       options.ownerEmail === undefined ? "owner@example.com" : options.ownerEmail,
     now,
     profileProjection,
+    ...(configStore ? { configStore } : {}),
     log: () => {},
     sleep: () => Promise.resolve(),
   });
@@ -613,7 +624,7 @@ describe("Content Research", () => {
     const { runs, host, people, workspaceDir } = makeHarness({ adapters: [hn] });
     const person = watchProfile(host, people, { fullName: "Ben" });
     const store = new ContentResearchStore(workspaceDir, now);
-    const checkpoint = new Date(NOW.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    const checkpoint = new Date(NOW.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
     store.setDailyCheckpoint(checkpoint);
     store.recordSuccessfulPeriod("daily", checkpoint.slice(0, 10));
     store.recordBaseline(person.id, [4, 6]);
@@ -677,6 +688,177 @@ describe("Content Research", () => {
     );
     expect(new ContentResearchStore(workspaceDir, now).listItems()).toHaveLength(10);
     expect(host.getDailyCheckpoint()).toBeNull();
+    const daily = await host.researchNow();
+    await host.idle();
+    expect(runs.open(daily)?.read().status).toBe("done");
+    expect(host.getDailyCheckpoint()).toBe(NOW.toISOString());
+  });
+
+  it.each(["blocked_access", "unsupported_capability", "not_found"] as const)(
+    "%s does not freeze healthy people's daily progress or add partial baselines",
+    async (outcome) => {
+      current = new Date(NOW);
+      const failure = { ...rateLimitedResult(), outcome };
+      const sick = makeAdapter({ id: "youtube", itemsFor: () => [], failWith: failure });
+      const rss = makeAdapter({
+        id: "rss",
+        itemsFor: () => [
+          makeItem({
+            url: "https://healthy.example/post",
+            title: "Healthy",
+            adapterId: "rss",
+          }),
+        ],
+      });
+      const { host, runs, people, workspaceDir } = makeHarness({ adapters: [rss, sick] });
+      const healthy = watchProfile(host, people, {
+        fullName: "Healthy",
+        handleHints: { blogRssHints: ["https://healthy.example/feed"] },
+      });
+      const incomplete = watchProfile(host, people, {
+        fullName: "Incomplete",
+        handleHints: {
+          youtubeChannelId: "UCfixture",
+          blogRssHints: ["https://incomplete.example/feed"],
+        },
+      });
+      const id = await host.researchNow();
+      await host.idle();
+      const store = new ContentResearchStore(workspaceDir, now);
+      expect(runs.open(id)?.read().status).toBe("done");
+      expect(store.getDailyCheckpoint()).toBe(NOW.toISOString());
+      expect(store.scheduleState().lastSuccessfulDailyPeriod).toBe(NOW.toISOString().slice(0, 10));
+      expect(store.getBaseline(healthy.id)?.history).toHaveLength(1);
+      expect(store.getBaseline(incomplete.id)).toBeNull();
+      expect(
+        readResult(runs, id).adapters.some((entry) => entry.errorClassifications.includes(outcome)),
+      ).toBe(true);
+    },
+  );
+
+  it("remembers successful target validators independently and bounds a stale recovery window", async () => {
+    current = new Date(NOW);
+    const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+    const sick = makeAdapter({ id: "reddit", itemsFor: () => [], failWith: rateLimitedResult() });
+    const { host, people, workspaceDir } = makeHarness({ adapters: [rss, sick] });
+    watchProfile(host, people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
+    const store = new ContentResearchStore(workspaceDir, now);
+    store.setDailyCheckpoint(new Date(NOW.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString());
+    await host.researchNow();
+    await host.idle();
+    expect(store.getCollectionState("https://ben.example/feed")?.conditional?.etag).toBe(
+      'W/"rss-etag"',
+    );
+    expect(store.getDailyCheckpoint()).toBe(NOW.toISOString());
+    expect(rss.calls[0]?.since).toBe(
+      new Date(NOW.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    );
+    await host.researchNow();
+    await host.idle();
+    expect(rss.calls[1]?.conditional?.etag).toBe('W/"rss-etag"');
+  });
+
+  it("retries a scheduled partial run twice at five-minute intervals, then waits for the next day", async () => {
+    current = new Date("2026-08-30T20:00:00Z");
+    const sick = makeAdapter({ id: "hn", itemsFor: () => [], failWith: rateLimitedResult() });
+    const { host, people, runs } = makeHarness({ adapters: [sick], scheduled: true });
+    watchProfile(host, people, { fullName: "Ben" });
+    await host.checkSchedules();
+    await host.idle();
+    const dailyRuns = () =>
+      runs
+        .list({ module: CONTENT_RESEARCH_MODULE_ID })
+        .runs.filter((run) => run.intake === CONTENT_RESEARCH_INTAKE);
+    expect(dailyRuns()).toHaveLength(1);
+    await host.checkSchedules();
+    await host.idle();
+    expect(dailyRuns()).toHaveLength(1);
+    for (let attempt = 2; attempt <= 3; attempt += 1) {
+      current = new Date(current.getTime() + 5 * 60 * 1000);
+      await host.checkSchedules();
+      await host.idle();
+      expect(dailyRuns()).toHaveLength(attempt);
+    }
+    current = new Date(current.getTime() + 60 * 60 * 1000);
+    await host.checkSchedules();
+    await host.idle();
+    expect(dailyRuns()).toHaveLength(3);
+    expect(host.getDailyCheckpoint()).toBeNull();
+  });
+
+  it("a scheduled retry recovers within the same period and stops further attempts", async () => {
+    current = new Date("2026-08-30T20:00:00Z");
+    const hn = makeAdapter({ id: "hn", itemsFor: () => [] });
+    const healthyCollect = hn.collect.bind(hn);
+    hn.collect = async () => rateLimitedResult();
+    const { host, people, runs } = makeHarness({ adapters: [hn], scheduled: true });
+    watchProfile(host, people, { fullName: "Ben" });
+    await host.checkSchedules();
+    await host.idle();
+    expect(host.getDailyCheckpoint()).toBeNull();
+    hn.collect = healthyCollect;
+    current = new Date(current.getTime() + 5 * 60 * 1000);
+    await host.checkSchedules();
+    await host.idle();
+    expect(host.getDailyCheckpoint()).toBe(current.toISOString());
+    const count = runs.list().runs.length;
+    current = new Date(current.getTime() + 60 * 60 * 1000);
+    await host.checkSchedules();
+    await host.idle();
+    expect(runs.list().runs).toHaveLength(count);
+  });
+
+  it("a first-ever transient failure cannot defer healthy progress beyond a week", async () => {
+    current = new Date(NOW);
+    const sick = makeAdapter({ id: "youtube", itemsFor: () => [], failWith: rateLimitedResult() });
+    const rss = makeAdapter({
+      id: "rss",
+      itemsFor: () => [
+        makeItem({ url: "https://healthy.example/post", title: "Healthy", adapterId: "rss" }),
+      ],
+    });
+    const { host, people, workspaceDir } = makeHarness({ adapters: [rss, sick] });
+    const healthy = watchProfile(host, people, {
+      fullName: "Healthy",
+      handleHints: { blogRssHints: ["https://healthy.example/feed"] },
+    });
+    watchProfile(host, people, {
+      fullName: "Incomplete",
+      handleHints: { youtubeChannelId: "UCfixture", blogRssHints: [] },
+    });
+    await host.researchNow();
+    await host.idle();
+    expect(host.getDailyCheckpoint()).toBeNull();
+    current = new Date(NOW.getTime() + 7 * 24 * 60 * 60 * 1000);
+    await host.researchNow();
+    await host.idle();
+    expect(host.getDailyCheckpoint()).toBe(current.toISOString());
+    expect(
+      new ContentResearchStore(workspaceDir, now).getBaseline(healthy.id)?.history,
+    ).toHaveLength(1);
+    current = new Date(current.getTime() + 24 * 60 * 60 * 1000);
+    await host.researchNow();
+    await host.idle();
+    expect(host.getDailyCheckpoint()).toBe(current.toISOString());
+    expect(
+      new ContentResearchStore(workspaceDir, now).getBaseline(healthy.id)?.history,
+    ).toHaveLength(2);
+    // A successful recovery closes the episode; a later failure gets fresh grace.
+    const recovered = makeAdapter({ id: "youtube", itemsFor: () => [] });
+    sick.collect = recovered.collect.bind(recovered);
+    current = new Date(current.getTime() + 24 * 60 * 60 * 1000);
+    await host.researchNow();
+    await host.idle();
+    const recoveredCheckpoint = current.toISOString();
+    expect(host.getDailyCheckpoint()).toBe(recoveredCheckpoint);
+    sick.collect = async () => rateLimitedResult();
+    current = new Date(current.getTime() + 24 * 60 * 60 * 1000);
+    await host.researchNow();
+    await host.idle();
+    expect(host.getDailyCheckpoint()).toBe(recoveredCheckpoint);
   });
 
   it("one adapter rate-limited: the Run still completes and the other platform's evidence survives", async () => {

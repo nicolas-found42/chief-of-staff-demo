@@ -225,6 +225,7 @@ export class HnAlgoliaSourceAdapter implements SourceAdapter {
           startedAt,
           this.now().toISOString(),
         );
+        collectionFailure.diagnostic.affectedCapabilities = ["items"];
         break;
       }
     }

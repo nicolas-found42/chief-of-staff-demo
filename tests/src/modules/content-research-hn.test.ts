@@ -154,6 +154,7 @@ describe("Content Research HN failure holdouts", () => {
       kind: "failed",
       outcome: "response_shape_change",
       checkpoint: null,
+      diagnostic: { affectedCapabilities: ["items"] },
     });
     expect(result.items).toHaveLength(100);
     expect(result.diagnostic.causeChain.join(" ")).toMatch(/pagination/i);
