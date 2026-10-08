@@ -1,0 +1,11 @@
+{
+  "credentialsInEnvironment": [],
+  "kind": "completed",
+  "outcome": "items_found",
+  "count": 30,
+  "unique": 30,
+  "requests": 1,
+  "withinWindow": true,
+  "checkpoint": "2026-10-08T15:23:12.502Z",
+  "causes": []
+}

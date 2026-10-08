@@ -1,0 +1,5 @@
+{
+  "error": "content-research-setup-required",
+  "kind": "research",
+  "message": "Run Guided Setup to provision the model provider installation credential."
+}

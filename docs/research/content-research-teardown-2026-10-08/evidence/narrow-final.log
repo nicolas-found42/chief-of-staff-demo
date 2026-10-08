@@ -1,0 +1,9 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+
+ Test Files  5 passed (5)
+      Tests  77 passed (77)
+   Start at  11:30:32
+   Duration  2.14s (import 52%, transform 23%, tests 13%, environment 12%)
+

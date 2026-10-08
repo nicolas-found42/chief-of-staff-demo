@@ -1,0 +1,21 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > collects every advertised page within its bound and deduplicates repeated hits 3ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > bounds both ends of the requested interval in the request and returned items 1ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {} 1ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {"hits":"changed"} 0ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {"hits":[null]} 0ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {"hits":[{"title":"missing id"}]} 0ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > preserves earlier pages and leaves no checkpoint after a later page rate limit 1ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > reports truncation and preserves collected items when the page budget is exhausted 2ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > keeps a valid empty page a successful empty collection 0ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN failure holdouts > reports provider truncation below the local page budget 0ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN failure holdouts > retains the first page when the next page has invalid JSON 22ms
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN failure holdouts > retains earlier response evidence when the next fetch throws 1ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  11:36:05
+   Duration  239ms (transform 42%, import 33%, tests 25%, worker 1%)
+

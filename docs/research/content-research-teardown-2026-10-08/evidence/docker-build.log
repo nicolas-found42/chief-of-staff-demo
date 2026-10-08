@@ -1,0 +1,416 @@
+ Image chief-of-staff-demo-app Building 
+ Image chief-of-staff-demo-relay Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.06kB done
+#1 DONE 0.0s
+
+#2 [relay internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.49kB 0.0s done
+#2 DONE 0.0s
+
+#3 [app internal] load build definition from Dockerfile
+#3 transferring dockerfile: 6.32kB 0.0s done
+#3 DONE 0.0s
+
+#4 [app internal] load metadata for mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+#4 DONE 0.1s
+
+#5 [relay internal] load metadata for docker.io/library/node:22.18.0-bookworm-slim
+#5 ...
+
+#6 [app internal] load metadata for docker.io/library/debian:bookworm-slim
+#6 DONE 0.7s
+
+#5 [relay internal] load metadata for docker.io/library/node:22.18.0-bookworm-slim
+#5 DONE 0.7s
+
+#7 [app internal] load .dockerignore
+#7 transferring context: 185B done
+#7 DONE 0.0s
+
+#8 [app runtime  1/18] FROM mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+#8 resolve mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 0.0s done
+#8 DONE 0.0s
+
+#9 [app whisper-build 1/4] FROM docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+#9 resolve docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 0.0s done
+#9 DONE 0.0s
+
+#10 [app build  1/14] FROM docker.io/library/node:22.18.0-bookworm-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e
+#10 resolve docker.io/library/node:22.18.0-bookworm-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e 0.0s done
+#10 DONE 0.0s
+
+#11 [app internal] load build context
+#11 transferring context: 298.86kB 0.0s done
+#11 DONE 0.1s
+
+#7 [relay internal] load .dockerignore
+#7 transferring context: 185B done
+#7 DONE 0.0s
+
+#12 [relay internal] load metadata for docker.io/library/node:22-bookworm-slim
+#12 DONE 0.9s
+
+#10 [relay build  1/14] FROM docker.io/library/node:22.18.0-bookworm-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e
+#10 resolve docker.io/library/node:22.18.0-bookworm-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e 0.0s done
+#10 DONE 0.0s
+
+#13 [app build  7/14] COPY packages/shared/package.json packages/shared/
+#13 CACHED
+
+#14 [app build  8/14] COPY tests/package.json tests/
+#14 CACHED
+
+#15 [app build  3/14] RUN npm install --global pnpm@12.3.4
+#15 CACHED
+
+#16 [app build  5/14] COPY apps/server/package.json apps/server/
+#16 CACHED
+
+#17 [app build  6/14] COPY apps/web/package.json apps/web/
+#17 CACHED
+
+#18 [app build 10/14] COPY tsconfig.base.json tsconfig.json ./
+#18 CACHED
+
+#19 [app build  9/14] RUN pnpm install --frozen-lockfile
+#19 CACHED
+
+#20 [app build  2/14] WORKDIR /app
+#20 CACHED
+
+#21 [app build  4/14] COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+#21 CACHED
+
+#22 [app build 11/14] COPY packages/shared packages/shared
+#22 CACHED
+
+#23 [relay internal] load build context
+#23 transferring context: 756B 0.0s done
+#23 DONE 0.1s
+
+#24 [relay runtime 1/3] FROM docker.io/library/node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+#24 resolve docker.io/library/node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 0.1s done
+#24 DONE 0.1s
+
+#15 [relay build  3/14] RUN npm install --global pnpm@12.3.4
+#15 CACHED
+
+#25 [relay build  9/14] COPY relay/package.json relay/
+#25 CACHED
+
+#26 [relay build  8/14] COPY tests/package.json tests/
+#26 CACHED
+
+#27 [relay build  4/14] COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+#27 CACHED
+
+#28 [relay build  7/14] COPY packages/shared/package.json packages/shared/
+#28 CACHED
+
+#29 [relay build 10/14] RUN pnpm install --frozen-lockfile --filter @chief-of-staff-demo/relay...
+#29 CACHED
+
+#30 [relay build 11/14] COPY tsconfig.base.json ./
+#30 CACHED
+
+#31 [relay build  6/14] COPY apps/web/package.json apps/web/
+#31 CACHED
+
+#32 [relay build  5/14] COPY apps/server/package.json apps/server/
+#32 CACHED
+
+#33 [relay runtime 2/3] WORKDIR /app
+#33 CACHED
+
+#34 [relay build 13/14] COPY relay/tsconfig.json relay/
+#34 CACHED
+
+#20 [relay build  2/14] WORKDIR /app
+#20 CACHED
+
+#35 [relay build 12/14] COPY relay/src relay/src
+#35 CACHED
+
+#36 [relay build 14/14] RUN pnpm --filter @chief-of-staff-demo/relay build   && pnpm --filter @chief-of-staff-demo/relay deploy --legacy --prod /out
+#36 CACHED
+
+#37 [relay runtime 3/3] COPY --from=build /out ./
+#37 CACHED
+
+#38 [relay] exporting to image
+#38 exporting layers done
+#38 exporting manifest sha256:adb68cf224e1cc076198c993e8204ab504aa7da1ee1dc73d414cb17e786fd7d5 done
+#38 exporting config sha256:fbc7a40e7711856fd45244922f1c3a8415545c7d1df31ec42c54bd7f6cba7c22 done
+#38 exporting attestation manifest sha256:3d1b721fd6614f97c98acaa1e4680d53cfb80984d562a9db4d32c0d1c1e7abd7
+#38 exporting attestation manifest sha256:3d1b721fd6614f97c98acaa1e4680d53cfb80984d562a9db4d32c0d1c1e7abd7 0.1s done
+#38 exporting manifest list sha256:190c68de83fafd542dc5cb0756c7645891917a8f81a34ddcc05647c7fb5f0a44 0.1s done
+#38 naming to docker.io/library/chief-of-staff-demo-relay:latest
+#38 naming to docker.io/library/chief-of-staff-demo-relay:latest 0.0s done
+#38 unpacking to docker.io/library/chief-of-staff-demo-relay:latest 0.0s done
+#38 DONE 0.3s
+
+#39 [app build 12/14] COPY apps/server apps/server
+#39 DONE 0.8s
+
+#40 [relay] resolving provenance for metadata file
+#40 DONE 0.1s
+
+#41 [app build 13/14] COPY apps/web apps/web
+#41 DONE 0.1s
+
+#42 [app build 14/14] RUN pnpm run build   && rm -rf node_modules   && CI=true pnpm install --prod --frozen-lockfile
+#42 0.521 $ tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && pnpm --filter @chief-of-staff-demo/web build
+#42 8.975 $ vite build
+#42 9.606 vite v8.3.2 building client environment for production...
+#42 9.633 transforming...
+#42 10.14 ✓ 553 modules transformed.
+#42 10.44 rendering chunks...
+#42 10.59 computing gzip size...
+#42 10.61 dist/index.html                                            0.70 kB │ gzip:   0.37 kB
+#42 10.61 dist/assets/PersonProfileDetailPage-8B16IZnN.css           2.69 kB │ gzip:   0.92 kB
+#42 10.61 dist/assets/meetingWizard-DodKWivP.css                     3.01 kB │ gzip:   0.98 kB
+#42 10.61 dist/assets/personProfilePrototypeVariants-BADILkSi.css   16.02 kB │ gzip:   3.55 kB
+#42 10.61 dist/assets/index-DCcyhluc.css                            23.96 kB │ gzip:   5.59 kB
+#42 10.61 dist/assets/source-items-Dt2_Au1h.js                       0.11 kB │ gzip:   0.12 kB
+#42 10.61 dist/assets/naming-BHFInCv2.js                             0.13 kB │ gzip:   0.12 kB
+#42 10.61 dist/assets/ContentResearchSubNav-AhhoWfH5.js              0.40 kB │ gzip:   0.26 kB
+#42 10.61 dist/assets/ReadingDisclosure-BHg8sig2.js                  0.42 kB │ gzip:   0.31 kB
+#42 10.61 dist/assets/MeetingWizardTabs-yQAk8jZW.js                  0.43 kB │ gzip:   0.28 kB
+#42 10.61 dist/assets/client-Dm7ug2HT.js                             0.79 kB │ gzip:   0.39 kB
+#42 10.61 dist/assets/deliveryStatus-C6eXyc-C.js                     0.90 kB │ gzip:   0.38 kB
+#42 10.61 dist/assets/contentProjectGates-CW5X6ycO.js                1.20 kB │ gzip:   0.57 kB
+#42 10.61 dist/assets/useMeetingIndex-mNVNdtIc.js                    1.21 kB │ gzip:   0.59 kB
+#42 10.61 dist/assets/meetingDisplay-wZwJrflB.js                     1.30 kB │ gzip:   0.58 kB
+#42 10.61 dist/assets/MeetingRecoveryPage-Cf90FhwU.js                1.85 kB │ gzip:   0.91 kB
+#42 10.61 dist/assets/people-CbUw61Oa.js                             3.04 kB │ gzip:   0.76 kB
+#42 10.61 dist/assets/ProposalMeetingNavigation-BwktgoJe.js          3.50 kB │ gzip:   1.42 kB
+#42 10.61 dist/assets/MeetingsHistoryPage-AdclLfgH.js                3.67 kB │ gzip:   1.52 kB
+#42 10.61 dist/assets/OnboardingSetupPage-2lr3e87m.js                4.03 kB │ gzip:   1.43 kB
+#42 10.61 dist/assets/meetings-DTOeP4I4.js                           4.05 kB │ gzip:   0.86 kB
+#42 10.61 dist/assets/MeetingReadRow-BSV5V1ua.js                     4.25 kB │ gzip:   1.85 kB
+#42 10.61 dist/assets/MeetingDebriefPage-DXjwzcUH.js                 5.03 kB │ gzip:   1.65 kB
+#42 10.61 dist/assets/AllRunsPage-r9iLMxWJ.js                        5.49 kB │ gzip:   2.06 kB
+#42 10.61 dist/assets/content-Dj7VwMu9.js                            5.76 kB │ gzip:   1.11 kB
+#42 10.61 dist/assets/MeetingDebriefDetailPage-Bu9zWTms.js           5.92 kB │ gzip:   2.31 kB
+#42 10.61 dist/assets/MeetingsOverviewPage-B5GTHXPA.js               5.97 kB │ gzip:   2.10 kB
+#42 10.61 dist/assets/MeetingActionItems-yEm7NlGf.js                 6.00 kB │ gzip:   2.51 kB
+#42 10.61 dist/assets/BriefProfileRefresh-DpCgFov7.js                6.03 kB │ gzip:   1.97 kB
+#42 10.61 dist/assets/NewPersonProfilePage-CREuG4ct.js               6.29 kB │ gzip:   2.11 kB
+#42 10.61 dist/assets/MeetingsWeeklyPage-D8Z-42pJ.js                 7.02 kB │ gzip:   2.27 kB
+#42 10.61 dist/assets/ContentProjectDetailPage-IfdUmJuH.js           7.41 kB │ gzip:   2.39 kB
+#42 10.61 dist/assets/RunDetailPage-BoybttW4.js                      8.08 kB │ gzip:   2.50 kB
+#42 10.61 dist/assets/YoutubePage-CgFNIzKq.js                        8.70 kB │ gzip:   3.23 kB
+#42 10.61 dist/assets/jsx-runtime-Dk72oS4N.js                        8.77 kB │ gzip:   3.33 kB
+#42 10.61 dist/assets/PeoplePage-BmbBba5_.js                         9.16 kB │ gzip:   2.86 kB
+#42 10.61 dist/assets/TranscriptReviewPage-DVhXkuxs.js               9.37 kB │ gzip:   2.96 kB
+#42 10.61 dist/assets/useModules-Bsr47AU4.js                         9.90 kB │ gzip:   3.22 kB
+#42 10.61 dist/assets/MeetingBriefPage-BDHuOL7D.js                  10.56 kB │ gzip:   3.09 kB
+#42 10.61 dist/assets/ActionItemReview-bMILedr-.js                  14.55 kB │ gzip:   4.68 kB
+#42 10.61 dist/assets/MeetingPage-B58Kd9if.js                       14.87 kB │ gzip:   4.48 kB
+#42 10.61 dist/assets/homePrototypeVariants-DqMuZOtI.js             15.96 kB │ gzip:   4.81 kB
+#42 10.61 dist/assets/ContentResearchPage-BQ79k6oj.js               17.50 kB │ gzip:   4.80 kB
+#42 10.61 dist/assets/MeetingDebriefContent-DZHLWH8q.js             18.14 kB │ gzip:   5.50 kB
+#42 10.61 dist/assets/personProfilePrototypeVariants-B3z7BwTW.js    19.66 kB │ gzip:   5.64 kB
+#42 10.61 dist/assets/TasksPage-pn8xZTug.js                         28.06 kB │ gzip:   7.48 kB
+#42 10.61 dist/assets/ContentScoutPage-ACQUUW4u.js                  36.78 kB │ gzip:   9.60 kB
+#42 10.61 dist/assets/chunk-OB3PAWPO-DuustvZ5.js                    40.41 kB │ gzip:  14.54 kB
+#42 10.61 dist/assets/SettingsPage-Cyil45DW.js                      43.05 kB │ gzip:  12.09 kB
+#42 10.61 dist/assets/PersonProfileDetailPage-_G_Q4ucH.js           73.08 kB │ gzip:  20.73 kB
+#42 10.61 dist/assets/react-DRDmNHY9.js                            128.10 kB │ gzip:  41.80 kB
+#42 10.61 dist/assets/index-B71UDdXR.js                            358.15 kB │ gzip: 103.76 kB
+#42 10.61 
+#42 10.64 ✓ built in 1.03s
+#42 17.39 Scope: all 5 workspace projects
+#42 17.44 ✓ Lockfile passes supply-chain policies (verified 8h ago)
+#42 17.44 Lockfile is up to date, resolution step is skipped
+#42 18.03 Packages are hard linked from the content-addressable store to the virtual store.
+#42 18.03   Content-addressable store is at: /root/.local/share/pnpm/store/v11
+#42 18.03   Virtual store is at:             node_modules/.pnpm
+#42 19.09 Progress: resolved 40, reused 40, downloaded 0, added 21
+#42 20.16 Progress: resolved 61, reused 61, downloaded 0, added 42
+#42 21.22 Progress: resolved 76, reused 76, downloaded 0, added 57
+#42 22.26 Progress: resolved 92, reused 92, downloaded 0, added 73
+#42 23.39 Progress: resolved 118, reused 118, downloaded 0, added 99
+#42 24.42 Progress: resolved 128, reused 128, downloaded 0, added 109
+#42 25.50 Progress: resolved 148, reused 148, downloaded 0, added 129
+#42 26.56 Progress: resolved 161, reused 161, downloaded 0, added 142
+#42 27.65 Progress: resolved 174, reused 174, downloaded 0, added 155
+#42 28.64 Progress: resolved 183, reused 183, downloaded 0, added 164
+#42 29.66 Progress: resolved 204, reused 204, downloaded 0, added 185
+#42 30.74 Progress: resolved 214, reused 214, downloaded 0, added 195
+#42 31.82 Progress: resolved 219, reused 219, downloaded 0, added 200
+#42 32.84 Progress: resolved 230, reused 230, downloaded 0, added 211
+#42 33.88 Progress: resolved 244, reused 244, downloaded 0, added 225
+#42 35.11 Progress: resolved 256, reused 256, downloaded 0, added 237
+#42 36.25 Progress: resolved 261, reused 261, downloaded 0, added 242
+#42 37.39 Progress: resolved 273, reused 273, downloaded 0, added 254
+#42 38.54 Progress: resolved 288, reused 288, downloaded 0, added 270
+#42 39.59 Progress: resolved 293, reused 293, downloaded 0, added 275
+#42 40.79 Progress: resolved 298, reused 298, downloaded 0, added 281
+#42 41.81 Progress: resolved 313, reused 313, downloaded 0, added 296
+#42 43.60 Progress: resolved 320, reused 319, downloaded 0, added 307
+#42 45.06 Progress: resolved 326, reused 326, downloaded 0, added 314
+#42 46.14 Progress: resolved 330, reused 329, downloaded 0, added 316
+#42 50.32 Progress: resolved 331, reused 331, downloaded 0, added 319
+#42 53.94 Progress: resolved 331, reused 331, downloaded 0, added 320
+#42 54.87 Packages: +338
+#42 54.87 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#42 55.20 Progress: resolved 338, reused 333, downloaded 5, added 338, done
+#42 55.77 Done in 38.4s using pnpm v12.3.4
+#42 DONE 56.2s
+
+#43 [app whisper-build 3/4] COPY scripts/browser-network-sandbox.c /tmp/browser-network-sandbox.c
+#43 CACHED
+
+#44 [app whisper-build 2/4] RUN apt-get update   && apt-get install -y --no-install-recommends ca-certificates cmake curl g++ git make   && curl -fsSL "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.7.6.tar.gz" -o /tmp/whisper.cpp.tar.gz   && echo "166140e9a6d8a36f787a2bd77f8f44dd64874f12dd8359ff7c1f4f9acb86202e  /tmp/whisper.cpp.tar.gz" | sha256sum --check -   && tar -xzf /tmp/whisper.cpp.tar.gz -C /tmp   && cmake -S "/tmp/whisper.cpp-1.7.6" -B /tmp/whisper-build   -DCMAKE_BUILD_TYPE=Release   -DBUILD_SHARED_LIBS=OFF   -DGGML_NATIVE=OFF   -DWHISPER_BUILD_EXAMPLES=ON   -DWHISPER_BUILD_TESTS=OFF   -DWHISPER_BUILD_SERVER=OFF   && cmake --build /tmp/whisper-build --config Release --target whisper-cli --parallel 2
+#44 CACHED
+
+#45 [app runtime  4/18] COPY --from=whisper-build /tmp/browser-network-sandbox /usr/local/bin/browser-network-sandbox
+#45 CACHED
+
+#46 [app runtime  2/18] WORKDIR /app
+#46 CACHED
+
+#47 [app runtime  6/18] RUN mkdir -p /usr/local/share/content-scout   && printf '%s\n' "v1.7.6" > /usr/local/share/content-scout/whisper-cpp-version
+#47 CACHED
+
+#48 [app runtime  3/18] RUN apt-get update   && apt-get install -y --no-install-recommends   "ffmpeg=7:6.1.1-3ubuntu5"   "python3=3.12.3-0ubuntu2.1"   "python3-venv=3.12.3-0ubuntu2.1"   && python3 -m venv /opt/content-scout-python   && /opt/content-scout-python/bin/pip install --no-cache-dir   "instaloader==4.14.2"   "youtube-transcript-api==1.2.2"   "yt-dlp==2025.08.22"   && chromium_path="$(find /ms-playwright -type f \( -path '*/chrome-linux/chrome' -o -path '*/chrome-linux64/chrome' -o -path '*/chrome-linux-arm64/chrome' \) | head -n 1)"   && test -n "$chromium_path"   && ln -s "$chromium_path" /usr/local/bin/chromium   && rm -rf /var/lib/apt/lists/*
+#48 CACHED
+
+#49 [app runtime  5/18] COPY --from=whisper-build /tmp/whisper-build/bin/whisper-cli /usr/local/bin/whisper-cli
+#49 CACHED
+
+#50 [app whisper-build 4/4] RUN cc -O2 -Wall -Wextra -Werror /tmp/browser-network-sandbox.c -o /tmp/browser-network-sandbox
+#50 CACHED
+
+#51 [app runtime  7/18] COPY --from=build /app/package.json /app/pnpm-lock.yaml ./
+#51 CACHED
+
+#52 [app runtime  8/18] COPY --from=build /app/node_modules node_modules
+#52 DONE 9.9s
+
+#53 [app runtime  9/18] COPY --from=build /app/apps/server/node_modules apps/server/node_modules
+#53 DONE 0.5s
+
+#54 [app runtime 10/18] COPY --from=build /app/packages/shared/node_modules packages/shared/node_modules
+#54 DONE 0.2s
+
+#55 [app runtime 11/18] COPY --from=build /app/packages/shared/package.json packages/shared/
+#55 DONE 0.2s
+
+#56 [app runtime 12/18] COPY --from=build /app/packages/shared/dist packages/shared/dist
+#56 DONE 0.1s
+
+#57 [app runtime 13/18] COPY --from=build /app/apps/server/package.json apps/server/
+#57 DONE 0.1s
+
+#58 [app runtime 14/18] COPY --from=build /app/apps/server/dist apps/server/dist
+#58 DONE 0.4s
+
+#59 [app runtime 15/18] COPY --from=build /app/apps/web/dist apps/web/dist
+#59 DONE 0.1s
+
+#60 [app runtime 16/18] COPY scripts/start-workspace.py /usr/local/share/content-scout/start-workspace.py
+#60 DONE 0.1s
+
+#61 [app runtime 17/18] RUN browser-network-sandbox --self-test   && chromium --version   | grep -F "153.0.8010.12"   && printf '%s\n' '<!doctype html><html><body><h1>browser-render-probe</h1></body></html>' > /tmp/browser-render-probe.html   && chromium --headless --no-sandbox --disable-gpu --dump-dom "file:///tmp/browser-render-probe.html" 2>/dev/null | grep -F "browser-render-probe"   && rm -f /tmp/browser-render-probe.html   && python3 --version | grep -F "3.12.3"   && python3 -c "import importlib.metadata; print(importlib.metadata.version('youtube-transcript-api'))" | grep -Fx "1.2.2"   && instaloader --version | grep -F "4.14.2"   && ffmpeg -version 2>&1 | head -n 1 | grep -F "6.1.1-3ubuntu5"   && yt-dlp --version | grep -Fx "2025.08.22"   && whisper-cli --help >/dev/null
+#61 0.506 Browser IPv4/IPv6 TCP/UDP denied; Unix IPC available.
+#61 1.190 Google Chrome for Testing 153.0.8010.12 
+#61 4.767 <html><head></head><body><h1>browser-render-probe</h1>
+#61 4.846 Python 3.12.3
+#61 5.358 1.2.2
+#61 5.788 4.14.2
+#61 6.379 ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
+#61 6.875 2025.08.22
+#61 6.933 
+#61 6.933 usage: whisper-cli [options] file0 file1 ...
+#61 6.933 supported audio formats: flac, mp3, ogg, wav
+#61 6.933 
+#61 6.933 options:
+#61 6.933   -h,        --help              [default] show this help message and exit
+#61 6.933   -t N,      --threads N         [4      ] number of threads to use during computation
+#61 6.933   -p N,      --processors N      [1      ] number of processors to use during computation
+#61 6.933   -ot N,     --offset-t N        [0      ] time offset in milliseconds
+#61 6.933   -on N,     --offset-n N        [0      ] segment index offset
+#61 6.933   -d  N,     --duration N        [0      ] duration of audio to process in milliseconds
+#61 6.933   -mc N,     --max-context N     [-1     ] maximum number of text context tokens to store
+#61 6.933   -ml N,     --max-len N         [0      ] maximum segment length in characters
+#61 6.933   -sow,      --split-on-word     [false  ] split on word rather than on token
+#61 6.933   -bo N,     --best-of N         [5      ] number of best candidates to keep
+#61 6.933   -bs N,     --beam-size N       [5      ] beam size for beam search
+#61 6.933   -ac N,     --audio-ctx N       [0      ] audio context size (0 - all)
+#61 6.933   -wt N,     --word-thold N      [0.01   ] word timestamp probability threshold
+#61 6.933   -et N,     --entropy-thold N   [2.40   ] entropy threshold for decoder fail
+#61 6.933   -lpt N,    --logprob-thold N   [-1.00  ] log probability threshold for decoder fail
+#61 6.933   -nth N,    --no-speech-thold N [0.60   ] no speech threshold
+#61 6.933   -tp,       --temperature N     [0.00   ] The sampling temperature, between 0 and 1
+#61 6.933   -tpi,      --temperature-inc N [0.20   ] The increment of temperature, between 0 and 1
+#61 6.933   -debug,    --debug-mode        [false  ] enable debug mode (eg. dump log_mel)
+#61 6.933   -tr,       --translate         [false  ] translate from source language to english
+#61 6.933   -di,       --diarize           [false  ] stereo audio diarization
+#61 6.933   -tdrz,     --tinydiarize       [false  ] enable tinydiarize (requires a tdrz model)
+#61 6.933   -nf,       --no-fallback       [false  ] do not use temperature fallback while decoding
+#61 6.933   -otxt,     --output-txt        [false  ] output result in a text file
+#61 6.933   -ovtt,     --output-vtt        [false  ] output result in a vtt file
+#61 6.933   -osrt,     --output-srt        [false  ] output result in a srt file
+#61 6.933   -olrc,     --output-lrc        [false  ] output result in a lrc file
+#61 6.933   -owts,     --output-words      [false  ] output script for generating karaoke video
+#61 6.933   -fp,       --font-path         [/System/Library/Fonts/Supplemental/Courier New Bold.ttf] path to a monospace font for karaoke video
+#61 6.933   -ocsv,     --output-csv        [false  ] output result in a CSV file
+#61 6.933   -oj,       --output-json       [false  ] output result in a JSON file
+#61 6.933   -ojf,      --output-json-full  [false  ] include more information in the JSON file
+#61 6.933   -of FNAME, --output-file FNAME [       ] output file path (without file extension)
+#61 6.933   -np,       --no-prints         [false  ] do not print anything other than the results
+#61 6.933   -ps,       --print-special     [false  ] print special tokens
+#61 6.933   -pc,       --print-colors      [false  ] print colors
+#61 6.933              --print-confidence  [false  ] print confidence
+#61 6.933   -pp,       --print-progress    [false  ] print progress
+#61 6.933   -nt,       --no-timestamps     [false  ] do not print timestamps
+#61 6.933   -l LANG,   --language LANG     [en     ] spoken language ('auto' for auto-detect)
+#61 6.933   -dl,       --detect-language   [false  ] exit after automatically detecting language
+#61 6.933              --prompt PROMPT     [       ] initial prompt (max n_text_ctx/2 tokens)
+#61 6.933   -m FNAME,  --model FNAME       [models/ggml-base.en.bin] model path
+#61 6.933   -f FNAME,  --file FNAME        [       ] input audio file path
+#61 6.933   -oved D,   --ov-e-device DNAME [CPU    ] the OpenVINO device used for encode inference
+#61 6.933   -dtw MODEL --dtw MODEL         [       ] compute token-level timestamps
+#61 6.933   -ls,       --log-score         [false  ] log best decoder scores of tokens
+#61 6.933   -ng,       --no-gpu            [false  ] disable GPU
+#61 6.933   -fa,       --flash-attn        [false  ] flash attention
+#61 6.933   -sns,      --suppress-nst      [false  ] suppress non-speech tokens
+#61 6.933   --suppress-regex REGEX         [       ] regular expression matching tokens to suppress
+#61 6.933   --grammar GRAMMAR              [       ] GBNF grammar to guide decoding
+#61 6.933   --grammar-rule RULE            [       ] top-level GBNF grammar rule name
+#61 6.933   --grammar-penalty N            [100.0  ] scales down logits of nongrammar tokens
+#61 6.933 
+#61 6.933 Voice Activity Detection (VAD) options:
+#61 6.933              --vad                           [false  ] enable Voice Activity Detection (VAD)
+#61 6.933   -vm FNAME, --vad-model FNAME               [       ] VAD model path
+#61 6.933   -vt N,     --vad-threshold N               [0.50   ] VAD threshold for speech recognition
+#61 6.933   -vspd N,   --vad-min-speech-duration-ms  N [250    ] VAD min speech duration (0.0-1.0)
+#61 6.933   -vsd N,    --vad-min-silence-duration-ms N [100    ] VAD min silence duration (to split segments)
+#61 6.933   -vmsd N,   --vad-max-speech-duration-s   N [FLT_MAX] VAD max speech duration (auto-split longer)
+#61 6.933   -vp N,     --vad-speech-pad-ms           N [30     ] VAD speech padding (extend segments)
+#61 6.933   -vo N,     --vad-samples-overlap         N [0.10   ] VAD samples overlap (seconds between segments)
+#61 6.933 
+#61 DONE 7.2s
+
+#62 [app runtime 18/18] RUN mkdir -p /app/workspace && chown -R pwuser:pwuser /app/workspace
+#62 DONE 0.7s
+
+#63 [app] exporting to image
+#63 exporting layers
+#63 exporting layers 17.0s done
+#63 exporting manifest sha256:4b8f5d3012cd08bdde095cc6871856bc729dd1927044556a78ec3dc1f9b40f51 0.0s done
+#63 exporting config sha256:90b113434ffd6b1daf96f7daa076b70f735c220c86fbee7bd669c0aec512c64b 0.0s done
+#63 exporting attestation manifest sha256:cc1376eb8743d8c774279b5ca740d7fca8227fd176f9a9b4d475c303a872502a 0.0s done
+#63 exporting manifest list sha256:8b82b77220db01523d02f4dbc842766b950212767f3a24018335af966fdd522e 0.0s done
+#63 naming to docker.io/library/chief-of-staff-demo-app:latest done
+#63 unpacking to docker.io/library/chief-of-staff-demo-app:latest
+#63 unpacking to docker.io/library/chief-of-staff-demo-app:latest 6.5s done
+#63 DONE 23.7s
+
+#64 [app] resolving provenance for metadata file
+#64 DONE 0.1s
+ Image chief-of-staff-demo-app Built 
+ Image chief-of-staff-demo-relay Built 

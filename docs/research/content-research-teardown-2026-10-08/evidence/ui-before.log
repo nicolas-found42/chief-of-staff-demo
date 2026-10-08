@@ -1,0 +1,155 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+stderr | tests/src/unit/content-ux-regressions.test.tsx > Content Engine rendered setup > keeps a stale typed scan refusal actionable without showing its refusal token
+An update to BrandView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | tests/src/unit/content-ux-regressions.test.tsx > Content Engine rendered setup > renders invalid-key Run feedback as the primary scan failure
+An update to BrandView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | tests/src/unit/content-ux-regressions.test.tsx > Content Research rendered setup > accepts YouTube handle help and submits the established hint shape
+An update to ContentResearchPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ContentResearchPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ContentResearchPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ tests/src/unit/content-ux-regressions.test.tsx > Content Engine rendered setup > presents Content Engine with the three linked setup rows in order 16ms
+ ✓ tests/src/unit/content-ux-regressions.test.tsx > Content Engine rendered setup > does not start a Brand Profile scan while provider setup is required 6ms
+ ✓ tests/src/unit/content-ux-regressions.test.tsx > Content Engine rendered setup > keeps a stale typed scan refusal actionable without showing its refusal token 8ms
+ ✓ tests/src/unit/content-ux-regressions.test.tsx > Content Engine rendered setup > renders invalid-key Run feedback as the primary scan failure 4ms
+ ✓ tests/src/unit/content-ux-regressions.test.tsx > Content Research rendered setup > makes only actions blocked by their own readiness non-actionable 53ms
+ ✓ tests/src/unit/content-ux-regressions.test.tsx > Content Research rendered setup > explains that a Profile identity signal is not a LinkedIn watch source 5ms
+ ✓ tests/src/unit/content-ux-regressions.test.tsx > Content Research rendered setup > keeps ready research actions actionable when only discovery is blocked 5ms
+ ✓ tests/src/unit/content-ux-regressions.test.tsx > Content Research rendered setup > accepts YouTube handle help and submits the established hint shape 10ms
+ ✓ tests/src/unit/content-ux-regressions.test.tsx > Person dossier pre-research state > shows one calm not-yet-run state instead of ten section tabs 8ms
+ × tests/src/unit/content-ux-regressions.test.tsx > Content Research mutation recovery > keeps watch inputs after refusal so the operator can correct and retry 11ms
+   → expected '' to be 'maya' // Object.is equality
+ × tests/src/unit/content-ux-regressions.test.tsx > Content Research mutation recovery > does not submit a second watch while the first submission is pending 6ms
+   → expected 2 to be 1 // Object.is equality
+ × tests/src/unit/content-ux-regressions.test.tsx > Content Research mutation recovery > does not announce successful refreshed results when the refresh failed 5ms
+   → expected 'Content Research — what is resonating…' not to contain 'Content Research run started.'
+ × tests/src/unit/content-ux-regressions.test.tsx > Content Research mutation recovery > offers retry after an initial index load failure 1ms
+   → expected undefined to be defined
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/src/unit/content-ux-regressions.test.tsx > Content Research mutation recovery > keeps watch inputs after refusal so the operator can correct and retry
+AssertionError: expected '' to be 'maya' // Object.is equality
+
+- Expected
++ Received
+
+- maya
+
+ ❯ tests/src/unit/content-ux-regressions.test.tsx:445:102
+    443|     const form = await fillWatch(container);
+    444|     await act(async () => { form.dispatchEvent(new Event("submit", { b…
+    445|     expect(container.querySelector<HTMLSelectElement>('select[aria-lab…
+       |                                                                                                      ^
+    446|     expect(container.querySelector<HTMLInputElement>('input[aria-label…
+    447|     expect(container.querySelector('[role="alert"]')?.textContent).toC…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/src/unit/content-ux-regressions.test.tsx > Content Research mutation recovery > does not submit a second watch while the first submission is pending
+AssertionError: expected 2 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ tests/src/unit/content-ux-regressions.test.tsx:460:19
+    458|     const calls = add.mock.calls.length;
+    459|     await act(async () => finish?.(watchFixture()));
+    460|     expect(calls).toBe(1);
+       |                   ^
+    461|   });
+    462|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/src/unit/content-ux-regressions.test.tsx > Content Research mutation recovery > does not announce successful refreshed results when the refresh failed
+AssertionError: expected 'Content Research — what is resonating…' not to contain 'Content Research run started.'
+
+Expected: "Content Research run started."
+Received: "Content Research — what is resonating, for whom, and whyNamed people watched across RSS, YouTube, Reddit, HN and News — ranked by resonance against their own 90-day baseline.ResonanceYouTube TrendsA Person Profile is an identity signal, not a LinkedIn watch source. LinkedIn is intentionally not watched. Watched surfaces are RSS, websites, YouTube, Reddit, Hacker News, and News.Index unavailableContent Research run started.Run NowBackfill 7dBackfill 30dBackfill 90dDiscover NowPlatform: All platformsRSSYouTubeRedditHNNewsWatchlist — named peopleMaya Chen  · No handle hints · added 9/24/2026 PauseStop watchingSelect a Person Profile…Maya ChenCreate a Person ProfileAdd personPeople-first watchlist — no LinkedIn. A Person Profile is an identity signal; watched surfaces are RSS, websites, YouTube, Reddit, Hacker News, and News. YouTube accepts a channel URL or @handle; Hacker News accepts a profile username.Resonance indexNo reports yet. Add people to the watchlist and choose Run Now — or wait for the daily 08:00 scan.Gated / skipped RunsNo gated or skipped runs.People suggestionsNo suggestions. Use Discover Now to propose people related to the brand."
+
+ ❯ tests/src/unit/content-ux-regressions.test.tsx:470:39
+    468|     await act(async () => run.click());
+    469|     expect(container.querySelector('[role="alert"]')?.textContent).toC…
+    470|     expect(container.textContent).not.toContain("Content Research run …
+       |                                       ^
+    471|   });
+    472|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/src/unit/content-ux-regressions.test.tsx > Content Research mutation recovery > offers retry after an initial index load failure
+AssertionError: expected undefined to be defined
+ ❯ tests/src/unit/content-ux-regressions.test.tsx:478:19
+    476|     const container = await mountPage(createElement(ContentResearchPag…
+    477|     const retry = [...container.querySelectorAll("button")].find((butt…
+    478|     expect(retry).toBeDefined();
+       |                   ^
+    479|     await act(async () => retry!.click());
+    480|     expect(container.textContent).toContain("Run Now");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 9 passed (13)
+   Start at  11:19:31
+   Duration  797ms (environment 52%, transform 22%, tests 18%, import 8%)
+
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /Users/Nicolas/Documents/github/chief-of-
+  │ staff-demo/tests
+

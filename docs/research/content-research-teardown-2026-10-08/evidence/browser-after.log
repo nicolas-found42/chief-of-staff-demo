@@ -1,0 +1,10 @@
+
+Running 3 tests using 1 worker
+
+(node:89546) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Run Now results without reloading (14.1s)
+  ✓  2 [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Backfill 7d results without reloading (2.9s)
+  ✓  3 [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Discover Now results without reloading (2.8s)
+
+  3 passed (23.9s)

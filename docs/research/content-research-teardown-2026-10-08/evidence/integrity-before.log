@@ -1,0 +1,180 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+ ✓ tests/src/modules/content-research.test.ts > Content Research > daily run: per-person reports, global dedup with per-person attribution, ledger rows, owner draft 18ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > does not create the owner-only Gmail draft without a confirmed owner identity 4ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > daily run: the next Run asks conditionally with what the last one was told 5ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > daily run: a URL reaching two people by different adapters keeps each person's own platform 5ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > daily run: hook extraction is one call per person and never sees the other person's items 6ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > 48h overlap checkpoint advances: the second daily run looks back from the checkpoint, not another 7 days 6ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > backfill: an unsupported window fails explicitly; a supported window passes a genuine historical since 4ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > one adapter rate-limited: the Run still completes and the other platform's evidence survives 4ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > velocity: with a 90-day baseline the score is a z-score against the person, not the raw count 4ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > resonance ranking orders each person's report by score 4ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > local report survives a Google partial failure; the retry creates only what is missing 6ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > a Home notification fires when at least one person has new resonance 3ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > people discovery: public search for co-mentions reaches the proposer, and a sick search still runs 4ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > people discovery: proposes, approves into a watched person, dismisses against re-suggestion, restores 3ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > people discovery: a dismissed suggestion blocks re-suggestion while dismissed and restores afterwards 3ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > the cross-Run index groups reports by person, newest report first 6ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > target derivation watches a person by name on Reddit, HN, and Google News without any URL being pasted 3ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > feed discovery reads the feeds a site declares about itself and ignores anything else 0ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > adding a person resolves the feeds their site declares, and the daily run then collects them 3ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > a site that cannot be reached leaves the person watched, without inventing a feed 1ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > approving a suggestion watches the person's supporting sites and resolves their feeds in one step 3ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research > counts a platform reports drive the ranking, and a platform reporting none does not outrank them 4ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research recovery ownership > retries its own daily Run but never another Intake's Run 0ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research recovery ownership > each Intake's Module answers only for its own failed Runs 0ms
+ ✓ tests/src/modules/content-research.test.ts > Content Research recovery ownership > recovers its own daily Run but never another Intake's Run 0ms
+ ✓ tests/src/modules/content-research.test.ts > Profile-backed watches (#134) > refuses to watch a name without a confirmed Profile 0ms
+ ✓ tests/src/modules/content-research.test.ts > Profile-backed watches (#134) > backs the watch with the Profile: the name is the public-safe projection's, and one Profile is one watch 1ms
+ ✓ tests/src/modules/content-research.test.ts > Profile-backed watches (#134) > approving a Person Suggestion requires selecting a confirmed Profile first 3ms
+ ✓ tests/src/modules/content-research.test.ts > Profile-backed watches (#134) > each Run pins the exact Profile revision and public-safe projection it used 6ms
+ ✓ tests/src/modules/content-research.test.ts > Profile-backed watches (#134) > a Run skips a person whose Profile is no longer projectable and still completes 2ms
+ ✓ tests/src/modules/content-research.test.ts > Profile-backed watches (#134) > pausing a watch stops its collection without touching its baseline, and resume reactivates it 8ms
+ ✓ tests/src/modules/content-research.test.ts > Profile-backed watches (#134) > post-reset: a clean Workspace opens a new ledger Sheet; old remote outputs are neither cleared nor reconciled 10ms
+ ✓ tests/src/modules/content-research.test.ts > Profile-backed watches (#134) > a pre-#134 watch row without pausedAt/profileId keys is still an active watch 2ms
+ ✓ tests/src/modules/content-research.test.ts > Profile-backed watches (#134) > a paused watch can be re-pointed at a different confirmed Profile (#134 review P3) 2ms
+ × tests/src/modules/content-research.test.ts > Content Research evidence integrity > retains distinct same-site articles and updates only the matching article 4ms
+   → expected [ 'Two' ] to deeply equal [ 'One', 'Two' ]
+ × tests/src/modules/content-research.test.ts > Content Research evidence integrity > scores each person's own observation of a shared URL with its own provenance 5ms
+   → expected { …(14) } to match object { platform: 'youtube', …(2) }
+(17 matching properties omitted from actual)
+ × tests/src/modules/content-research.test.ts > Content Research evidence integrity > attaches only a verbatim quote to its supporting item: Body of One 4ms
+   → expected 'Body of One' to be null
+ × tests/src/modules/content-research.test.ts > Content Research evidence integrity > attaches only a verbatim quote to its supporting item: invented quotation 3ms
+   → expected 'invented quotation' to be null // Object.is equality
+ × tests/src/modules/content-research.test.ts > Content Research evidence integrity > rejects invented discovery references while retaining supplied source URLs 2ms
+   → expected [ …(2) ] to deeply equal [ { name: 'Grounded Person', …(1) } ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/src/modules/content-research.test.ts > Content Research evidence integrity > retains distinct same-site articles and updates only the matching article
+AssertionError: expected [ 'Two' ] to deeply equal [ 'One', 'Two' ]
+
+- Expected
++ Received
+
+  [
+-   "One",
+    "Two",
+  ]
+
+ ❯ tests/src/modules/content-research.test.ts:1425:67
+    1423|     const second = makeItem({ url: "https://same.example/posts/two", t…
+    1424|     store.storeItems([first, second].map((item) => ({ canonicalUrl: it…
+    1425|     expect(store.listAllItems().map((item) => item.title).sort()).toEq…
+       |                                                                   ^
+    1426|     store.storeItems([{ canonicalUrl: first.canonicalUrl, payload: JSO…
+    1427|     expect(store.listAllItems().map((item) => item.title).sort()).toEq…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/src/modules/content-research.test.ts > Content Research evidence integrity > scores each person's own observation of a shared URL with its own provenance
+AssertionError: expected { …(14) } to match object { platform: 'youtube', …(2) }
+(17 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "counts": {
+-     "views": 900,
++     "views": 10,
+    },
+-   "evidenceUrl": "fixture:youtube",
++   "evidenceUrl": "fixture:rss",
+    "platform": "youtube",
+  }
+
+ ❯ tests/src/modules/content-research.test.ts:1441:73
+    1439|     const result = readResult(runs, runId);
+    1440|     expect(result.reports.find((r) => r.personId === ben.id)?.items[0]…
+    1441|     expect(result.reports.find((r) => r.personId === ava.id)?.items[0]…
+       |                                                                         ^
+    1442|   });
+    1443|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/src/modules/content-research.test.ts > Content Research evidence integrity > attaches only a verbatim quote to its supporting item: Body of One
+AssertionError: expected 'Body of One' to be null
+
+- Expected:
+null
+
++ Received:
+"Body of One"
+
+ ❯ tests/src/modules/content-research.test.ts:1457:85
+    1455|     const items = readResult(runs, runId).reports[0]!.items;
+    1456|     expect(items.find((item) => item.canonicalUrl.endsWith("/one"))?.e…
+    1457|     expect(items.find((item) => item.canonicalUrl.endsWith("/two"))?.e…
+       |                                                                                     ^
+    1458|   });
+    1459|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/src/modules/content-research.test.ts > Content Research evidence integrity > attaches only a verbatim quote to its supporting item: invented quotation
+AssertionError: expected 'invented quotation' to be null // Object.is equality
+
+- Expected:
+null
+
++ Received:
+"invented quotation"
+
+ ❯ tests/src/modules/content-research.test.ts:1456:85
+    1454|     await host.idle();
+    1455|     const items = readResult(runs, runId).reports[0]!.items;
+    1456|     expect(items.find((item) => item.canonicalUrl.endsWith("/one"))?.e…
+       |                                                                                     ^
+    1457|     expect(items.find((item) => item.canonicalUrl.endsWith("/two"))?.e…
+    1458|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/src/modules/content-research.test.ts > Content Research evidence integrity > rejects invented discovery references while retaining supplied source URLs
+AssertionError: expected [ …(2) ] to deeply equal [ { name: 'Grounded Person', …(1) } ]
+
+- Expected
++ Received
+
+  [
+    {
+      "name": "Grounded Person",
+      "urls": [
+        "https://ben.example/post",
++       "https://invented.example/one",
++     ],
++   },
++   {
++     "name": "Invented Person",
++     "urls": [
++       "https://invented.example/two",
+      ],
+    },
+  ]
+
+ ❯ tests/src/modules/content-research.test.ts:1470:91
+    1468|     await host.discoverNow();
+    1469|     await host.idle();
+    1470|     expect(host.listSuggestions().map((s) => ({ name: s.name, urls: s.…
+       |                                                                                           ^
+    1471|   });
+    1472| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 34 passed (39)
+   Start at  11:18:21
+   Duration  1.05s (import 67%, transform 17%, tests 15%)
+
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /Users/Nicolas/Documents/github/chief-of-
+  │ staff-demo/tests
+

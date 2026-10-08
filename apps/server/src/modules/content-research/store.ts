@@ -5,8 +5,9 @@ import {
   readdirSync,
   renameSync,
   writeFileSync,
+  unlinkSync,
 } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
 import type {
   ContentResearchBaseline,
@@ -465,9 +466,24 @@ export class ContentResearchStore {
   storeItems(items: { canonicalUrl: string; payload: string }[]): void {
     mkdirSync(this.itemsDir, { recursive: true });
     for (const { canonicalUrl, payload } of items) {
-      const hash = Buffer.from(canonicalUrl).toString("base64url").slice(0, 16);
+      const hash = createHash("sha256").update(canonicalUrl).digest("hex");
       const path = join(this.itemsDir, `${hash}.json`);
       this.writeAtomic(path, payload);
+      // Retire a legacy prefix file only when it holds this exact URL. Other
+      // URLs that shared the prefix must survive, and old files remain readable.
+      const legacy = join(
+        this.itemsDir,
+        `${Buffer.from(canonicalUrl).toString("base64url").slice(0, 16)}.json`,
+      );
+      if (existsSync(legacy)) {
+        let item: SourceItem | null = null;
+        try {
+          item = JSON.parse(readFileSync(legacy, "utf8")) as SourceItem;
+        } catch {
+          // Leave unreadable legacy evidence alone, as listAllItems does.
+        }
+        if (item?.canonicalUrl === canonicalUrl) unlinkSync(legacy);
+      }
     }
   }
 

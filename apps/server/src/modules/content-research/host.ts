@@ -3,6 +3,7 @@ import { z } from "zod/v3";
 import {
   CONTENT_RESEARCH_MODULE_ID,
   CONTENT_RESEARCH_MODULE_VERSION,
+  NAMED_PERSON_HANDLE_HINTS_SCHEMA,
   type ContentResearchIndex,
   type ContentResearchRunResult,
   type NamedPerson,
@@ -553,9 +554,14 @@ export class ContentResearchHost implements HostedModule {
 
     app.post("/api/content-research/people", async (request, reply) => {
       const body = (request.body ?? {}) as { profileId?: unknown; handleHints?: unknown };
-      const handleHints = (body.handleHints as NamedPerson["handleHints"] | undefined) ?? {
-        blogRssHints: [],
-      };
+      const parsedHints = NAMED_PERSON_HANDLE_HINTS_SCHEMA.safeParse(body.handleHints ?? {});
+      if (!parsedHints.success) {
+        reply.code(400);
+        return {
+          error: "Handle hints must contain strings and an array of site or feed addresses.",
+        };
+      }
+      const handleHints = parsedHints.data;
       try {
         const person = this.addPerson({
           profileId: typeof body.profileId === "string" ? body.profileId : "",

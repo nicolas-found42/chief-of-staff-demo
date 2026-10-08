@@ -423,3 +423,110 @@ describe("Person dossier pre-research state", () => {
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(0);
   });
 });
+
+describe("Content Research mutation recovery", () => {
+  async function fillWatch(container: HTMLDivElement) {
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Person Profile"]',
+    )!;
+    await act(async () => {
+      select.value = "maya";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      setInputValue(
+        container.querySelector<HTMLInputElement>('input[aria-label="Site or feed address"]')!,
+        "https://maya.example/feed",
+      );
+    });
+    return select.closest("form")!;
+  }
+
+  it("keeps watch inputs after refusal so the operator can correct and retry", async () => {
+    vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
+    const client = researchClient({
+      addContentResearchPerson: async () => {
+        throw new Error("Feed temporarily unavailable");
+      },
+    });
+    const container = await mountPage(createElement(ContentResearchPage, { client }));
+    const form = await fillWatch(container);
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(
+      container.querySelector<HTMLSelectElement>('select[aria-label="Person Profile"]')?.value,
+    ).toBe("maya");
+    expect(
+      container.querySelector<HTMLInputElement>('input[aria-label="Site or feed address"]')?.value,
+    ).toBe("https://maya.example/feed");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Feed temporarily unavailable",
+    );
+  });
+
+  it("does not submit a second watch while the first submission is pending", async () => {
+    vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
+    let finish: ((person: NamedPerson) => void) | undefined;
+    const add = vi.fn(
+      () =>
+        new Promise<NamedPerson>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const container = await mountPage(
+      createElement(ContentResearchPage, {
+        client: researchClient({ addContentResearchPerson: add }),
+      }),
+    );
+    const form = await fillWatch(container);
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    const calls = add.mock.calls.length;
+    await act(async () => finish?.(watchFixture()));
+    expect(calls).toBe(1);
+  });
+
+  it("does not announce successful refreshed results when the refresh failed", async () => {
+    vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
+    const index = vi
+      .fn()
+      .mockResolvedValueOnce(researchIndex({ research: null, discovery: null }))
+      .mockRejectedValue(new Error("Index unavailable"));
+    const container = await mountPage(
+      createElement(ContentResearchPage, {
+        client: researchClient({
+          contentResearchIndex: index,
+          runContentResearch: async () => ({ runId: "started" }),
+        }),
+      }),
+    );
+    const run = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Run Now",
+    )!;
+    await act(async () => run.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Index unavailable");
+    expect(container.textContent).not.toContain("Content Research run started.");
+  });
+
+  it("offers retry after an initial index load failure", async () => {
+    vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
+    const index = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Index unavailable"))
+      .mockResolvedValue(researchIndex({ research: null, discovery: null }));
+    const container = await mountPage(
+      createElement(ContentResearchPage, {
+        client: researchClient({ contentResearchIndex: index }),
+      }),
+    );
+    const retry = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Retry loading",
+    );
+    expect(retry).toBeDefined();
+    await act(async () => retry!.click());
+    expect(container.textContent).toContain("Run Now");
+  });
+});
