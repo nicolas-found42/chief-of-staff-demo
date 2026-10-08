@@ -86,6 +86,18 @@ async function createGrace(): Promise<PersonProfile> {
 }
 
 describe("POST /api/people", () => {
+  it.each([
+    { fullName: 42 },
+    { fullName: "Ada", profileUrls: "https://example.com/ada" },
+    { fullName: "Ada", profileUrls: [42] },
+    { fullName: "Ada", profileUrls: ["not a URL"] },
+  ])("refuses malformed creation without writing a Profile: %j", async (payload) => {
+    const response = await app.inject({ method: "POST", url: "/api/people", payload });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toHaveProperty("message");
+    expect(profiles.search()).toEqual([]);
+  });
+
   it("creates a Profile and returns its canonical state with the first revision", async () => {
     const created = await createGrace();
     expect(created.revision).toBe(1);
@@ -120,6 +132,16 @@ describe("POST /api/people", () => {
 });
 
 describe("GET /api/people", () => {
+  it.each(["query=Grace&query=Ada", "includeArchived=true&includeArchived=false"])(
+    "refuses repeated scalar filters: %s",
+    async (query) => {
+      const created = await createGrace();
+      const response = await app.inject({ url: `/api/people?${query}` });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toHaveProperty("message");
+      expect(profiles.get(created.id)).toEqual(created);
+    },
+  );
   it("lists Profiles and applies the search query and archive filter", async () => {
     const created = await createGrace();
     const listed = await app.inject({ url: "/api/people" });
@@ -138,6 +160,64 @@ describe("GET /api/people", () => {
     const withArchived = await app.inject({ url: "/api/people?includeArchived=true" });
     expect(withArchived.json<PersonProfile[]>()).toHaveLength(1);
   });
+});
+
+describe("malformed person repair requests", () => {
+  it.each([
+    { action: "corrections", payload: { role: 42 } },
+    { action: "corrections", payload: { profileUrls: [42] } },
+    { action: "merges", payload: { duplicateId: {} } },
+    { action: "detachments", payload: { evidenceId: [] } },
+  ])("refuses invalid $action without changing state", async ({ action, payload }) => {
+    const created = await createGrace();
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/${action}`,
+      payload,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toHaveProperty("message");
+    expect(profiles.get(created.id)).toEqual(created);
+    expect(profiles.revisions(created.id)).toHaveLength(1);
+    expect(profiles.invalidations(created.id)).toEqual([]);
+  });
+
+  it("uses the same LinkedIn identity normalization for correction and lookup", async () => {
+    const created = await createGrace();
+    const correction = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/corrections`,
+      payload: { profileUrls: ["https://uk.linkedin.com/in/Grace-Hopper/?trk=public#bio"] },
+    });
+    expect(correction.statusCode).toBe(200);
+    expect(correction.json<PersonProfile>().profileUrls).toEqual([
+      "https://www.linkedin.com/in/grace-hopper",
+    ]);
+    const lookup = await app.inject({
+      method: "POST",
+      url: "/api/people/lookup/accept",
+      payload: { identifier: "linkedin.com/in/grace-hopper" },
+    });
+    expect(lookup.statusCode).toBe(200);
+    expect(lookup.json<{ profile: PersonProfile }>().profile.id).toBe(created.id);
+    expect(profiles.search()).toHaveLength(1);
+    expect(profiles.getRevision(created.id, 1)).toEqual(created);
+  });
+
+  it.each(["not a URL", "https://linkedin.com/company/example", "https://singlehost/person"])(
+    "refuses invalid corrected profile URL %s without appending history",
+    async (url) => {
+      const created = await createGrace();
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/people/${created.id}/corrections`,
+        payload: { profileUrls: [url] },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(profiles.get(created.id)).toEqual(created);
+      expect(profiles.revisions(created.id)).toHaveLength(1);
+    },
+  );
 });
 
 describe("GET /api/people/:profileId", () => {

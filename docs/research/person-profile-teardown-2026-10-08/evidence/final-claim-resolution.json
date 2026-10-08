@@ -1,0 +1,8 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"tool\": \"jev_verify\",\n  \"model\": \"typesafe/jev-1.13-20260917\",\n  \"provider\": \"openrouter\",\n  \"auto_accept\": 0.8,\n  \"subject_at\": 0.5,\n  \"summary\": {\n    \"verified\": 2,\n    \"contradicted\": 0,\n    \"unsupported\": 0,\n    \"needs_review\": 0\n  },\n  \"results\": [\n    {\n      \"id\": \"claim0\",\n      \"claim\": \"The current named stale-duplicate, edit, unmount and resubmission regressions passed, along with the browser pending-edit recovery journey. The old red run is baseline evidence, not the current result.\",\n      \"verdict\": \"verified\",\n      \"probabilities\": {\n        \"supports\": 0.92,\n        \"contradicts\": 0.04,\n        \"says_nothing\": 0.04\n      },\n      \"confidence\": 0.89,\n      \"action\": \"auto\",\n      \"supporting_evidence\": \"current-named-112-pass\",\n      \"same_subject\": 0.79\n    },\n    {\n      \"id\": \"claim1\",\n      \"claim\": \"The current live source-probe summary reads exactly 23/23 passed, 0 failed, 27 production unprobed and 9 excluded/unavailable unprobed; the current success/failure denominator regressions pass. These totals are attempt reporting, not research quality.\",\n      \"verdict\": \"verified\",\n      \"probabilities\": {\n        \"supports\": 1,\n        \"contradicts\": 0,\n        \"says_nothing\": 0\n      },\n      \"confidence\": 0.99,\n      \"action\": \"auto\",\n      \"supporting_evidence\": \"current-live-probe-summary\",\n      \"same_subject\": 0.96\n    }\n  ],\n  \"usage\": {\n    \"input_tokens\": 3761,\n    \"output_tokens\": 286\n  }\n}"
+    }
+  ]
+}

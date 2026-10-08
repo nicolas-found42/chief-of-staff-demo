@@ -130,6 +130,35 @@ describe("POST /api/people/lookup", () => {
 });
 
 describe("POST /api/people/lookup/accept", () => {
+  it("names an archived identity conflict as a client refusal and recovers after restore", async () => {
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/api/people/lookup/accept",
+      payload: { identifier: "ada@example.com" },
+    });
+    const original = accepted.json<{ profile: PersonProfile }>().profile;
+    await app.inject({ method: "POST", url: `/api/people/${original.id}/archive` });
+    const refused = await app.inject({
+      method: "POST",
+      url: "/api/people/lookup/accept",
+      payload: { identifier: "ada@example.com" },
+    });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toMatchObject({
+      error: "conflicting-identity",
+      message: expect.stringContaining("Restore"),
+    });
+    expect(store.list()).toHaveLength(1);
+    await app.inject({ method: "POST", url: `/api/people/${original.id}/restore` });
+    const recovered = await app.inject({
+      method: "POST",
+      url: "/api/people/lookup/accept",
+      payload: { identifier: "ada@example.com" },
+    });
+    expect(recovered.statusCode).toBe(200);
+    expect(recovered.json<{ profile: PersonProfile }>().profile.id).toBe(original.id);
+  });
+
   it("creates the stable identity immediately without waiting for public research", async () => {
     const response = await app.inject({
       method: "POST",

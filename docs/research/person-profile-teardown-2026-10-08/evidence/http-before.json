@@ -1,0 +1,169 @@
+[
+  {
+    "method": "POST",
+    "path": "/api/people",
+    "input": {
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com"
+    },
+    "status": 201,
+    "body": {
+      "id": "person_73c7d02327c4",
+      "revision": 1,
+      "createdAt": "2026-10-08T14:21:29.473Z",
+      "updatedAt": "2026-10-08T14:21:29.473Z",
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com",
+      "emails": ["teardown@example.com"],
+      "handles": {},
+      "profileUrls": [],
+      "employerHints": [],
+      "role": null,
+      "background": null,
+      "currentEmployer": null,
+      "socialProfiles": [],
+      "websites": [],
+      "feeds": [],
+      "publications": [],
+      "mentions": [],
+      "evidence": [],
+      "sourceDiagnostics": [],
+      "archivedAt": null,
+      "research": {
+        "kind": "rejected-readiness",
+        "profileId": "person_73c7d02327c4",
+        "readiness": {
+          "state": "setup-required",
+          "reason": "owner-not-confirmed",
+          "nextAction": {
+            "label": "Create your own Profile",
+            "href": "/people/new"
+          }
+        }
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people",
+    "input": {
+      "fullName": 42
+    },
+    "status": 500,
+    "body": {
+      "error": "value?.trim is not a function"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people",
+    "input": {
+      "fullName": "Test",
+      "profileUrls": ["not a URL"]
+    },
+    "status": 500,
+    "body": {
+      "error": "Not an email address or a profile URL: not a URL. Enter something like \"someone@example.com\" or \"linkedin.com/in/someone\"."
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/people?query=Test&query=Other",
+    "input": null,
+    "status": 500,
+    "body": {
+      "error": "options.query?.trim is not a function"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/person_73c7d02327c4/corrections",
+    "input": {
+      "profileUrls": ["https://linkedin.com/company/example"]
+    },
+    "status": 200,
+    "body": {
+      "id": "person_73c7d02327c4",
+      "revision": 2,
+      "createdAt": "2026-10-08T14:21:29.473Z",
+      "updatedAt": "2026-10-08T14:21:29.496Z",
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com",
+      "emails": ["teardown@example.com"],
+      "handles": {},
+      "profileUrls": ["https://linkedin.com/company/example"],
+      "employerHints": [],
+      "role": null,
+      "background": null,
+      "currentEmployer": null,
+      "socialProfiles": [],
+      "websites": [],
+      "feeds": [],
+      "publications": [],
+      "mentions": [],
+      "evidence": [],
+      "sourceDiagnostics": [],
+      "archivedAt": null,
+      "invalidations": [
+        {
+          "id": "inv_1",
+          "kind": "correction",
+          "affectedRevision": 1,
+          "detail": "Revision 1 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1],
+          "occurredAt": "2026-10-08T14:21:29.496Z"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/person_73c7d02327c4/archive",
+    "input": {},
+    "status": 200,
+    "body": {
+      "id": "person_73c7d02327c4",
+      "revision": 2,
+      "createdAt": "2026-10-08T14:21:29.473Z",
+      "updatedAt": "2026-10-08T14:21:29.496Z",
+      "fullName": "Synthetic Teardown Person",
+      "primaryEmail": "teardown@example.com",
+      "emails": ["teardown@example.com"],
+      "handles": {},
+      "profileUrls": ["https://linkedin.com/company/example"],
+      "employerHints": [],
+      "role": null,
+      "background": null,
+      "currentEmployer": null,
+      "socialProfiles": [],
+      "websites": [],
+      "feeds": [],
+      "publications": [],
+      "mentions": [],
+      "evidence": [],
+      "sourceDiagnostics": [],
+      "archivedAt": "2026-10-08T14:21:29.508Z",
+      "invalidations": [
+        {
+          "id": "inv_1",
+          "kind": "correction",
+          "affectedRevision": 1,
+          "detail": "Revision 1 facts were corrected; treat that revision as superseded.",
+          "affectedRevisions": [1],
+          "occurredAt": "2026-10-08T14:21:29.496Z"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/people/lookup/accept",
+    "input": {
+      "identifier": "teardown@example.com"
+    },
+    "status": 500,
+    "body": {
+      "error": "Restore the archived Profile before reusing it."
+    }
+  }
+]

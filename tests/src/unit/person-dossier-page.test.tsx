@@ -146,6 +146,53 @@ async function mountWithResearch(research: PersonResearchProfileSummary) {
   return { container, root };
 }
 
+test.each(["ready", "setup-required"] as const)(
+  "a Profile without a research job exposes its %s readiness and next action",
+  async (state) => {
+    const client = makeClient();
+    const research = vi.fn(async () => {});
+    client.research = research;
+    client.read = async () => ({
+      dossier: null,
+      research: null,
+      readiness:
+        state === "ready"
+          ? { state: "ready", reason: "ready" }
+          : {
+              state: "setup-required",
+              reason: "provider-not-configured",
+              nextAction: { label: "Open Guided Setup", href: "/onboarding?goal=meetings" },
+            },
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(createElement(PersonDossierPanel, { profileId: "maya", client }));
+      });
+      expect(container.textContent).toContain("Research has not run yet");
+      const start = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Prioritise research",
+      );
+      expect(start).toBeDefined();
+      expect(start!.disabled).toBe(state !== "ready");
+      if (state === "ready") {
+        await act(async () => start!.click());
+        expect(research).toHaveBeenCalledWith("maya");
+      } else {
+        expect(container.textContent).toContain("Research setup required");
+        expect(container.querySelector("a[href='/onboarding?goal=meetings']")?.textContent).toBe(
+          "Open Guided Setup",
+        );
+      }
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  },
+);
+
 test("a setup-required blocker names the missing owner confirmation and links to Settings", async () => {
   const { container, root } = await mountWithResearch(
     researchFixture({

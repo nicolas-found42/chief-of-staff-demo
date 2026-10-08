@@ -1,0 +1,8 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"tool\": \"jev_compare\",\n  \"model\": \"typesafe/jev-1.13-20260917\",\n  \"provider\": \"openrouter\",\n  \"overall\": {\n    \"relation\": \"contradicts\",\n    \"probabilities\": {\n      \"same_fact\": 0.1,\n      \"contradicts\": 0.78,\n      \"different_facts\": 0.12\n    },\n    \"confidence\": 0.66,\n    \"margin\": 0.66,\n    \"decision\": \"review\"\n  },\n  \"aspects\": [\n    {\n      \"aspect\": \"Readiness state represented\",\n      \"relation\": \"contradicts\",\n      \"probabilities\": {\n        \"same_fact\": 0.33,\n        \"contradicts\": 0.39,\n        \"different_facts\": 0.28\n      },\n      \"confidence\": 0.08,\n      \"margin\": 0.06,\n      \"decision\": \"review\"\n    },\n    {\n      \"aspect\": \"Actionable setup guidance\",\n      \"relation\": \"contradicts\",\n      \"probabilities\": {\n        \"same_fact\": 0.05,\n        \"contradicts\": 0.91,\n        \"different_facts\": 0.04\n      },\n      \"confidence\": 0.86,\n      \"margin\": 0.86,\n      \"decision\": \"auto\"\n    },\n    {\n      \"aspect\": \"Ability to begin ready research\",\n      \"relation\": \"different_facts\",\n      \"probabilities\": {\n        \"same_fact\": 0.29,\n        \"contradicts\": 0.31,\n        \"different_facts\": 0.39999999999999997\n      },\n      \"confidence\": 0.11,\n      \"margin\": 0.08999999999999997,\n      \"decision\": \"review\"\n    }\n  ],\n  \"thresholds\": {\n    \"auto_accept\": 0.85,\n    \"minimum_margin\": 0.5\n  },\n  \"usage\": {\n    \"input_tokens\": 1015,\n    \"output_tokens\": 177\n  }\n}"
+    }
+  ]
+}

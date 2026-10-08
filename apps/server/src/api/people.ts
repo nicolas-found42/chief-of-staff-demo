@@ -1,5 +1,6 @@
 import type { PersonResearchQueue } from "../person-profile/research-queue.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
 import type {
   PersonProfileCorrectionInput,
   PersonProfileCreateInput,
@@ -9,6 +10,7 @@ import type {
   PersonProfilePrivacyDeleted,
   PersonProfileProjectionPurpose,
 } from "@chief-of-staff-demo/shared";
+import { PERSON_PROFILE_REPAIR_FACT_KEYS } from "@chief-of-staff-demo/shared";
 import {
   PersonProfileValidationError,
   WorkspacePersonProfiles,
@@ -25,6 +27,37 @@ export interface PeopleApiContext {
 }
 
 const PURPOSES: readonly PersonProfileProjectionPurpose[] = ["public-safe", "meeting"];
+const text = z.string().optional();
+const facts = {
+  fullName: text,
+  primaryEmail: text,
+  role: text,
+  currentEmployer: text,
+  background: text,
+};
+const createInput = z.object({ ...facts, profileUrls: z.array(z.string()).optional() });
+const correctionInput = z.object({
+  fullName: text,
+  primaryEmail: z.string().nullable().optional(),
+  role: z.string().nullable().optional(),
+  currentEmployer: z.string().nullable().optional(),
+  background: z.string().nullable().optional(),
+  profileUrls: z.array(z.string()).nullable().optional(),
+  note: text,
+});
+const mergeInput = z.object({
+  duplicateId: z.string().min(1),
+  resolutions: z.partialRecord(z.enum(PERSON_PROFILE_REPAIR_FACT_KEYS), z.string()).optional(),
+  note: text,
+});
+const detachInput = z.object({ evidenceId: z.string().min(1), toProfileId: text, note: text });
+
+function invalidInput(reply: FastifyReply): unknown {
+  return reply.code(400).send({
+    error: "invalid-identity-input",
+    message: "Send a Profile object with text fields and profileUrls as an array of addresses.",
+  });
+}
 
 function parseRevision(value: string | undefined): number | "invalid" | "unset" {
   if (value === undefined || value === "") return "unset";
@@ -46,8 +79,15 @@ function isInvalidPurpose(value: string | undefined): boolean {
 export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): void {
   const people = ctx.people;
 
-  app.get("/api/people", async (request: FastifyRequest) => {
+  app.get("/api/people", async (request: FastifyRequest, reply) => {
     const query = request.query as { query?: string; includeArchived?: string };
+    for (const field of ["query", "includeArchived"] as const) {
+      if (query[field] !== undefined && typeof query[field] !== "string")
+        return reply.code(400).send({
+          error: "invalid-people-query",
+          message: `The ${field} filter must be supplied once.`,
+        });
+    }
     return people.search({
       ...(query.query === undefined ? {} : { query: query.query }),
       includeArchived: query.includeArchived === "true",
@@ -56,8 +96,9 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
 
   app.post("/api/people", async (request: FastifyRequest, reply) => {
     try {
-      const input: PersonProfileCreateInput = request.body ?? {};
-      const profile = people.create(input);
+      const input = createInput.safeParse(request.body ?? {});
+      if (!input.success) return invalidInput(reply);
+      const profile = people.create(input.data as PersonProfileCreateInput);
       /* Profile creation succeeds regardless of research readiness (issue
          #418, T3; #417 F1): the enqueue decision rides along separately
          rather than the response promising background work that was not
@@ -70,6 +111,8 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
         reply.code(400);
         return { error: error.code, message: error.message };
       }
+      if (error instanceof PersonIdentifierError)
+        return reply.code(400).send({ error: error.code, message: error.message });
       throw error;
     }
   });
@@ -92,6 +135,8 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
       reply.code(400);
       return { error: "invalid-identifier", message: "Send an identifier string to look up." };
     }
+    if (body.fullName !== undefined && typeof body.fullName !== "string")
+      return invalidInput(reply);
     const fullName =
       mode === "accept" && typeof body.fullName === "string" ? body.fullName.trim() : "";
     try {
@@ -123,6 +168,7 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
         reply.code(400);
         return { error: error.code, message: error.message };
       }
+      if (error instanceof PersonProfileValidationError) return repairFailure(reply, error);
       throw error;
     }
   }
@@ -331,9 +377,10 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
    */
   app.post("/api/people/:profileId/corrections", async (request: FastifyRequest, reply) => {
     try {
-      const input = (request.body ?? {}) as PersonProfileCorrectionInput;
+      const input = correctionInput.safeParse(request.body ?? {});
+      if (!input.success) return invalidInput(reply);
       const { profileId } = request.params as { profileId: string };
-      return people.correct(profileId, input);
+      return people.correct(profileId, input.data as PersonProfileCorrectionInput);
     } catch (error) {
       return repairFailure(reply, error);
     }
@@ -342,9 +389,10 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
       one through an audited decision; conflicting facts must be resolved. */
   app.post("/api/people/:profileId/merges", async (request: FastifyRequest, reply) => {
     try {
-      const input = (request.body ?? {}) as PersonProfileMergeInput;
+      const input = mergeInput.safeParse(request.body ?? {});
+      if (!input.success) return invalidInput(reply);
       const { profileId } = request.params as { profileId: string };
-      return people.merge(profileId, input);
+      return people.merge(profileId, input.data as PersonProfileMergeInput);
     } catch (error) {
       return repairFailure(reply, error);
     }
@@ -354,9 +402,10 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
       splitting it onto the correct Profile. */
   app.post("/api/people/:profileId/detachments", async (request: FastifyRequest, reply) => {
     try {
-      const input = (request.body ?? {}) as PersonProfileDetachInput;
+      const input = detachInput.safeParse(request.body ?? {});
+      if (!input.success) return invalidInput(reply);
       const { profileId } = request.params as { profileId: string };
-      return people.detachEvidence(profileId, input);
+      return people.detachEvidence(profileId, input.data as PersonProfileDetachInput);
     } catch (error) {
       return repairFailure(reply, error);
     }

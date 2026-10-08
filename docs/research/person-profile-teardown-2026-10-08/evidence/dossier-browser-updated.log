@@ -1,0 +1,12 @@
+
+Running 5 tests using 1 worker
+
+(node:63083) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/person-dossier-journey.spec.ts:13:1 › automatic dossier journey — add, research, inspect source, and query demonstrated work (13.2s)
+  ✓  2 [chromium] › e2e/person-dossier-journey.spec.ts:133:1 › sparse and unavailable dossiers keep unquoted sources accessible with queue progress (5.4s)
+  ✓  3 [chromium] › e2e/person-dossier-journey.spec.ts:183:1 › Calendar and repeated Transcript entry reach automatically populated dossier sources (4.9s)
+  ✓  4 [chromium] › e2e/person-dossier-journey.spec.ts:292:1 › completed research explains gaps and provider interruption keeps retained sources visible (5.0s)
+  ✓  5 [chromium] › e2e/person-dossier-journey.spec.ts:348:1 › published claims remain readable while the same operation awaits another extraction (8.3s)
+
+  5 passed (38.0s)

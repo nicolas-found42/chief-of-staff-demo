@@ -1,0 +1,62 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+ ❯ tests/src/unit/new-person-profile-page.test.tsx (9 tests | 2 failed) 194ms
+   ❯ Same-name duplicate warning (audit F4) (6)
+     × does not create an edited identity using a stale duplicate check 22ms
+     × does not show a stale duplicate confirmation after the name changes 18ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/src/unit/new-person-profile-page.test.tsx > Same-name duplicate warning (audit F4) > does not create an edited identity using a stale duplicate check
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {
+        "fullName": "New Person",
+      },
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/src/unit/new-person-profile-page.test.tsx:186:24
+    184|     await act(async () => change(container, "#profile-full-name", "Sat…
+    185|     await act(async () => pending.resolve([existing]));
+    186|     expect(create).not.toHaveBeenCalled();
+       |                        ^
+    187|     expect(container.textContent).not.toContain("already exists");
+    188|     await act(async () => button(container, "Create profile").click());
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/src/unit/new-person-profile-page.test.tsx > Same-name duplicate warning (audit F4) > does not show a stale duplicate confirmation after the name changes
+AssertionError: expected 'New Person ProfileStart from an ident…' not to contain 'already exists'
+
+Expected: "already exists"
+Received: "New Person ProfileStart from an identifier and let the public web fill the Profile in, or enter the facts yourself. The Profile is saved immediately. Automatic background research starts once workspace research is ready:Provision the installation model credential in Guided Setup.Create a Person Profile for yourself, using the email your Google account is connected with.Confirm your Profile in Settings → Owner Profile.Find by email or profile URLAn email address or a profile address — linkedin.com/in/someone — is searched automatically. A matching existing Profile is reused; otherwise a new Profile is created. Once workspace research is ready, research fills its dossier as sources are found. Uncertain information remains labeled.Email or profile URLFull name (helps research know who this is)Add and researchA profile named Satya Nadella already exists.Open the existing profileCreate anywayIdentityFull namePrimary emailKnown factsRoleCurrent employerBackgroundCreate profile"
+
+ ❯ tests/src/unit/new-person-profile-page.test.tsx:205:39
+    203|     await act(async () => change(container, "#profile-identifier-name"…
+    204|     await act(async () => pending.resolve([existing]));
+    205|     expect(container.textContent).not.toContain("already exists");
+       |                                       ^
+    206|     expect(accept).not.toHaveBeenCalled();
+    207|     expect(button(container, "Add and research")).toBeDefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 7 passed (9)
+   Start at  10:20:59
+   Duration  1.26s (environment 72%, tests 17%, transform 5%, import 5%)
+
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /Users/Nicolas/Documents/github/chief-of-
+  │ staff-demo/tests

@@ -864,21 +864,17 @@ export function PersonDossierPanel({
       {item.changeReason && <p>{item.changeReason}</p>}
     </article>
   );
-  if (view && !view.dossier && !view.research) {
-    return (
-      <section aria-label="Person dossier">
+  return (
+    <section aria-label="Person dossier">
+      {view && !view.dossier && !view.research && (
         <div className="card">
           <h2>Research has not run yet</h2>
           <p className="muted">
-            This saved Person Profile has no research result yet. Prioritise research when ready;
-            retained evidence will appear here after the first run.
+            This saved Person Profile has no research result yet. Retained evidence will appear here
+            after the first run.
           </p>
         </div>
-      </section>
-    );
-  }
-  return (
-    <section aria-label="Person dossier">
+      )}
       {latestRevision > 0 && (
         <label>
           Dossier revision{" "}
@@ -1185,291 +1181,304 @@ export function PersonDossierPanel({
           ))}
         </details>
       )}
-      <div className="dossier-section-navigation">
-        {(overflow.before || overflow.after) && (
-          <button
-            type="button"
-            aria-label="Previous dossier sections"
-            title="Previous sections"
-            disabled={!overflow.before}
-            onClick={() => scrollTabs(-1)}
-          >
-            ←
-          </button>
-        )}
-        <div
-          ref={tabStrip}
-          onScroll={measureTabs}
-          role="tablist"
-          aria-label="Dossier sections"
-          className="dossier-sections"
-        >
-          {Object.entries(tabs).map(([key, label]) => (
-            <button
-              type="button"
-              role="tab"
-              id={`dossier-tab-${key}`}
-              aria-controls="dossier-panel"
-              aria-selected={key === tab}
-              tabIndex={key === tab ? 0 : -1}
-              onFocus={(event) => {
-                if (typeof event.currentTarget.scrollIntoView === "function")
-                  event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
-              }}
-              onKeyDown={(event) => {
-                const keys = Object.keys(tabs) as Array<keyof typeof tabs>;
-                const index = keys.indexOf(key as keyof typeof tabs);
-                const next =
-                  event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? keys.length - 1
-                      : event.key === "ArrowRight"
-                        ? (index + 1) % keys.length
-                        : event.key === "ArrowLeft"
-                          ? (index - 1 + keys.length) % keys.length
-                          : null;
-                if (next === null) return;
-                event.preventDefault();
-                setTab(keys[next]!);
-                event.currentTarget.parentElement
-                  ?.querySelector<HTMLButtonElement>(`#dossier-tab-${keys[next]}`)
-                  ?.focus();
-              }}
-              key={key}
-              onClick={() => {
-                setTab(key as keyof typeof tabs);
-                setSource(null);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {(overflow.before || overflow.after) && (
-          <button
-            type="button"
-            aria-label="More dossier sections"
-            title="More sections"
-            disabled={!overflow.after}
-            onClick={() => scrollTabs(1)}
-          >
-            →
-          </button>
-        )}
-      </div>
-      <div id="dossier-panel" role="tabpanel" tabIndex={0} aria-labelledby={`dossier-tab-${tab}`}>
-        <h2>{tabs[tab]}</h2>
-        {section && (
-          <>
-            <p>{section.summary}</p>
-            <p className="muted">
-              {sectionStateLabel(section.state)} · Last researched{" "}
-              <EvidenceDate value={section.updatedAt} />
-            </p>
-            {evidence(section)}
-            {section.gaps.map((gap) => (
-              <p className="muted" key={gap}>
-                {gap}
-              </p>
-            ))}
-          </>
-        )}
-        {tab === "overview" &&
-          activeClaims.some((c) => c.statement.startsWith("Unresolved source fragment:")) && (
-            <details>
-              <summary>Unresolved evidence</summary>
-              {activeClaims
-                .filter((c) => c.statement.startsWith("Unresolved source fragment:"))
-                .map(claim)}
-            </details>
-          )}
-        {tab === "history" ? (
-          historyError ? (
-            <div>
-              <p>Relationship history could not be loaded. Its contents are unknown.</p>
-              <button type="button" onClick={() => setHistoryRetry((retry) => retry + 1)}>
-                Retry Relationship history
+      {(!view || view.dossier || view.research) && (
+        <>
+          <div className="dossier-section-navigation">
+            {(overflow.before || overflow.after) && (
+              <button
+                type="button"
+                aria-label="Previous dossier sections"
+                title="Previous sections"
+                disabled={!overflow.before}
+                onClick={() => scrollTabs(-1)}
+              >
+                ←
               </button>
-            </div>
-          ) : !historyLoaded ? (
-            <p role="status">Loading Relationship history…</p>
-          ) : history.length ? (
-            history.map((item) => (
-              <article className="card" key={`${item.kind}-${item.id}`}>
-                <a href={item.href}>{item.title}</a>
-                <p>
-                  {item.kind} · {item.date ?? "Date unknown"}
-                </p>
-                <p>{item.detail}</p>
-              </article>
-            ))
-          ) : (
-            <p className="muted">
-              No confirmed Workspace history yet. Public research remains available in the other
-              tabs.
-            </p>
-          )
-        ) : null}
-        {tab === "work" && analysis && (
-          <section>
-            <h3>Observed activity</h3>
-            <p className="muted">{analysis.scope}</p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Month</th>
-                  <th>Artifact kind</th>
-                  <th>Observed count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.activity.map((row) => (
-                  <tr key={`${row.period}-${row.kind}`}>
-                    <td>{row.period}</td>
-                    <td>{row.kind}</td>
-                    <td>{row.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        )}
-        {tab === "sources" && analysis && (
-          <section className="card">
-            <h3>Record quality</h3>
-            <p>
-              {analysis.quality.singleSourceClaims} of {analysis.quality.totalClaims} claims depend
-              on a single source family. {analysis.quality.contestedClaims} contested;{" "}
-              {analysis.quality.unknownClaims} unknown.
-            </p>
-            {Object.entries(analysis.quality.composition).map(([kind, count]) => (
-              <p key={kind}>
-                {kind}: supports {count} claims
-              </p>
-            ))}
-          </section>
-        )}
-        {tab === "connections" &&
-          analysis?.collaborations.map((person) => (
-            <p key={person.counterparty}>
-              {person.counterparty}: {person.distinctWorks} distinct documented shared work{" "}
-              {person.distinctWorks > 1 ? "records — repeated collaboration" : "record"}
-            </p>
-          ))}
-        {tab === "work" &&
-          dossier?.works.map((work) => (
-            <article className="card" key={work.id} id={`work-${work.id}`}>
-              <h3>{work.title}</h3>
-              <p>
-                {work.kind} · {work.startedAt ?? "Start unknown"} — {work.endedAt ?? "End unknown"}
-              </p>
-              <p>
-                <strong>Individual contribution:</strong>{" "}
-                {work.contribution?.text ?? "The individual/team split is undocumented."}
-              </p>
-              <p>
-                <strong>Team output:</strong> {work.teamContribution?.text ?? "Not documented."}
-              </p>
-              {work.authority.map((authority, i) => (
-                <p key={i}>
-                  {authority.role} {evidence(authority)}
-                </p>
+            )}
+            <div
+              ref={tabStrip}
+              onScroll={measureTabs}
+              role="tablist"
+              aria-label="Dossier sections"
+              className="dossier-sections"
+            >
+              {Object.entries(tabs).map(([key, label]) => (
+                <button
+                  type="button"
+                  role="tab"
+                  id={`dossier-tab-${key}`}
+                  aria-controls="dossier-panel"
+                  aria-selected={key === tab}
+                  tabIndex={key === tab ? 0 : -1}
+                  onFocus={(event) => {
+                    if (typeof event.currentTarget.scrollIntoView === "function")
+                      event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+                  }}
+                  onKeyDown={(event) => {
+                    const keys = Object.keys(tabs) as Array<keyof typeof tabs>;
+                    const index = keys.indexOf(key as keyof typeof tabs);
+                    const next =
+                      event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? keys.length - 1
+                          : event.key === "ArrowRight"
+                            ? (index + 1) % keys.length
+                            : event.key === "ArrowLeft"
+                              ? (index - 1 + keys.length) % keys.length
+                              : null;
+                    if (next === null) return;
+                    event.preventDefault();
+                    setTab(keys[next]!);
+                    event.currentTarget.parentElement
+                      ?.querySelector<HTMLButtonElement>(`#dossier-tab-${keys[next]}`)
+                      ?.focus();
+                  }}
+                  key={key}
+                  onClick={() => {
+                    setTab(key as keyof typeof tabs);
+                    setSource(null);
+                  }}
+                >
+                  {label}
+                </button>
               ))}
-              {work.scale.length ? (
-                work.scale.map((scale, i) => (
-                  <p key={i}>
-                    {scale.value} {scale.unit} · {scale.scope} · {scale.date ?? "Date unknown"}{" "}
-                    {evidence(scale)}
+            </div>
+            {(overflow.before || overflow.after) && (
+              <button
+                type="button"
+                aria-label="More dossier sections"
+                title="More sections"
+                disabled={!overflow.after}
+                onClick={() => scrollTabs(1)}
+              >
+                →
+              </button>
+            )}
+          </div>
+          <div
+            id="dossier-panel"
+            role="tabpanel"
+            tabIndex={0}
+            aria-labelledby={`dossier-tab-${tab}`}
+          >
+            <h2>{tabs[tab]}</h2>
+            {section && (
+              <>
+                <p>{section.summary}</p>
+                <p className="muted">
+                  {sectionStateLabel(section.state)} · Last researched{" "}
+                  <EvidenceDate value={section.updatedAt} />
+                </p>
+                {evidence(section)}
+                {section.gaps.map((gap) => (
+                  <p className="muted" key={gap}>
+                    {gap}
                   </p>
+                ))}
+              </>
+            )}
+            {tab === "overview" &&
+              activeClaims.some((c) => c.statement.startsWith("Unresolved source fragment:")) && (
+                <details>
+                  <summary>Unresolved evidence</summary>
+                  {activeClaims
+                    .filter((c) => c.statement.startsWith("Unresolved source fragment:"))
+                    .map(claim)}
+                </details>
+              )}
+            {tab === "history" ? (
+              historyError ? (
+                <div>
+                  <p>Relationship history could not be loaded. Its contents are unknown.</p>
+                  <button type="button" onClick={() => setHistoryRetry((retry) => retry + 1)}>
+                    Retry Relationship history
+                  </button>
+                </div>
+              ) : !historyLoaded ? (
+                <p role="status">Loading Relationship history…</p>
+              ) : history.length ? (
+                history.map((item) => (
+                  <article className="card" key={`${item.kind}-${item.id}`}>
+                    <a href={item.href}>{item.title}</a>
+                    <p>
+                      {item.kind} · {item.date ?? "Date unknown"}
+                    </p>
+                    <p>{item.detail}</p>
+                  </article>
                 ))
               ) : (
-                <p className="muted">Operating scale is not documented.</p>
-              )}
-              {work.constraints.map((constraint, i) => (
-                <p key={i}>
-                  Constraint: {constraint.text} {evidence(constraint)}
+                <p className="muted">
+                  No confirmed Workspace history yet. Public research remains available in the other
+                  tabs.
                 </p>
-              ))}
-              {work.outcomes.map((outcome, i) => (
-                <p key={i}>
-                  {outcome.unsuccessful ? "Unsuccessful outcome: " : "Outcome: "}
-                  {outcome.text} · {outcome.date ?? "Date unknown"}
-                  {outcome.afterDeparture ? " · After departure" : ""} {evidence(outcome)}
+              )
+            ) : null}
+            {tab === "work" && analysis && (
+              <section>
+                <h3>Observed activity</h3>
+                <p className="muted">{analysis.scope}</p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th>Artifact kind</th>
+                      <th>Observed count</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analysis.activity.map((row) => (
+                      <tr key={`${row.period}-${row.kind}`}>
+                        <td>{row.period}</td>
+                        <td>{row.kind}</td>
+                        <td>{row.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
+            {tab === "sources" && analysis && (
+              <section className="card">
+                <h3>Record quality</h3>
+                <p>
+                  {analysis.quality.singleSourceClaims} of {analysis.quality.totalClaims} claims
+                  depend on a single source family. {analysis.quality.contestedClaims} contested;{" "}
+                  {analysis.quality.unknownClaims} unknown.
                 </p>
-              ))}
-              {evidence(work)}
-            </article>
-          ))}
-        {tab === "expertise" &&
-          (["demonstrated", "claimed"] as const).map((support) => (
-            <section key={support}>
-              <h3>{support === "demonstrated" ? "Demonstrated in work" : "Stated capabilities"}</h3>
-              {dossier?.expertise
-                .filter((e) => e.support === support)
-                .map((expertise, index) => (
-                  <article className="card" key={index}>
-                    <strong>{expertise.category}</strong>
-                    <p>{expertise.originalWording}</p>
-                    <p>
-                      {expertise.workIds
-                        .map((id) => dossier.works.find((w) => w.id === id)?.title)
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                    {evidence(expertise)}
-                  </article>
+                {Object.entries(analysis.quality.composition).map(([kind, count]) => (
+                  <p key={kind}>
+                    {kind}: supports {count} claims
+                  </p>
                 ))}
-            </section>
-          ))}
-        {tab === "connections" &&
-          dossier?.connections.map((connection) => (
-            <article className="card" key={connection.id}>
-              <h3>{connection.counterparty}</h3>
-              <p>
-                {connection.kind} · {connection.direction} · {connection.from ?? "Start unknown"} —{" "}
-                {connection.to ?? "End unknown"}
-              </p>
-              <p>
-                {connection.workIds
-                  .map((id) => dossier.works.find((w) => w.id === id)?.title)
-                  .filter(Boolean)
-                  .join(" · ") || "No shared work documented"}
-              </p>
-              {evidence(connection)}
-            </article>
-          ))}
-        {tab === "sources" ? (
-          <>
-            <p className="muted">
-              Inspect the passages behind each statement. Retrieval dates describe collection, not
-              when a fact became true. Repeated copies do not establish independent corroboration.
-            </p>
-            <ul>
-              {(dossier?.sourceIds ?? []).map((sourceId, index) => (
-                <li key={sourceId}>
-                  <button type="button" onClick={() => void inspect(sourceId, "")}>
-                    {citationLabel(
-                      summaryById.get(sourceId),
-                      `Inspect retained source ${index + 1}`,
-                    )}
-                  </button>
-                </li>
+              </section>
+            )}
+            {tab === "connections" &&
+              analysis?.collaborations.map((person) => (
+                <p key={person.counterparty}>
+                  {person.counterparty}: {person.distinctWorks} distinct documented shared work{" "}
+                  {person.distinctWorks > 1 ? "records — repeated collaboration" : "record"}
+                </p>
               ))}
-            </ul>
-            {claims.map(claim)}
-          </>
-        ) : (
-          tab !== "history" && displayed.map(claim)
-        )}
-        {tab !== "history" && tab !== "sources" && !displayed.length && !section && (
-          /* Plain language instead of storage vocabulary (UX audit F10). */
-          <p className="muted">
-            Nothing is documented here yet. Research has not found evidence for this section;
-            missing evidence stays unknown rather than guessed.
-          </p>
-        )}
-      </div>
+            {tab === "work" &&
+              dossier?.works.map((work) => (
+                <article className="card" key={work.id} id={`work-${work.id}`}>
+                  <h3>{work.title}</h3>
+                  <p>
+                    {work.kind} · {work.startedAt ?? "Start unknown"} —{" "}
+                    {work.endedAt ?? "End unknown"}
+                  </p>
+                  <p>
+                    <strong>Individual contribution:</strong>{" "}
+                    {work.contribution?.text ?? "The individual/team split is undocumented."}
+                  </p>
+                  <p>
+                    <strong>Team output:</strong> {work.teamContribution?.text ?? "Not documented."}
+                  </p>
+                  {work.authority.map((authority, i) => (
+                    <p key={i}>
+                      {authority.role} {evidence(authority)}
+                    </p>
+                  ))}
+                  {work.scale.length ? (
+                    work.scale.map((scale, i) => (
+                      <p key={i}>
+                        {scale.value} {scale.unit} · {scale.scope} · {scale.date ?? "Date unknown"}{" "}
+                        {evidence(scale)}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="muted">Operating scale is not documented.</p>
+                  )}
+                  {work.constraints.map((constraint, i) => (
+                    <p key={i}>
+                      Constraint: {constraint.text} {evidence(constraint)}
+                    </p>
+                  ))}
+                  {work.outcomes.map((outcome, i) => (
+                    <p key={i}>
+                      {outcome.unsuccessful ? "Unsuccessful outcome: " : "Outcome: "}
+                      {outcome.text} · {outcome.date ?? "Date unknown"}
+                      {outcome.afterDeparture ? " · After departure" : ""} {evidence(outcome)}
+                    </p>
+                  ))}
+                  {evidence(work)}
+                </article>
+              ))}
+            {tab === "expertise" &&
+              (["demonstrated", "claimed"] as const).map((support) => (
+                <section key={support}>
+                  <h3>
+                    {support === "demonstrated" ? "Demonstrated in work" : "Stated capabilities"}
+                  </h3>
+                  {dossier?.expertise
+                    .filter((e) => e.support === support)
+                    .map((expertise, index) => (
+                      <article className="card" key={index}>
+                        <strong>{expertise.category}</strong>
+                        <p>{expertise.originalWording}</p>
+                        <p>
+                          {expertise.workIds
+                            .map((id) => dossier.works.find((w) => w.id === id)?.title)
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                        {evidence(expertise)}
+                      </article>
+                    ))}
+                </section>
+              ))}
+            {tab === "connections" &&
+              dossier?.connections.map((connection) => (
+                <article className="card" key={connection.id}>
+                  <h3>{connection.counterparty}</h3>
+                  <p>
+                    {connection.kind} · {connection.direction} ·{" "}
+                    {connection.from ?? "Start unknown"} — {connection.to ?? "End unknown"}
+                  </p>
+                  <p>
+                    {connection.workIds
+                      .map((id) => dossier.works.find((w) => w.id === id)?.title)
+                      .filter(Boolean)
+                      .join(" · ") || "No shared work documented"}
+                  </p>
+                  {evidence(connection)}
+                </article>
+              ))}
+            {tab === "sources" ? (
+              <>
+                <p className="muted">
+                  Inspect the passages behind each statement. Retrieval dates describe collection,
+                  not when a fact became true. Repeated copies do not establish independent
+                  corroboration.
+                </p>
+                <ul>
+                  {(dossier?.sourceIds ?? []).map((sourceId, index) => (
+                    <li key={sourceId}>
+                      <button type="button" onClick={() => void inspect(sourceId, "")}>
+                        {citationLabel(
+                          summaryById.get(sourceId),
+                          `Inspect retained source ${index + 1}`,
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {claims.map(claim)}
+              </>
+            ) : (
+              tab !== "history" && displayed.map(claim)
+            )}
+            {tab !== "history" && tab !== "sources" && !displayed.length && !section && (
+              /* Plain language instead of storage vocabulary (UX audit F10). */
+              <p className="muted">
+                Nothing is documented here yet. Research has not found evidence for this section;
+                missing evidence stays unknown rather than guessed.
+              </p>
+            )}
+          </div>
+        </>
+      )}
       {source && source.profileId === profileId && source.revision === revision && (
         <PersonSourceInspector
           key={`${profileId}:${source.id}:${source.quote}`}

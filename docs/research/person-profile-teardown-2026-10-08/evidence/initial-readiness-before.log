@@ -1,0 +1,32 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+ ❯ tests/src/unit/person-dossier-page.test.tsx (24 tests | 2 failed) 104ms
+   × a Profile without a research job exposes its ready readiness and next action 4ms
+   × a Profile without a research job exposes its setup-required readiness and next action 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/src/unit/person-dossier-page.test.tsx > a Profile without a research job exposes its ready readiness and next action
+ FAIL  tests/src/unit/person-dossier-page.test.tsx > a Profile without a research job exposes its setup-required readiness and next action
+AssertionError: expected undefined to be defined
+ ❯ tests/src/unit/person-dossier-page.test.tsx:178:21
+    176|         (button) => button.textContent === "Prioritise research",
+    177|       );
+    178|       expect(start).toBeDefined();
+       |                     ^
+    179|       expect(start!.disabled).toBe(state !== "ready");
+    180|       if (state === "ready") {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 22 passed (24)
+   Start at  10:32:28
+   Duration  594ms (environment 56%, tests 19%, transform 17%, import 8%)
+
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /Users/Nicolas/Documents/github/chief-of-
+  │ staff-demo/tests

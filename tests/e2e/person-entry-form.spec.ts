@@ -123,3 +123,44 @@ test("audit F12: a lost response does not claim that the server saved nothing", 
     ),
   ).toHaveLength(1);
 });
+
+test("editing the identity while duplicate lookup is pending cancels the stale submission", async ({
+  page,
+}) => {
+  const existing = await page.request.post("/api/people", {
+    data: { fullName: "Pending Identity Example" },
+  });
+  expect(existing.ok()).toBe(true);
+  await page.goto("/people/new");
+  const release = Promise.withResolvers<void>();
+  const started = Promise.withResolvers<void>();
+  await page.route("**/api/people", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    started.resolve();
+    await release.promise;
+    await route.continue();
+  });
+  try {
+    await page.getByLabel("Full name", { exact: true }).fill("New Pending Person");
+    await page.getByRole("button", { name: "Create profile" }).click();
+    await started.promise;
+    await page.getByLabel("Full name", { exact: true }).fill("Pending Identity Example");
+    release.resolve();
+    await expect(page.getByRole("button", { name: "Create profile" })).toBeVisible();
+    await expect(page).toHaveURL(/\/people\/new$/);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    const profiles = await (
+      await page.request.get("/api/people?query=New%20Pending%20Person")
+    ).json();
+    expect(profiles).toEqual([]);
+    await page.getByRole("button", { name: "Create profile" }).click();
+    await expect(page.getByRole("alert")).toContainText("Pending Identity Example already exists");
+    await page.getByRole("link", { name: "Open the existing profile" }).click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Pending Identity Example" }),
+    ).toBeVisible();
+  } finally {
+    release.resolve();
+    await page.unroute("**/api/people");
+  }
+});

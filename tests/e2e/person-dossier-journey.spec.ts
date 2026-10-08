@@ -144,7 +144,11 @@ test("sparse and unavailable dossiers keep unquoted sources accessible with queu
   await expect(
     page.getByText(/retained evidence will appear here after the first run/i),
   ).toBeVisible();
-  await expect(page.getByText("Research settings", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Research settings", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Prioritise research", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveCount(0);
   await page.request.post("/api/test/person-dossier-source", {
     data: {
       url: "https://example.com/retained-only",

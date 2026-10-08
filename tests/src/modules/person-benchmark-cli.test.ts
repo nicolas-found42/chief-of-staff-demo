@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
   BenchmarkArmStatsSchema,
   BenchmarkReportSchema,
@@ -12,9 +12,68 @@ import {
 } from "@chief-of-staff-demo/shared";
 import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus";
 import { runBenchmarkCli } from "../../../scripts/person-research-benchmark.mjs";
+import * as eligibility from "../../../apps/server/src/source-adapters/eligibility";
 
 let benchmarkConfigRoot = "";
 let benchmarkConfig = "";
+
+it.each([true, false])(
+  "source probes separate actual answers from unprobed declarations: failed=%s",
+  async (fails) => {
+    const probe = vi.spyOn(eligibility, "probeSourceEligibility").mockResolvedValue([
+      {
+        route: "success",
+        family: "general-discovery",
+        status: "in-production",
+        probed: true,
+        httpStatus: 200,
+        bytes: 20,
+        shapeOk: true,
+        detail: "Answered anonymously.",
+      },
+      {
+        route: "second",
+        family: "general-discovery",
+        status: "in-production",
+        probed: true,
+        httpStatus: fails ? 503 : 200,
+        bytes: 10,
+        shapeOk: !fails,
+        detail: fails ? "Service unavailable." : "Answered anonymously.",
+      },
+      {
+        route: "missing-probe",
+        family: "general-discovery",
+        status: "in-production",
+        probed: false,
+        httpStatus: null,
+        bytes: null,
+        shapeOk: null,
+        detail: "No probe defined.",
+      },
+      {
+        route: "excluded",
+        family: "general-discovery",
+        status: "excluded",
+        probed: false,
+        httpStatus: null,
+        bytes: null,
+        shapeOk: null,
+        detail: "Requires a key.",
+      },
+    ]);
+    try {
+      const result = await runBenchmarkCli(["--probe-sources"]);
+      expect(result.status).toBe(fails ? 1 : 0);
+      expect(result.stdout).toContain(`${fails ? 1 : 2}/2 anonymous probes passed`);
+      expect(result.stdout).toContain("1 in-production routes unprobed");
+      expect(result.stdout).toContain("1 excluded/unavailable routes not probed");
+      expect(result.stdout).not.toContain("routes answered as documented");
+    } finally {
+      probe.mockRestore();
+    }
+  },
+);
 
 beforeAll(() => {
   benchmarkConfigRoot = mkdtempSync(join(tmpdir(), "benchmark-default-config-"));
