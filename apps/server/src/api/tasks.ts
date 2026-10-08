@@ -257,7 +257,7 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     buildTaskOverview({ tasks, actionItems: ctx.actionItems }),
   );
 
-  app.get("/api/tasks", async (request: FastifyRequest) => {
+  app.get("/api/tasks", async (request: FastifyRequest, reply: FastifyReply) => {
     const query = request.query as {
       listId?: string;
       status?: string;
@@ -267,6 +267,22 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
       responsible?: string;
       linked?: string;
     };
+    for (const field of [
+      "listId",
+      "status",
+      "trashed",
+      "search",
+      "priority",
+      "responsible",
+      "linked",
+    ] as const) {
+      if (query[field] !== undefined && typeof query[field] !== "string") {
+        return reply.code(400).send({
+          error: "invalid-task-filter",
+          message: `The ${field} filter must be supplied once as text.`,
+        });
+      }
+    }
     const status =
       query.status === "open" || query.status === "completed" ? query.status : undefined;
     const responsible = responsibleFilter(query.responsible);
