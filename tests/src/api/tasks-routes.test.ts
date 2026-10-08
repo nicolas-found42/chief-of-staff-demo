@@ -65,6 +65,16 @@ async function index(query = ""): Promise<TaskIndex> {
 }
 
 describe("capturing a Task", () => {
+  it.each(["search", "listId", "responsible", "priority", "status", "trashed", "linked"])(
+    "refuses repeated %s filters without changing work",
+    async (field) => {
+      const created = await quickAdd("Keep the existing work");
+      const response = await app.inject(`/api/tasks?${field}=a&${field}=b`);
+      expect(response.statusCode).toBe(400);
+      expect((await index()).tasks).toEqual([created]);
+    },
+  );
+
   it("takes a title alone and fills every other field with a defensible default", async () => {
     const task = await quickAdd("  Send the billing follow-up  ");
 

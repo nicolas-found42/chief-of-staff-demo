@@ -697,6 +697,12 @@ export function SettingsPage() {
           </button>
         </div>
       )}
+      {googleBanner === "state_mismatch" && (
+        <div className="banner banner-error" role="alert">
+          This Google sign-in was not started by this app, expired, or was already used. Your
+          existing connection was kept. Connect Google again from Settings to start a new sign-in.
+        </div>
+      )}
       {error && (
         <div className="banner banner-error" role="alert">
           {error}

@@ -50,6 +50,11 @@ function providerName(destination: Task["destination"]): string {
   return destination.provider === "asana" ? "Asana" : "Google Tasks";
 }
 
+interface TaskEdit {
+  values: TaskFormValues;
+  version: number;
+}
+
 /** One Task in a list, with its controls and its own edit form. */
 function TaskRow({
   task,
@@ -59,6 +64,8 @@ function TaskRow({
   onComplete,
   onReopen,
   onSave,
+  edit,
+  onEdit,
   onTrash,
   onLink,
   onRecreate,
@@ -74,7 +81,9 @@ function TaskRow({
   busy: boolean;
   onComplete: () => Promise<void>;
   onReopen: () => Promise<void>;
-  onSave: (values: TaskFormValues) => Promise<boolean>;
+  onSave: (values: TaskFormValues, expectedVersion: number) => Promise<boolean>;
+  edit: TaskEdit | undefined;
+  onEdit: (edit: TaskEdit | undefined) => void;
   onTrash: (external?: "delete" | "preserve") => Promise<void>;
   onLink: () => Promise<void>;
   onRecreate: () => Promise<void>;
@@ -89,8 +98,9 @@ function TaskRow({
   const [recoveryId, setRecoveryId] = useState("");
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [trashExternal, setTrashExternal] = useState<"delete" | "preserve">("delete");
-  const [editing, setEditing] = useState(false);
-  const [values, setValues] = useState<TaskFormValues>(() => formValuesFrom(task));
+  const editing = edit !== undefined;
+  const values = edit?.values ?? formValuesFrom(task);
+  const editVersion = edit?.version ?? task.version;
   const editButton = useRef<HTMLButtonElement>(null);
 
   /* Focus returns to the control that opened the form, so a keyboard user is
@@ -98,9 +108,9 @@ function TaskRow({
      is handled by the page instead: it can move the Task into a different
      due-date group, and this button is then a different element. */
   const close = useCallback(() => {
-    setEditing(false);
+    onEdit(undefined);
     editButton.current?.focus();
-  }, []);
+  }, [onEdit]);
 
   return (
     <li className="card" id={`task-${task.id}`}>
@@ -340,8 +350,7 @@ function TaskRow({
           ref={editButton}
           aria-expanded={editing}
           onClick={() => {
-            setValues(formValuesFrom(task));
-            setEditing((open) => !open);
+            onEdit(editing ? undefined : { values: formValuesFrom(task), version: task.version });
           }}
         >
           Edit details
@@ -351,7 +360,7 @@ function TaskRow({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void onSave(values).then((saved) => {
+            void onSave(values, editVersion).then((saved) => {
               if (saved) close();
             });
           }}
@@ -362,7 +371,9 @@ function TaskRow({
               id={`task-${task.id}-title`}
               value={values.title}
               autoFocus
-              onChange={(event) => setValues({ ...values, title: event.target.value })}
+              onChange={(event) =>
+                onEdit({ values: { ...values, title: event.target.value }, version: editVersion })
+              }
             />
           </div>
           <TaskFields
@@ -370,7 +381,7 @@ function TaskRow({
             values={values}
             lists={lists}
             profiles={profiles}
-            onChange={setValues}
+            onChange={(values) => onEdit({ values, version: editVersion })}
           />
           <div className="toolbar">
             <button type="submit" className="action-button primary" aria-disabled={busy}>
@@ -480,6 +491,8 @@ export function TasksPage({
   const missingSource = searchParams.get("source") === "unavailable";
   const focusRef = usePageFocus<HTMLHeadingElement>({ focusOnSearchChange: false });
   const [tasks, setTasks] = useState<Task[]>([]);
+  // Rows move between due-date/status groups during polling; their drafts must survive remounts.
+  const [edits, setEdits] = useState<Record<string, TaskEdit | undefined>>({});
   const [trash, setTrash] = useState<Task[]>([]);
   const [unavailableSources, setUnavailableSources] = useState<string[]>([]);
   /** Which Task's edit control should take focus back after a save. */
@@ -743,6 +756,15 @@ export function TasksPage({
       lists={lists}
       profiles={profiles}
       busy={busy}
+      edit={edits[task.id]}
+      onEdit={(edit) => {
+        setEdits((current) => {
+          const next = { ...current };
+          if (edit) next[task.id] = edit;
+          else delete next[task.id];
+          return next;
+        });
+      }}
       onComplete={async () => {
         await act(`Completed ${task.title}.`, () => client.completeTask(task.id));
       }}
@@ -784,16 +806,20 @@ export function TasksPage({
           () => client.resolveTaskLink(task.id, kind, keep),
         );
       }}
-      onSave={async (values) => {
+      onSave={async (values, expectedVersion) => {
         const saved = await act(`Saved ${values.title.trim()}.`, () =>
-          client.updateTask(task.id, {
-            title: values.title,
-            notes: values.notes,
-            dueDate: values.dueDate === "" ? null : values.dueDate,
-            priority: values.priority,
-            listId: values.listId,
-            responsiblePerson: responsibleFromValue(values.responsible),
-          }),
+          client.updateTask(
+            task.id,
+            {
+              title: values.title,
+              notes: values.notes,
+              dueDate: values.dueDate === "" ? null : values.dueDate,
+              priority: values.priority,
+              listId: values.listId,
+              responsiblePerson: responsibleFromValue(values.responsible),
+            },
+            expectedVersion,
+          ),
         );
         /* Only once the redrawn list has landed: asking for focus before the
            reload would hand it to a row the reload is about to replace. */

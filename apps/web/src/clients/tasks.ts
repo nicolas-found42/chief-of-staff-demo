@@ -117,11 +117,11 @@ export const tasksApi = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(candidate),
     }),
-  updateTask: (taskId: string, input: TaskUpdateInput) =>
+  updateTask: (taskId: string, input: TaskUpdateInput, expectedVersion: number) =>
     request<Task>(`/api/tasks/${encodeURIComponent(taskId)}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, expectedVersion }),
     }),
   completeTask: (taskId: string) =>
     request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/complete`, { method: "POST" }),

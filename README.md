@@ -1,34 +1,37 @@
 # chief-of-staff-demo — Found42 — Chief of Staff
 
-A local web app that hosts Found42's meeting and content workflows as tabs in one app. Five Modules are live: **YouTube Trends** — presented under Content Research — counts every video on a channel once a day and keeps the trend; **Content Scout** watches public sources and turns a selected opportunity into a Content Project; **Content Research** reports what is resonating for named people; **Meeting Brief Generator** prepares briefings for upcoming meetings; and **Meeting Debrief** turns meeting transcripts into retrospective drafts awaiting review. It reproduces the pipeline of the [`nicolas-found42/transcript-routine`](https://github.com/nicolas-found42/transcript-routine) workflow (Drive folders + Apps Script + Claude routine) as a single Node server + browser UI you run on your own machine.
+A local, single-user app for Found42's meeting, content and task workflows. It hosts five
+product areas: **Content Engine**, **Content Research**, **Person Profiles**, **Meeting Wizard**
+and **Tasks**. The vocabulary is in [CONTEXT.md](CONTEXT.md), and the decisions are in
+[docs/adr/](docs/adr/).
 
-> **Note:** This repo was `transcript-found42`. The GitHub slug now 301s to `chief-of-staff-demo`. Package scope is now `@chief-of-staff-demo/*`.
+> **Note:** This repo was `transcript-found42`. The GitHub slug now redirects to
+> `chief-of-staff-demo`. Package scope is `@chief-of-staff-demo/*`.
 
-Single user, local only. **Drafts are created and mail is never sent** — enforced structurally:
-the Gmail module only ever calls `drafts.create`, and a unit test greps its source to keep it that
-way.
+Most Gmail writes create drafts for review. **Meeting Briefs are the explicit exception:** the
+Meeting Brief Generator can automatically send a briefing to the connected Google account's
+owner, never to external guests (ADR-0034). Meeting Debriefs wait for review before publication.
 
 ## What it does
 
-Pick a Google Drive folder in Settings; every transcript dropped there is polled, classified,
-extracted with the LLM provider of your choice, and created as Google Tasks in a
-"Meeting Followups" list plus Gmail drafts — automatically, with no review step (routine parity).
-
-| Routine step | This app |
+| Product area | Workflow and result |
 |---|---|
-| Gatekeeping (`isTranscript`) | `apps/server/src/llm/prompt.ts` — non-transcripts persist a result with `skipReason` and create nothing |
-| Extraction (tasks / summary / drafts) | `apps/server/src/llm/prompt.ts` + `providers.ts` (OpenAI, Anthropic, OpenRouter, Gemini, Ollama, mock) |
-| Outbox JSON contract (schema v1) | `packages/shared/src/schemas.ts` (`ExtractionResultSchema`); malformed output is retried, never silently accepted |
-| Task creation (`createTask_`) | `apps/server/src/google/tasks.ts` — identical notes composition order and due-date normalization |
-| Draft-only email | `apps/server/src/google/gmail.ts` — `drafts.create` only; banned-token unit test |
-| Untrusted transcript handling | Injection preamble in the prompt + `<transcript>` block labeled as data |
-| Retry / quarantine | 3 extraction attempts, then the run is `failed` and retryable from the UI |
+| Content Engine | Content Scout collects public sources, presents opportunities, and turns a selected opportunity into a Content Project. |
+| Content Research | Researches what resonates for named people; YouTube Trends records channel video counts and view totals on demand or on its schedule. |
+| Person Profiles | Keeps canonical identities, researched dossiers, source evidence and revision history. |
+| Meeting Wizard | Prepares briefs for upcoming meetings and retrospective debriefs from reviewed transcripts. Brief delivery and debrief review are separate workflows. |
+| Tasks | Captures work locally, reviews proposed Action Items on their source Meeting, and manages accepted Tasks, lists, completion and Trash. Google Tasks and Asana are optional destinations. |
 
-## Where this is going
+Choose a Drive transcript folder in Settings and explicitly consent to processing with the
+selected provider and model. Intake converts supported files, reviews relevance, and records
+processing and failures in the Workspace. A Meeting Debrief proposes Action Items; **Stage all**
+is the default, so acceptance waits for review. Automatic owner-Task creation requires release
+authorization and explicit enablement; the UI reports when it is unavailable. Accepted Tasks
+remain Workspace-owned even when linked to an external destination. The former `/transcript`
+workflow is retired (ADR-0045); start from Meeting Wizard and Tasks.
 
-This app is becoming one Module — a tab — in the Found42 Chief of Staff app, which replaces Relay.
-The vocabulary is in [CONTEXT.md](CONTEXT.md); the decisions behind the shape are in
-[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004), and the Google connection is now a Shell concern with its own setup flow (ADR-0007) and the single route to any Google surface (ADR-0008). The Shell now has a front door of its own — Home at `/`, stating where the workspace stands, with the connection banner rendered once for every page (ADR-0010, ADR-0011); the Transcript Module moved to `/transcript`. A second Module, **YouTube Trends**, now proves the boundary: ADR-0003's `run(ctx, input)` contract is finally built (ADR-0023), the API holds a collection of Modules rather than one of each thing, and there is a cross-Module Runs list at `/runs` that each Module's page is a filtered view of. The Module registry as code (ADR-0002) is still deliberately unbuilt.
+Local Tasks work without connecting any account. Model-backed and Google-backed workflows need
+their own configuration and owner consent; failures do not silently switch provider or model.
 
 ## Getting started
 
@@ -134,7 +137,7 @@ docker compose up --build --watch
 
 Run it in the foreground, as above: the rebuild log and the server's own log are the feedback, and
 `Ctrl-C` stops it. It is a rebuild loop, not hot reload — a change costs about half a minute
-(`npm ci` stays cached until a manifest changes; the `npm run build` layer is what re-runs), and
+(`pnpm install` stays cached until a manifest changes; the `pnpm run build` layer is what re-runs), and
 the browser needs a refresh afterwards. That is the price of having no second runtime: no Vite dev
 server on 5173, so no second origin and no second redirect URI to register with Google.
 
@@ -142,11 +145,11 @@ server on 5173, so no second origin and no second redirect URI to register with 
 app gets the same container you do. It pins port 4317 (`autoPort: false`) rather than letting the
 harness pick a free one, for the same redirect-URI reason.
 
-Node and npm are for the test suite and typechecking only — never for serving the app:
+Node and pnpm are for the test suite and typechecking only — never for serving the app:
 
 ```bash
-npm install          # once, for tests and editor typechecking
-npm run build        # compile without a rebuild, to see type errors fast
+pnpm install --frozen-lockfile  # packageManager pins pnpm 12.3.4
+pnpm run build        # compile without a rebuild, to see type errors fast
 ```
 
 The `start`, `dev:server` and `dev:web` scripts in `package.json` predate this and are unsupported
@@ -175,8 +178,6 @@ workspace/
     …                     the Module's other files (the transcript Module keeps transcript.txt
                           and context.json here)
 ```
-3. Drop any non-transcript PDF → run `skipped` with a `skipReason`, nothing created.
-
 ### Clearing generated data
 
 **Settings → Danger zone → Clear all generated data** puts the app back to empty and can be run as
@@ -193,10 +194,9 @@ type `CLEAR ALL DATA` exactly, and a mistyped phrase sends nothing.
 ## Tests
 
 ```bash
-npm test                              # vitest: schema, conversion, task-notes parity,
-                                      # MIME + banned-token, providers, pipeline
-npx playwright install chromium       # once
-npm run test:e2e                      # hermetic browser test with the mock provider
+pnpm run check                        # types, lint, formatting, knip, unit tests
+pnpm --filter @chief-of-staff-demo/tests exec playwright install chromium  # once
+pnpm run test:e2e                      # hermetic browser journeys with simulated providers
 ```
 
 ## Troubleshooting
@@ -208,9 +208,10 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 | Google consent shows a warning screen | Expected on a personal account: click **Continue** (the small link), not **Back to safety**. A Workspace account using an Internal consent screen never sees it. |
 | Sign-in fails with `Error 403: access_denied` | The account is not on the consent screen's Test users list. Add it under Audience → Test users and sign in again with the same account. |
 | Redirect URI mismatch during connect | The registered redirect URI must be `http://localhost:4317/api/google/callback`, matching the port the server runs on. |
-| Tasks appear but some are missing | A bad item logs `google_task_error` and the batch continues — check the run's events timeline; Retry recreates everything (move/delete the partials first if you care about duplicates). |
+| A Task cannot reach an external destination | The accepted Task stays in the Workspace. Read the link failure and use its retry or recovery controls; an uncertain creation requires recovering the existing remote record before another creation. |
 | Drive `.json` file fails with `SOURCE_INVALID` | JSON must be an array of sentence objects (`speaker_name` + `text`), not an arbitrary document. The file came from Drive, not an upload. |
-| Due dates show no time | Expected — the Tasks API stores a date and discards any time component. |
+| Due dates show no time | Expected — Workspace Task due dates are calendar dates (`YYYY-MM-DD`); timestamps and impossible dates are refused. |
+| Google sign-in reports an expired or already used attempt | Connect Google again from Settings. Sign-ins expire after ten minutes; starting another attempt or restarting the app invalidates the previous one. |
 | Google asks for a new sign-in about weekly | Expected while the consent screen is in Testing. Settings shows when you last signed in and roughly when Google will ask again; one click fixes it. |
 | `docker compose` fails on a socket or daemon | Docker Desktop is not running. Start it and wait for the whale to stop animating. |
 
@@ -221,6 +222,6 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 - Installation secrets live in the process environment or the gitignored mode-600 `.env`; they are
   never stored in or returned from a Workspace. The public config response reports only configured,
   missing, or not-required state.
-- The server binds to `127.0.0.1` only.
+- Compose publishes the app only on `127.0.0.1`; the container listens on `0.0.0.0`. The server also rejects non-loopback Host names and unrelated browser Origins before routes run. Browser API fetches must be same-origin; Google's top-level callback navigation is the bounded exception and requires a single-use sign-in state before a grant is exchanged. Native local clients without browser headers remain supported. This is a local request boundary, not authentication for a shared deployment.
 - Mail drafts are the only Gmail write most Modules may perform: `apps/server/src/google/gmail.ts` contains no delivery call, and `tests/src/unit/draft-mime.test.ts` fails the build if one appears there. The Meeting Brief Generator owns the deliberate send-only-to-owner exception (`modules/meeting-brief-generator/google/gmailDelivery.ts`, recipient fixed from the connected Google identity, never from event/API/model, never to an External Guest) — see ADR-0034.
 - The Settings page is the only place the app loads remote code (Google's Picker script at `https://apis.google.com/js/api.js`, fetched on click only). The per-pick access token is short-lived, never persisted, never logged, and carries every scope the connection holds.
