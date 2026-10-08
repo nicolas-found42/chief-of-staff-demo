@@ -552,16 +552,13 @@ export class ContentResearchHost implements HostedModule {
   private dailyPeriodOccupied(period: string, nowMs: number): boolean {
     const runs = this.deps.runs
       .list({ module: this.id })
-      .runs.map((summary) => this.deps.runs.detail(summary.id))
-      .filter(
-        (run) =>
-          run?.intake === CONTENT_RESEARCH_INTAKE &&
-          this.deps.runs.open(run.id)?.read().externalId === period,
-      );
+      .runs.filter((summary) => summary.intake === CONTENT_RESEARCH_INTAKE)
+      .map((summary) => this.deps.runs.open(summary.id))
+      .filter((run) => run?.read().externalId === period);
     if (runs.length === 0) return false;
-    if (runs.length >= 3 || runs.some((run) => run?.status !== "done")) return true;
+    if (runs.length >= 3 || runs.some((run) => run?.read().status !== "done")) return true;
     const deferred = runs
-      .flatMap((run) => run?.events ?? [])
+      .flatMap((run) => run?.events() ?? [])
       .filter((event) => event.type === "daily_progress_deferred");
     if (deferred.length !== runs.length) return true;
     const lastAttempt = Math.max(

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ContentResearchHost } from "../../../apps/server/src/modules/content-research/host";
 import { ContentResearchProfileRefusal } from "../../../apps/server/src/modules/content-research/host";
 import { ContentResearchStore } from "../../../apps/server/src/modules/content-research/store";
@@ -809,6 +809,61 @@ describe("Content Research", () => {
     await host.checkSchedules();
     await host.idle();
     expect(runs.list().runs).toHaveLength(count);
+  });
+
+  it("scheduled polling reads events only for the matching daily period, without report details", async () => {
+    current = new Date("2026-08-30T20:00:00Z");
+    const hn = makeAdapter({ id: "hn", itemsFor: () => [], failWith: rateLimitedResult() });
+    const { host, people, runs } = makeHarness({ adapters: [hn], scheduled: true });
+    watchProfile(host, people, { fullName: "Ben" });
+    for (const [intake, externalId] of [
+      [CONTENT_RESEARCH_INTAKE, "2026-08-29"],
+      [CONTENT_RESEARCH_BACKFILL_INTAKE, "2026-08-30"],
+    ]) {
+      const unrelated = runs.create({
+        module: CONTENT_RESEARCH_MODULE_ID,
+        moduleVersion: 1,
+        intake,
+        externalId,
+        sourceUrl: null,
+      });
+      unrelated.finished({ status: "done" });
+      unrelated.writeArtifact("result.json", JSON.stringify({ unrelated: "retained report" }));
+    }
+    await host.checkSchedules();
+    await host.idle();
+    const expected = runs
+      .list()
+      .runs.find(
+        (run) =>
+          run.intake === CONTENT_RESEARCH_INTAKE &&
+          runs.open(run.id)?.read().externalId === "2026-08-30",
+      )?.id;
+    const detail = vi.spyOn(runs, "detail").mockImplementation(() => {
+      throw new Error("Scheduling must not load reports");
+    });
+    const eventsRead: string[] = [];
+    const open = runs.open.bind(runs);
+    const openSpy = vi.spyOn(runs, "open").mockImplementation((id) => {
+      const run = open(id);
+      if (run) {
+        const events = run.events.bind(run);
+        vi.spyOn(run, "events").mockImplementation(() => {
+          eventsRead.push(id);
+          return events();
+        });
+      }
+      return run;
+    });
+    try {
+      await host.checkSchedules();
+      await host.idle();
+      expect(detail).not.toHaveBeenCalled();
+      expect(eventsRead).toEqual([expected]);
+    } finally {
+      openSpy.mockRestore();
+      detail.mockRestore();
+    }
   });
 
   it("a first-ever transient failure cannot defer healthy progress beyond a week", async () => {

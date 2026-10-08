@@ -641,7 +641,7 @@ export function contentResearchModule(
       const recoveryEvents = deps.runs
         .list({ module: CONTENT_RESEARCH_MODULE_ID })
         .runs.filter((run) => run.intake === CONTENT_RESEARCH_INTAKE)
-        .flatMap((run) => deps.runs.detail(run.id)?.events ?? []);
+        .flatMap((run) => deps.runs.open(run.id)?.events() ?? []);
       const lastRecovery = Math.max(
         0,
         ...recoveryEvents
