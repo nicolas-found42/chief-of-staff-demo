@@ -324,6 +324,9 @@ interface RunResultShape {
       resonanceScore: number;
       resonanceBasis: string;
       weightedCount: number;
+      counts: { views?: number };
+      evidenceUrl: string;
+      evidenceQuote: string | null;
     }[];
   }[];
   adapters: { adapterId: string; outcome: string; errorClassifications: string[] }[];
@@ -791,7 +794,13 @@ describe("Content Research", () => {
       },
     };
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { runs, host, people } = makeHarness({ adapters: [rss], discoverer });
+    const { runs, host, people } = makeHarness({
+      adapters: [rss],
+      discoverer,
+      searchPublic: async () => [
+        { url: "https://ben.example/post", title: "Supplied source", snippet: "Co-mention" },
+      ],
+    });
     watchProfile(host, people, {
       fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
@@ -839,7 +848,13 @@ describe("Content Research", () => {
       ],
     };
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { host, people } = makeHarness({ adapters: [rss], discoverer });
+    const { host, people } = makeHarness({
+      adapters: [rss],
+      discoverer,
+      searchPublic: async () => [
+        { url: "https://example.com/radia", title: "Supplied source", snippet: "Co-mention" },
+      ],
+    });
     watchProfile(host, people, {
       fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
@@ -991,7 +1006,18 @@ describe("Content Research", () => {
       ],
     };
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { host, people } = makeHarness({ adapters: [rss], discoverer, discoverFeeds });
+    const { host, people } = makeHarness({
+      adapters: [rss],
+      discoverer,
+      discoverFeeds,
+      searchPublic: async () => [
+        {
+          url: "https://grace.example/posts/compilers",
+          title: "Supplied source",
+          snippet: "Co-mention",
+        },
+      ],
+    });
     watchProfile(host, people, { fullName: "Ben", handleHints: { blogRssHints: [] } });
 
     await host.discoverNow();
@@ -1165,7 +1191,13 @@ describe("Profile-backed watches (#134)", () => {
         },
       ],
     };
-    const { host, people } = makeHarness({ adapters: [rss], discoverer });
+    const { host, people } = makeHarness({
+      adapters: [rss],
+      discoverer,
+      searchPublic: async () => [
+        { url: "https://grace.example/post", title: "Supplied source", snippet: "Co-mention" },
+      ],
+    });
     watchProfile(host, people, { fullName: "Ada Lovelace" });
     await host.discoverNow();
     await host.idle();
@@ -1408,5 +1440,215 @@ describe("Profile-backed watches (#134)", () => {
     /* An active watch cannot be re-pointed: pause it first. */
     const adaProfile = people.create({ fullName: "Ada Lovelace", primaryEmail: "ada@example.com" });
     expect(() => host.repointWatch(ben.id, adaProfile.id)).toThrow(/pause it before re-pointing/);
+  });
+});
+
+describe("Content Research evidence integrity", () => {
+  it("retains distinct same-site articles and updates only the matching article", () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-research-store-"));
+    const store = new ContentResearchStore(workspaceDir, now);
+    const first = makeItem({
+      url: "https://same.example/posts/one",
+      title: "One",
+      adapterId: "rss",
+    });
+    const second = makeItem({
+      url: "https://same.example/posts/two",
+      title: "Two",
+      adapterId: "rss",
+    });
+    store.storeItems(
+      [first, second].map((item) => ({
+        canonicalUrl: item.canonicalUrl,
+        payload: JSON.stringify(item),
+      })),
+    );
+    expect(
+      store
+        .listAllItems()
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(["One", "Two"]);
+    store.storeItems([
+      {
+        canonicalUrl: first.canonicalUrl,
+        payload: JSON.stringify({ ...first, title: "One updated" }),
+      },
+    ]);
+    expect(
+      store
+        .listAllItems()
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(["One updated", "Two"]);
+  });
+
+  it("scores each person's own observation of a shared URL with its own provenance", async () => {
+    const shared = "https://www.youtube.com/watch?v=shared";
+    const rss = makeAdapter({
+      id: "rss",
+      itemsFor: () => [
+        makeItem({
+          url: shared,
+          title: "Feed observation",
+          adapterId: "rss",
+          counts: { views: 10 },
+        }),
+      ],
+    });
+    const youtube = makeAdapter({
+      id: "youtube",
+      itemsFor: () => [
+        makeItem({
+          url: shared,
+          title: "Video observation",
+          adapterId: "youtube",
+          counts: { views: 900 },
+        }),
+      ],
+    });
+    const { host, runs, people } = makeHarness({ adapters: [rss, youtube] });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
+    const ava = watchProfile(host, people, {
+      fullName: "Ava",
+      handleHints: { blogRssHints: [], youtubeChannelId: "UC_ava" },
+    });
+    const runId = await host.researchNow();
+    await host.idle();
+    const result = readResult(runs, runId);
+    expect(result.reports.find((r) => r.personId === ben.id)?.items[0]).toMatchObject({
+      platform: "rss",
+      counts: { views: 10 },
+      evidenceUrl: "fixture:rss",
+    });
+    expect(result.reports.find((r) => r.personId === ava.id)?.items[0]).toMatchObject({
+      platform: "youtube",
+      counts: { views: 900 },
+      evidenceUrl: "fixture:youtube",
+    });
+  });
+
+  it.each(["Body of One", "invented quotation"])(
+    "attaches only a verbatim quote to its supporting item: %s",
+    async (quote) => {
+      const rss = makeAdapter({
+        id: "rss",
+        itemsFor: () => [
+          makeItem({ url: "https://ben.example/one", title: "One", adapterId: "rss" }),
+          makeItem({ url: "https://ben.example/two", title: "Two", adapterId: "rss" }),
+        ],
+      });
+      const hooks = makeHookExtractor();
+      hooks.extract = async () => ({ hook: "A grounded hook", evidenceQuote: quote });
+      const { host, runs, people } = makeHarness({ adapters: [rss], hookExtractor: hooks });
+      watchProfile(host, people, {
+        fullName: "Ben",
+        handleHints: { blogRssHints: ["https://ben.example/feed"] },
+      });
+      const runId = await host.researchNow();
+      await host.idle();
+      const items = readResult(runs, runId).reports[0].items;
+      expect(items.find((item) => item.canonicalUrl.endsWith("/one"))?.evidenceQuote).toBe(
+        quote === "Body of One" ? quote : null,
+      );
+      expect(items.find((item) => item.canonicalUrl.endsWith("/two"))?.evidenceQuote).toBeNull();
+    },
+  );
+
+  it("rejects invented discovery references while retaining supplied source URLs", async () => {
+    const source = "https://ben.example/post";
+    const discoverer: PeopleDiscoverer = {
+      discover: async () => [
+        {
+          name: "Grounded Person",
+          reason: "mentioned",
+          supportingUrls: [source, "https://invented.example/one"],
+          relationshipToBrand: "relevant",
+          source: "co-mention",
+        },
+        {
+          name: "Invented Person",
+          reason: "model recall",
+          supportingUrls: ["https://invented.example/two"],
+          relationshipToBrand: "unknown",
+          source: "co-mention",
+        },
+      ],
+    };
+    const { host, people } = makeHarness({
+      adapters: [],
+      discoverer,
+      searchPublic: async () => [
+        { url: source, title: "Known source", snippet: "mentions a person" },
+      ],
+    });
+    watchProfile(host, people, { fullName: "Ben" });
+    await host.discoverNow();
+    await host.idle();
+    expect(host.listSuggestions().map((s) => ({ name: s.name, urls: s.supportingUrls }))).toEqual([
+      { name: "Grounded Person", urls: [source] },
+    ]);
+  });
+});
+
+describe("Content Research legacy item compatibility", () => {
+  it("keeps legacy evidence readable and retires only an exact matching legacy URL", () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-research-legacy-"));
+    const store = new ContentResearchStore(workspaceDir, now);
+    const one = makeItem({
+      url: "https://same.example/one",
+      title: "One legacy",
+      adapterId: "rss",
+    });
+    const two = makeItem({ url: "https://same.example/two", title: "Two new", adapterId: "rss" });
+    const dir = join(workspaceDir, "content-research", "items");
+    mkdirSync(dir, { recursive: true });
+    const legacy = join(
+      dir,
+      `${Buffer.from(one.canonicalUrl).toString("base64url").slice(0, 16)}.json`,
+    );
+    writeFileSync(legacy, JSON.stringify(one));
+    expect(store.listAllItems().map((item) => item.title)).toEqual(["One legacy"]);
+    store.storeItems([{ canonicalUrl: two.canonicalUrl, payload: JSON.stringify(two) }]);
+    expect(
+      store
+        .listAllItems()
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(["One legacy", "Two new"]);
+    store.storeItems([
+      { canonicalUrl: one.canonicalUrl, payload: JSON.stringify({ ...one, title: "One updated" }) },
+    ]);
+    expect(
+      store
+        .listAllItems()
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(["One updated", "Two new"]);
+    expect(readdirSync(dir)).toHaveLength(2);
+  });
+});
+
+describe("Content Research watch input boundaries", () => {
+  it("rejects malformed handle hints before creating a watch", async () => {
+    const { default: Fastify } = await import("fastify");
+    const { host, people } = makeHarness({ adapters: [] });
+    const profile = people.create({ fullName: "Maya", primaryEmail: "maya@example.com" });
+    const app = Fastify();
+    host.routes(app);
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/content-research/people",
+        payload: { profileId: profile.id, handleHints: { blogRssHints: "not an array" } },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(host.listAllPeople()).toEqual([]);
+    } finally {
+      await app.close();
+    }
   });
 });

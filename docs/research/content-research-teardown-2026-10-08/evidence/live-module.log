@@ -1,0 +1,20 @@
+{
+  "state": "done",
+  "adapters": [
+    {
+      "adapterId": "hn",
+      "state": "available",
+      "outcome": "items_found",
+      "itemsFound": 43,
+      "errorClassifications": []
+    }
+  ],
+  "storedUnique": 43,
+  "reported": 3,
+  "ledgerRows": 3,
+  "correctTopThree": true,
+  "profilePins": 1,
+  "externalOutputs": "unconfigured; no Google call",
+  "interpretation": "stubbed; no model call",
+  "credentialsInEnvironment": []
+}

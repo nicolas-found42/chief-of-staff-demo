@@ -1,0 +1,103 @@
+{
+  "tool": "jev_verify",
+  "model": "typesafe/jev-1.13-20260917",
+  "provider": "openrouter",
+  "auto_accept": 0.8,
+  "subject_at": 0.5,
+  "summary": {
+    "verified": 6,
+    "contradicted": 0,
+    "unsupported": 0,
+    "needs_review": 1
+  },
+  "results": [
+    {
+      "id": "claim0",
+      "claim": "Final local check: 299 test files and 3670 tests passed. Updated narrow suite: 78 tests across five files.",
+      "verdict": "verified",
+      "probabilities": {
+        "says_nothing": 0,
+        "contradicts": 0,
+        "supports": 1
+      },
+      "confidence": 1,
+      "action": "auto",
+      "supporting_evidence": "check-final.log",
+      "same_subject": 0.97
+    },
+    {
+      "id": "claim1",
+      "claim": "The HN suite now passes 12 tests, including a later fetch exception that retains first-page response evidence, items and null checkpoint.",
+      "verdict": "verified",
+      "probabilities": {
+        "says_nothing": 0,
+        "contradicts": 0,
+        "supports": 1
+      },
+      "confidence": 1,
+      "action": "auto",
+      "supporting_evidence": "hn-review-fix.log",
+      "same_subject": 0.96
+    },
+    {
+      "id": "claim2",
+      "claim": "Browser logs record 146 passed in the full suite, three failed in the original controlled recovery run and three passed in the changed recovery run.",
+      "verdict": "verified",
+      "probabilities": {
+        "says_nothing": 0,
+        "supports": 0.92,
+        "contradicts": 0.08
+      },
+      "confidence": 0.88,
+      "action": "auto",
+      "supporting_evidence": "e2e-all.log",
+      "same_subject": 0.93
+    },
+    {
+      "id": "claim3",
+      "claim": "The anonymous common-window HN probe logs record 30 unique before and 43 after, one request each and no credential environment variables. These are one-query measurements.",
+      "verdict": "verified",
+      "probabilities": {
+        "says_nothing": 0,
+        "supports": 0.98,
+        "contradicts": 0.02
+      },
+      "confidence": 0.97,
+      "action": "auto",
+      "supporting_evidence": null,
+      "same_subject": 0.96
+    },
+    {
+      "id": "claim4",
+      "claim": "Updated Docker build log records app and relay built; isolated health JSON records ok:true.",
+      "verdict": "verified",
+      "probabilities": {
+        "says_nothing": 0,
+        "contradicts": 0,
+        "supports": 1
+      },
+      "confidence": 1,
+      "action": "auto",
+      "supporting_evidence": "docker-build-final.log",
+      "same_subject": 0.96
+    },
+    {
+      "id": "claim5",
+      "claim": "Separate stronger Standards and Spec reasoning reviews found no standards violations or spec gaps; the HN diagnostic finding was fixed and re-reviewed without a remaining concrete issue. Jev final updated gate remains escalate, with five verified, zero contradicted and zero unsupported claims.",
+      "verdict": "verified",
+      "probabilities": {
+        "says_nothing": 0.02,
+        "contradicts": 0.48,
+        "supports": 0.5
+      },
+      "confidence": 0.25,
+      "action": "review",
+      "supporting_evidence": "stronger-review.md",
+      "same_subject": 0.82
+    }
+  ],
+  "usage": {
+    "input_tokens": 14472,
+    "output_tokens": 1255
+  }
+}

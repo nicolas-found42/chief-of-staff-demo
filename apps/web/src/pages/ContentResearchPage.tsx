@@ -77,6 +77,7 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [platform, setPlatform] = useState<PlatformFilter>("all");
   const [showGated, setShowGated] = useState(false);
@@ -106,14 +107,45 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
       setSuggestions(sug);
       setProfiles(prf);
       setError(null);
+      return true;
     } catch (err) {
       setError(errorMessage(err));
+      return false;
     }
   }, [client]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const hasActiveRuns =
+    Boolean(activeRunId) ||
+    Boolean(index?.runs.some((run) => run.status === "pending" || run.status === "running"));
+
+  useEffect(() => {
+    if (
+      activeRunId &&
+      index?.runs.some(
+        (run) => run.runId === activeRunId && run.status !== "pending" && run.status !== "running",
+      )
+    )
+      setActiveRunId(null);
+  }, [activeRunId, index]);
+
+  useEffect(() => {
+    if (!hasActiveRuns) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      await refresh();
+      if (!stopped) timer = setTimeout(() => void poll(), 2000);
+    };
+    timer = setTimeout(() => void poll(), 2000);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [hasActiveRuns, refresh]);
 
   // Keep selected person honest when the index changes.
   useEffect(() => {
@@ -126,23 +158,30 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
   const currentPerson =
     index?.byPerson.find((entry) => entry.personId === selectedPersonId) ?? null;
 
-  const gatedRuns = (index?.runs ?? []).filter((run) => run.status !== "done");
-
   /* Archived watches are gone from this surface; pausing or resuming them is
      not offered (#134 review): an archived watch's configuration is already
      resolved by its removal. */
   const watchRows = (allPeople ?? []).filter((person) => person.archivedAt === null);
 
-  const act = async (action: () => Promise<unknown>, message: string) => {
+  const act = async (action: () => Promise<unknown>, message: string): Promise<boolean> => {
+    if (busy) return false;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      await action();
-      await refresh();
-      setNotice(message);
+      const result = await action();
+      if (
+        result &&
+        typeof result === "object" &&
+        "runId" in result &&
+        typeof result.runId === "string"
+      )
+        setActiveRunId(result.runId);
+      if (await refresh()) setNotice(message);
+      return true;
     } catch (err) {
       setError(errorMessage(err));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -150,6 +189,7 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
 
   const handleAddPerson = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     const profileId = newProfileId.trim();
     if (!profileId) {
       setAddError("Select a confirmed Person Profile — or create one under Person Profiles first.");
@@ -173,14 +213,16 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
     };
     const hasHint = site || youtubeChannelId || hnUsername;
     const profile = profiles?.find((candidate) => candidate.id === profileId);
-    await act(
+    const added = await act(
       () => client.addContentResearchPerson(profileId, hasHint ? handleHints : undefined),
       `Watching ${profile?.fullName ?? profileId}.`,
     );
-    setNewProfileId("");
-    setNewSite("");
-    setNewYoutube("");
-    setNewHn("");
+    if (added) {
+      setNewProfileId("");
+      setNewSite("");
+      setNewYoutube("");
+      setNewHn("");
+    }
   };
 
   const toggleReport = (runId: string) => {
@@ -210,6 +252,11 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         <p role="status" className={error ? "field-error" : "muted"}>
           {error ?? "Loading Content Research…"}
         </p>
+        {error && (
+          <button type="button" onClick={() => void refresh()}>
+            Retry loading
+          </button>
+        )}
       </section>
     );
   }
@@ -257,6 +304,23 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
           </div>
         )}
       </div>
+
+      {error && (
+        <button type="button" onClick={() => void refresh()}>
+          Retry loading
+        </button>
+      )}
+      {hasActiveRuns && (
+        <p role="status">
+          Research is running. Results update automatically.
+          {activeRunId && (
+            <>
+              {" "}
+              <Link to={`/runs/${activeRunId}`}>Open Run</Link>
+            </>
+          )}
+        </p>
+      )}
 
       {/* Controls */}
       <div className="toolbar research-toolbar">
@@ -676,11 +740,11 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
         </>
       )}
 
-      {/* Collapsed gated/skipped Runs */}
+      {/* Runs remain reachable even when a completed collection was partial. */}
       <section className="card" aria-labelledby="gated-heading">
-        <h2 id="gated-heading">Gated / skipped Runs</h2>
-        {gatedRuns.length === 0 ? (
-          <p className="muted">No gated or skipped runs.</p>
+        <h2 id="gated-heading">Research Runs</h2>
+        {index.runs.length === 0 ? (
+          <p className="muted">No research runs yet.</p>
         ) : (
           <>
             <button
@@ -688,12 +752,12 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
               onClick={() => setShowGated((value) => !value)}
               aria-expanded={showGated}
             >
-              {showGated ? "Hide" : "Show"} {gatedRuns.length} run
-              {gatedRuns.length === 1 ? "" : "s"}
+              {showGated ? "Hide" : "Show"} {index.runs.length} run
+              {index.runs.length === 1 ? "" : "s"}
             </button>
             {showGated && (
               <ul className="research-gated-list">
-                {gatedRuns.map((run) => (
+                {index.runs.map((run) => (
                   <li key={run.runId} className="research-gated-row">
                     <Link to={`/runs/${run.runId}`}>{run.runId.slice(0, 8)}</Link>{" "}
                     <span className="status-badge status-skipped">{run.status}</span>{" "}

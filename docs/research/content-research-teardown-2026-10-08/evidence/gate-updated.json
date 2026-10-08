@@ -1,0 +1,660 @@
+{
+  "tool": "jev_gate",
+  "model": "typesafe/jev-1.13-20260917",
+  "provider": "openrouter",
+  "truncated": false,
+  "action": "escalate",
+  "reason_codes": [
+    "confidence_below_review",
+    "safe_to_apply_below_review",
+    "review_escalated",
+    "claim_confidence_low",
+    "claim_confidence_below_auto_accept"
+  ],
+  "review": {
+    "mode": "per-file",
+    "action": "escalate",
+    "composite": 0.7405,
+    "safe_to_apply": 0.42,
+    "reason_codes": ["confidence_below_review", "safe_to_apply_below_review"],
+    "limiting": [
+      {
+        "file": "apps/server/src/modules/content-research/adapters/hn.ts",
+        "rubrics": ["test_gap"]
+      },
+      {
+        "file": "apps/server/src/modules/content-research/host.ts",
+        "rubrics": ["blast_radius"]
+      },
+      {
+        "file": "apps/server/src/modules/content-research/module.ts",
+        "rubrics": ["test_gap"]
+      },
+      {
+        "file": "apps/server/src/modules/content-research/store.ts",
+        "rubrics": ["blast_radius"]
+      },
+      {
+        "file": "apps/web/src/pages/ContentResearchPage.tsx",
+        "rubrics": ["test_gap"]
+      },
+      {
+        "file": "tests/src/modules/content-research.test.ts",
+        "rubrics": ["blast_radius"]
+      },
+      {
+        "file": "tests/src/unit/content-ux-regressions.test.tsx",
+        "rubrics": ["blast_radius"]
+      },
+      {
+        "file": "tests/src/modules/content-research-hn.test.ts",
+        "rubrics": ["blast_radius"]
+      },
+      {
+        "file": "tests/e2e/content-research-recovery.spec.ts",
+        "rubrics": ["blast_radius"]
+      }
+    ],
+    "weights": {
+      "correctness": 0.4,
+      "spec_match": 0.3,
+      "test_gap": 0.15,
+      "blast_radius": 0.15
+    },
+    "thresholds": {
+      "auto_accept": 0.8,
+      "review_at": 0.5,
+      "composite_floor": 0.7
+    },
+    "files": [
+      {
+        "path": "apps/server/src/modules/content-research/adapters/hn.ts",
+        "safe_to_apply": 0.54,
+        "scores": {
+          "correctness": {
+            "score": 1.76,
+            "confidence": 0.65,
+            "probabilities": {
+              "0": 0.04,
+              "1": 0.16,
+              "2": 0.8
+            }
+          },
+          "spec_match": {
+            "score": 1.82,
+            "confidence": 0.72,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.15,
+              "2": 0.83
+            }
+          },
+          "test_gap": {
+            "score": 0.56,
+            "confidence": 0.15,
+            "probabilities": {
+              "0": 0.53,
+              "1": 0.38,
+              "2": 0.09
+            }
+          },
+          "blast_radius": {
+            "score": 1.68,
+            "confidence": 0.52,
+            "probabilities": {
+              "0": 0.1,
+              "1": 0.12,
+              "2": 0.78
+            }
+          }
+        },
+        "weights": {
+          "correctness": 0.4,
+          "spec_match": 0.3,
+          "test_gap": 0.15,
+          "blast_radius": 0.15
+        },
+        "thresholds": {
+          "auto_accept": 0.8,
+          "review_at": 0.5,
+          "composite_floor": 0.7
+        },
+        "action": "escalate",
+        "composite": 0.757,
+        "reason_codes": ["confidence_below_review"],
+        "limiting_rubrics": ["test_gap"]
+      },
+      {
+        "path": "apps/server/src/modules/content-research/host.ts",
+        "safe_to_apply": 0.66,
+        "scores": {
+          "correctness": {
+            "score": 1.77,
+            "confidence": 0.66,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.18,
+              "2": 0.8
+            }
+          },
+          "spec_match": {
+            "score": 1.61,
+            "confidence": 0.42,
+            "probabilities": {
+              "0": 0.05,
+              "1": 0.28,
+              "2": 0.67
+            }
+          },
+          "test_gap": {
+            "score": 0.58,
+            "confidence": 0.12,
+            "probabilities": {
+              "0": 0.53,
+              "1": 0.36,
+              "2": 0.11
+            }
+          },
+          "blast_radius": {
+            "score": 0.68,
+            "confidence": 0,
+            "probabilities": {
+              "0": 0.5599999999999999,
+              "1": 0.19,
+              "2": 0.25
+            }
+          }
+        },
+        "weights": {
+          "correctness": 0.4,
+          "spec_match": 0.3,
+          "test_gap": 0.15,
+          "blast_radius": 0.15
+        },
+        "thresholds": {
+          "auto_accept": 0.8,
+          "review_at": 0.5,
+          "composite_floor": 0.7
+        },
+        "action": "escalate",
+        "composite": 0.801,
+        "reason_codes": ["confidence_below_review"],
+        "limiting_rubrics": ["blast_radius"]
+      },
+      {
+        "path": "apps/server/src/modules/content-research/module.ts",
+        "safe_to_apply": 0.42,
+        "scores": {
+          "correctness": {
+            "score": 1.59,
+            "confidence": 0.38,
+            "probabilities": {
+              "0": 0.08,
+              "1": 0.25,
+              "2": 0.67
+            }
+          },
+          "spec_match": {
+            "score": 1.56,
+            "confidence": 0.33,
+            "probabilities": {
+              "0": 0.06,
+              "1": 0.32,
+              "2": 0.62
+            }
+          },
+          "test_gap": {
+            "score": 0.72,
+            "confidence": 0.16,
+            "probabilities": {
+              "0": 0.42,
+              "1": 0.44,
+              "2": 0.14
+            }
+          },
+          "blast_radius": {
+            "score": 1.75,
+            "confidence": 0.62,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.19,
+              "2": 0.78
+            }
+          }
+        },
+        "weights": {
+          "correctness": 0.4,
+          "spec_match": 0.3,
+          "test_gap": 0.15,
+          "blast_radius": 0.15
+        },
+        "thresholds": {
+          "auto_accept": 0.8,
+          "review_at": 0.5,
+          "composite_floor": 0.7
+        },
+        "action": "escalate",
+        "composite": 0.6667500000000001,
+        "reason_codes": ["confidence_below_review", "safe_to_apply_below_review"],
+        "limiting_rubrics": ["test_gap"]
+      },
+      {
+        "path": "apps/server/src/modules/content-research/store.ts",
+        "safe_to_apply": 0.6,
+        "scores": {
+          "correctness": {
+            "score": 1.82,
+            "confidence": 0.73,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.12,
+              "2": 0.85
+            }
+          },
+          "spec_match": {
+            "score": 1.54,
+            "confidence": 0.31,
+            "probabilities": {
+              "0": 0.11,
+              "1": 0.24,
+              "2": 0.65
+            }
+          },
+          "test_gap": {
+            "score": 0.46,
+            "confidence": 0.31,
+            "probabilities": {
+              "0": 0.64,
+              "1": 0.26,
+              "2": 0.1
+            }
+          },
+          "blast_radius": {
+            "score": 1.48,
+            "confidence": 0.21,
+            "probabilities": {
+              "0": 0.19,
+              "1": 0.14,
+              "2": 0.67
+            }
+          }
+        },
+        "weights": {
+          "correctness": 0.4,
+          "spec_match": 0.3,
+          "test_gap": 0.15,
+          "blast_radius": 0.15
+        },
+        "thresholds": {
+          "auto_accept": 0.8,
+          "review_at": 0.5,
+          "composite_floor": 0.7
+        },
+        "action": "escalate",
+        "composite": 0.7494999999999999,
+        "reason_codes": ["confidence_below_review"],
+        "limiting_rubrics": ["blast_radius"]
+      },
+      {
+        "path": "apps/web/src/pages/ContentResearchPage.tsx",
+        "safe_to_apply": 0.56,
+        "scores": {
+          "correctness": {
+            "score": 1.77,
+            "confidence": 0.65,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.17,
+              "2": 0.8
+            }
+          },
+          "spec_match": {
+            "score": 1.63,
+            "confidence": 0.44,
+            "probabilities": {
+              "0": 0.06,
+              "1": 0.26,
+              "2": 0.6799999999999999
+            }
+          },
+          "test_gap": {
+            "score": 0.79,
+            "confidence": 0.28,
+            "probabilities": {
+              "0": 0.35,
+              "1": 0.51,
+              "2": 0.14
+            }
+          },
+          "blast_radius": {
+            "score": 1.85,
+            "confidence": 0.77,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.09,
+              "2": 0.88
+            }
+          }
+        },
+        "weights": {
+          "correctness": 0.4,
+          "spec_match": 0.3,
+          "test_gap": 0.15,
+          "blast_radius": 0.15
+        },
+        "thresholds": {
+          "auto_accept": 0.8,
+          "review_at": 0.5,
+          "composite_floor": 0.7
+        },
+        "action": "escalate",
+        "composite": 0.7005,
+        "reason_codes": ["confidence_below_review"],
+        "limiting_rubrics": ["test_gap"]
+      },
+      {
+        "path": "tests/src/modules/content-research.test.ts",
+        "safe_to_apply": 0.57,
+        "scores": {
+          "correctness": {
+            "score": 1.7,
+            "confidence": 0.56,
+            "probabilities": {
+              "0": 0.07,
+              "1": 0.16,
+              "2": 0.77
+            }
+          },
+          "spec_match": {
+            "score": 1.49,
+            "confidence": 0.24,
+            "probabilities": {
+              "0": 0.11,
+              "1": 0.28,
+              "2": 0.61
+            }
+          },
+          "test_gap": {
+            "score": 0.51,
+            "confidence": 0.23,
+            "probabilities": {
+              "0": 0.61,
+              "1": 0.26,
+              "2": 0.13
+            }
+          },
+          "blast_radius": {
+            "score": 0.93,
+            "confidence": 0,
+            "probabilities": {
+              "0": 0.36,
+              "1": 0.34,
+              "2": 0.3
+            }
+          }
+        },
+        "weights": {
+          "correctness": 0.4,
+          "spec_match": 0.3,
+          "test_gap": 0.15,
+          "blast_radius": 0.15
+        },
+        "thresholds": {
+          "auto_accept": 0.8,
+          "review_at": 0.5,
+          "composite_floor": 0.7
+        },
+        "action": "escalate",
+        "composite": 0.7555000000000001,
+        "reason_codes": ["confidence_below_review"],
+        "limiting_rubrics": ["blast_radius"]
+      },
+      {
+        "path": "tests/src/unit/content-ux-regressions.test.tsx",
+        "safe_to_apply": 0.6,
+        "scores": {
+          "correctness": {
+            "score": 1.79,
+            "confidence": 0.68,
+            "probabilities": {
+              "0": 0.04,
+              "1": 0.13,
+              "2": 0.83
+            }
+          },
+          "spec_match": {
+            "score": 1.67,
+            "confidence": 0.51,
+            "probabilities": {
+              "0": 0.06,
+              "1": 0.2,
+              "2": 0.74
+            }
+          },
+          "test_gap": {
+            "score": 0.62,
+            "confidence": 0.07,
+            "probabilities": {
+              "0": 0.52,
+              "1": 0.35,
+              "2": 0.13
+            }
+          },
+          "blast_radius": {
+            "score": 0.86,
+            "confidence": 0,
+            "probabilities": {
+              "0": 0.4,
+              "1": 0.33,
+              "2": 0.27
+            }
+          }
+        },
+        "weights": {
+          "correctness": 0.4,
+          "spec_match": 0.3,
+          "test_gap": 0.15,
+          "blast_radius": 0.15
+        },
+        "thresholds": {
+          "auto_accept": 0.8,
+          "review_at": 0.5,
+          "composite_floor": 0.7
+        },
+        "action": "escalate",
+        "composite": 0.7975000000000001,
+        "reason_codes": ["confidence_below_review"],
+        "limiting_rubrics": ["blast_radius"]
+      },
+      {
+        "path": "tests/src/modules/content-research-hn.test.ts",
+        "safe_to_apply": 0.55,
+        "scores": {
+          "correctness": {
+            "score": 1.68,
+            "confidence": 0.52,
+            "probabilities": {
+              "0": 0.08,
+              "1": 0.16,
+              "2": 0.76
+            }
+          },
+          "spec_match": {
+            "score": 1.45,
+            "confidence": 0.18,
+            "probabilities": {
+              "0": 0.13,
+              "1": 0.29,
+              "2": 0.58
+            }
+          },
+          "test_gap": {
+            "score": 0.54,
+            "confidence": 0.19,
+            "probabilities": {
+              "0": 0.6,
+              "1": 0.25,
+              "2": 0.15
+            }
+          },
+          "blast_radius": {
+            "score": 0.96,
+            "confidence": 0,
+            "probabilities": {
+              "0": 0.42,
+              "1": 0.2,
+              "2": 0.38
+            }
+          }
+        },
+        "weights": {
+          "correctness": 0.4,
+          "spec_match": 0.3,
+          "test_gap": 0.15,
+          "blast_radius": 0.15
+        },
+        "thresholds": {
+          "auto_accept": 0.8,
+          "review_at": 0.5,
+          "composite_floor": 0.7
+        },
+        "action": "escalate",
+        "composite": 0.741,
+        "reason_codes": ["confidence_below_review"],
+        "limiting_rubrics": ["blast_radius"]
+      },
+      {
+        "path": "tests/e2e/content-research-recovery.spec.ts",
+        "safe_to_apply": 0.51,
+        "scores": {
+          "correctness": {
+            "score": 1.6,
+            "confidence": 0.4,
+            "probabilities": {
+              "0": 0.1,
+              "1": 0.19,
+              "2": 0.71
+            }
+          },
+          "spec_match": {
+            "score": 1.43,
+            "confidence": 0.15,
+            "probabilities": {
+              "0": 0.15,
+              "1": 0.26,
+              "2": 0.59
+            }
+          },
+          "test_gap": {
+            "score": 0.57,
+            "confidence": 0.14,
+            "probabilities": {
+              "0": 0.5700000000000001,
+              "1": 0.3,
+              "2": 0.13
+            }
+          },
+          "blast_radius": {
+            "score": 1.28,
+            "confidence": 0,
+            "probabilities": {
+              "0": 0.28,
+              "1": 0.16,
+              "2": 0.56
+            }
+          }
+        },
+        "weights": {
+          "correctness": 0.4,
+          "spec_match": 0.3,
+          "test_gap": 0.15,
+          "blast_radius": 0.15
+        },
+        "thresholds": {
+          "auto_accept": 0.8,
+          "review_at": 0.5,
+          "composite_floor": 0.7
+        },
+        "action": "escalate",
+        "composite": 0.6957500000000001,
+        "reason_codes": ["confidence_below_review"],
+        "limiting_rubrics": ["blast_radius"]
+      }
+    ]
+  },
+  "verification": {
+    "action": "escalate",
+    "summary": {
+      "verified": 5,
+      "contradicted": 0,
+      "unsupported": 0,
+      "needs_review": 2,
+      "invalid_response": 0
+    },
+    "thresholds": {
+      "auto_accept": 0.8,
+      "review_at": 0.5
+    },
+    "results": [
+      {
+        "claim": "The updated local check passed 299 test files and 3670 tests, with formatting/typechecking/lint/knip/workflow checks.",
+        "verdict": "verified",
+        "confidence": 0.99,
+        "probabilities": {
+          "verified": 1,
+          "contradicted": 0,
+          "unsupported": 0
+        },
+        "action": "auto"
+      },
+      {
+        "claim": "The updated narrow suite passed 78 tests across five files; HN regression suite passed 12 tests including partial-response diagnostic evidence and a later fetch exception.",
+        "verdict": "verified",
+        "confidence": 0.94,
+        "probabilities": {
+          "verified": 0.96,
+          "contradicted": 0.01,
+          "unsupported": 0.03
+        },
+        "action": "auto"
+      },
+      {
+        "claim": "The changed web bundle passed 146 browser tests before the final server-only HN diagnostic amendment; those browser results are after-only full-suite evidence, while three controlled async recovery cases also have a failing original UI baseline.",
+        "verdict": "verified",
+        "confidence": 0.29,
+        "probabilities": {
+          "verified": 0.52,
+          "contradicted": 0.31,
+          "unsupported": 0.17
+        },
+        "action": "escalate"
+      },
+      {
+        "claim": "The updated app and relay Docker images built; the isolated current app health response is ok:true.",
+        "verdict": "verified",
+        "confidence": 0.82,
+        "probabilities": {
+          "verified": 0.88,
+          "contradicted": 0.02,
+          "unsupported": 0.1
+        },
+        "action": "auto"
+      },
+      {
+        "claim": "One anonymous HN query in the common 90-day window returned 30 unique items before and 43 after, one request each, no credential variables; this is not an exhaustive collection claim.",
+        "verdict": "verified",
+        "confidence": 0.62,
+        "probabilities": {
+          "verified": 0.75,
+          "contradicted": 0.08,
+          "unsupported": 0.17
+        },
+        "action": "review"
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 36153,
+    "output_tokens": 1022
+  }
+}

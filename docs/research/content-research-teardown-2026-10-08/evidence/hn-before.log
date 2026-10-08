@@ -1,0 +1,161 @@
+
+ RUN  v5.0.3 /Users/Nicolas/Documents/github/chief-of-staff-demo
+
+ × tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > collects every advertised page within its bound and deduplicates repeated hits 2ms
+   → expected "vi.fn()" to be called 2 times, but got 1 times
+ × tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > bounds both ends of the requested interval in the request and returned items 1ms
+   → expected 'created_at_i>1790812800' to contain 'created_at_i>=1790812800'
+ × tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {} 2ms
+   → expected { kind: 'completed', …(4) } to match object { kind: 'failed', …(2) }
+(14 matching properties omitted from actual)
+ × tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {"hits":"changed"} 0ms
+   → expected { kind: 'completed', …(4) } to match object { kind: 'failed', …(2) }
+(14 matching properties omitted from actual)
+ × tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {"hits":[null]} 0ms
+   → Cannot read properties of null (reading 'created_at')
+ × tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {"hits":[{"title":"missing id"}]} 0ms
+   → expected { kind: 'completed', …(4) } to match object { kind: 'failed', …(2) }
+(14 matching properties omitted from actual)
+ × tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > preserves earlier pages and leaves no checkpoint after a later page rate limit 1ms
+   → expected { kind: 'completed', …(4) } to match object { kind: 'failed', …(3) }
+(13 matching properties omitted from actual)
+ × tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > reports truncation and preserves collected items when the page budget is exhausted 0ms
+   → expected "vi.fn()" to be called 10 times, but got 1 times
+ ✓ tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > keeps a valid empty page a successful empty collection 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > collects every advertised page within its bound and deduplicates repeated hits
+AssertionError: expected "vi.fn()" to be called 2 times, but got 1 times
+ ❯ tests/src/modules/content-research-hn.test.ts:25:19
+     23|     });
+     24|     const result = await new HnAlgoliaSourceAdapter(fetch, now).collec…
+     25|     expect(fetch).toHaveBeenCalledTimes(2);
+       |                   ^
+     26|     expect(result.items.map((item) => item.externalId)).toEqual(["hn:1…
+     27|     expect(result.kind).toBe("completed");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > bounds both ends of the requested interval in the request and returned items
+AssertionError: expected 'created_at_i>1790812800' to contain 'created_at_i>=1790812800'
+
+Expected: "created_at_i>=1790812800"
+Received: "created_at_i>1790812800"
+
+ ❯ tests/src/modules/content-research-hn.test.ts:34:21
+     32|     const result = await new HnAlgoliaSourceAdapter(fetch, now).collec…
+     33|     const filters = new URL(fetch.mock.calls[0]![0]).searchParams.get(…
+     34|     expect(filters).toContain(`created_at_i>=${Date.parse(request.sinc…
+       |                     ^
+     35|     expect(filters).toContain(`created_at_i<=${Date.parse(request.unti…
+     36|     expect(result.items.map((item) => item.externalId)).toEqual(["hn:i…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {}
+ FAIL  tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {"hits":"changed"}
+ FAIL  tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {"hits":[{"title":"missing id"}]}
+AssertionError: expected { kind: 'completed', …(4) } to match object { kind: 'failed', …(2) }
+(14 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "checkpoint": null,
+-   "kind": "failed",
+-   "outcome": "response_shape_change",
++   "checkpoint": "2026-10-07T00:00:00.000Z",
++   "kind": "completed",
++   "outcome": "legitimate_empty",
+  }
+
+ ❯ tests/src/modules/content-research-hn.test.ts:41:20
+     39|   it.each([{}, { hits: "changed" }, { hits: [null] }, { hits: [{ title…
+     40|     const result = await new HnAlgoliaSourceAdapter(async () => respon…
+     41|     expect(result).toMatchObject({ kind: "failed", outcome: "response_…
+       |                    ^
+     42|   });
+     43|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > does not call malformed successful responses legitimate empty: {"hits":[null]}
+TypeError: Cannot read properties of null (reading 'created_at')
+ ❯ apps/server/src/modules/content-research/adapters/hn.ts:163:31
+    161|     }
+    162|     const hits = (Array.isArray(parsed.hits) ? parsed.hits : []).filte…
+    163|       const publishedMs = hit.created_at ? Date.parse(hit.created_at) …
+       |                               ^
+    164|       return (
+    165|         typeof hit.objectID === "string" &&
+ ❯ HnAlgoliaSourceAdapter.collect apps/server/src/modules/content-research/adapters/hn.ts:162:66
+ ❯ tests/src/modules/content-research-hn.test.ts:40:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > preserves earlier pages and leaves no checkpoint after a later page rate limit
+AssertionError: expected { kind: 'completed', …(4) } to match object { kind: 'failed', …(3) }
+(13 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "checkpoint": null,
++   "checkpoint": "2026-10-07T00:00:00.000Z",
+    "diagnostic": {
+-     "retryAfterMs": 3000,
++     "adapterVersion": "hn-algolia-v1",
++     "affectedCapabilities": [],
++     "causeChain": [],
++     "classification": "items_found",
++     "contentType": "application/json",
++     "finishedAt": "2026-10-08T12:00:00.000Z",
++     "parserStage": "adapter_boundary",
++     "responseHash": "7d11d7aa6d9f2c817cf3f0f723de49807275cc748921896fab9656ac61062fe2",
++     "retries": 0,
++     "route": "https://hn.algolia.com/api/v1/search_by_date?tags=author_test",
++     "startedAt": "2026-10-08T12:00:00.000Z",
++     "status": 200,
+    },
+-   "kind": "failed",
+-   "outcome": "rate_limit",
++   "kind": "completed",
++   "outcome": "items_found",
+  }
+
+ ❯ tests/src/modules/content-research-hn.test.ts:49:20
+     47|       : { ...response({}, 429), retryAfter: "3" });
+     48|     const result = await new HnAlgoliaSourceAdapter(fetch, now).collec…
+     49|     expect(result).toMatchObject({ kind: "failed", outcome: "rate_limi…
+       |                    ^
+     50|     expect(result.items.map((item) => item.externalId)).toEqual(["hn:1…
+     51|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  tests/src/modules/content-research-hn.test.ts > Content Research HN coverage > reports truncation and preserves collected items when the page budget is exhausted
+AssertionError: expected "vi.fn()" to be called 10 times, but got 1 times
+ ❯ tests/src/modules/content-research-hn.test.ts:59:19
+     57|     });
+     58|     const result = await new HnAlgoliaSourceAdapter(fetch, now).collec…
+     59|     expect(fetch).toHaveBeenCalledTimes(10);
+       |                   ^
+     60|     expect(result).toMatchObject({ kind: "failed", outcome: "unsupport…
+     61|     expect(result.items).toHaveLength(10);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 1 passed (9)
+   Start at  11:19:30
+   Duration  197ms (transform 50%, import 44%, tests 5%, worker 1%)
+
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /Users/Nicolas/Documents/github/chief-of-
+  │ staff-demo/tests
+

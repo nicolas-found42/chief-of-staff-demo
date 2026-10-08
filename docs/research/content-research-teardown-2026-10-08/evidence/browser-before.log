@@ -1,0 +1,122 @@
+
+Running 3 tests using 1 worker
+
+(node:88729) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Run Now results without reloading (7.8s)
+(node:88835) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Backfill 7d results without reloading (6.8s)
+(node:88850) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Discover Now results without reloading (6.8s)
+
+
+  1) [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Run Now results without reloading 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('heading', { name: 'Completed research person', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('heading', { name: 'Completed research person', exact: true }) with timeout 5000ms
+      - waiting for getByRole('heading', { name: 'Completed research person', exact: true })
+
+
+      27 |     await page.goto("/content-research");
+      28 |     await page.getByRole("button", { name: action.label, exact: true }).click();
+    > 29 |     await expect(page.getByRole("heading", { name: "Completed research person", exact: true })).toBeVisible({ timeout: 5000 });
+         |                                                                                                 ^
+      30 |     await expect(page.getByText("Research is running.", { exact: false })).toHaveCount(0);
+      31 |     await page.getByRole("button", { name: "Show 1 run", exact: true }).click();
+      32 |     await expect(page.locator(".research-gated-row")).toContainText("done");
+        at /Users/Nicolas/Documents/github/chief-of-staff-demo/tests/e2e/content-research-recovery.spec.ts:29:97
+
+    Error Context: test-results/content-research-recovery--2ca63-w-results-without-reloading-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/content-research-recovery--2ca63-w-results-without-reloading-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/content-research-recovery--2ca63-w-results-without-reloading-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Backfill 7d results without reloading 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('heading', { name: 'Completed research person', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('heading', { name: 'Completed research person', exact: true }) with timeout 5000ms
+      - waiting for getByRole('heading', { name: 'Completed research person', exact: true })
+
+
+      27 |     await page.goto("/content-research");
+      28 |     await page.getByRole("button", { name: action.label, exact: true }).click();
+    > 29 |     await expect(page.getByRole("heading", { name: "Completed research person", exact: true })).toBeVisible({ timeout: 5000 });
+         |                                                                                                 ^
+      30 |     await expect(page.getByText("Research is running.", { exact: false })).toHaveCount(0);
+      31 |     await page.getByRole("button", { name: "Show 1 run", exact: true }).click();
+      32 |     await expect(page.locator(".research-gated-row")).toContainText("done");
+        at /Users/Nicolas/Documents/github/chief-of-staff-demo/tests/e2e/content-research-recovery.spec.ts:29:97
+
+    Error Context: test-results/content-research-recovery--68e01-d-results-without-reloading-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/content-research-recovery--68e01-d-results-without-reloading-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/content-research-recovery--68e01-d-results-without-reloading-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Discover Now results without reloading 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('heading', { name: 'Completed research person', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('heading', { name: 'Completed research person', exact: true }) with timeout 5000ms
+      - waiting for getByRole('heading', { name: 'Completed research person', exact: true })
+
+
+      27 |     await page.goto("/content-research");
+      28 |     await page.getByRole("button", { name: action.label, exact: true }).click();
+    > 29 |     await expect(page.getByRole("heading", { name: "Completed research person", exact: true })).toBeVisible({ timeout: 5000 });
+         |                                                                                                 ^
+      30 |     await expect(page.getByText("Research is running.", { exact: false })).toHaveCount(0);
+      31 |     await page.getByRole("button", { name: "Show 1 run", exact: true }).click();
+      32 |     await expect(page.locator(".research-gated-row")).toContainText("done");
+        at /Users/Nicolas/Documents/github/chief-of-staff-demo/tests/e2e/content-research-recovery.spec.ts:29:97
+
+    Error Context: test-results/content-research-recovery--246e5-w-results-without-reloading-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/content-research-recovery--246e5-w-results-without-reloading-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/content-research-recovery--246e5-w-results-without-reloading-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Run Now results without reloading 
+    [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Backfill 7d results without reloading 
+    [chromium] › e2e/content-research-recovery.spec.ts:9:3 › Content Research updates Discover Now results without reloading 
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /Users/Nicolas/Documents/github/chief-of-
+  │ staff-demo/tests
+

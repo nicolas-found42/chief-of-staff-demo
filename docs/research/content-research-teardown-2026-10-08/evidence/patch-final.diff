@@ -1,0 +1,1330 @@
+diff --git a/apps/server/src/modules/content-research/adapters/hn.ts b/apps/server/src/modules/content-research/adapters/hn.ts
+index 24c8dd0b..f2e164c1 100644
+--- a/apps/server/src/modules/content-research/adapters/hn.ts
++++ b/apps/server/src/modules/content-research/adapters/hn.ts
+@@ -1,3 +1,4 @@
++import { z } from "zod/v3";
+ import type {
+   AdapterDiagnostic,
+   SourceAdapterCanaryTarget,
+@@ -17,17 +18,24 @@ import {
+   type PublicHttpFetch,
+ } from "../../../source-adapters/http.js";
+ 
+-interface AlgoliaHit {
+-  objectID?: string;
+-  title?: string;
+-  story_title?: string;
+-  comment_text?: string;
+-  story_text?: string;
+-  url?: string;
+-  author?: string;
+-  points?: number;
+-  created_at?: string;
+-}
++const AlgoliaPageSchema = z.object({
++  hits: z.array(
++    z.object({
++      objectID: z.string().min(1),
++      title: z.string().nullable().optional(),
++      story_title: z.string().nullable().optional(),
++      comment_text: z.string().nullable().optional(),
++      story_text: z.string().nullable().optional(),
++      author: z.string().nullable().optional(),
++      points: z.number().finite().nullable().optional(),
++      created_at: z.string().nullable().optional(),
++    }),
++  ),
++  nbPages: z.number().int().nonnegative().optional(),
++  nbHits: z.number().int().nonnegative().optional(),
++  page: z.number().int().nonnegative().optional(),
++});
++type AlgoliaHit = z.infer<typeof AlgoliaPageSchema>["hits"][number];
+ 
+ type FailedOutcome = Exclude<
+   SourceDiagnosticClassification,
+@@ -74,7 +82,7 @@ function failed(
+ export class HnAlgoliaSourceAdapter implements SourceAdapter {
+   readonly id = "hn" as const;
+   readonly state = "available" as const;
+-  readonly version = "hn-algolia-v1";
++  readonly version = "hn-algolia-v2";
+   readonly backfillWindowsDays = SOURCE_BACKFILL_WINDOWS_DAYS;
+   readonly canaryTargets: readonly SourceAdapterCanaryTarget[] = [
+     {
+@@ -101,75 +109,123 @@ export class HnAlgoliaSourceAdapter implements SourceAdapter {
+     const startedAt = this.now().toISOString();
+     const route = request.target.url;
+     const url = new URL(route);
+-    url.searchParams.set("hitsPerPage", "30");
++    // Algolia exposes up to 1,000 hits per query. Bound work to ten pages and
++    // report any provider or local truncation without advancing the checkpoint.
++    const pageSize = 100;
++    const maxPages = 10;
++    url.searchParams.set("hitsPerPage", String(pageSize));
+     const sinceMs = Date.parse(request.since);
+-    if (Number.isFinite(sinceMs)) {
+-      const existing = url.searchParams.get("numericFilters");
+-      const filter = `created_at_i>${Math.floor(sinceMs / 1000)}`;
+-      url.searchParams.set("numericFilters", existing ? `${existing},${filter}` : filter);
+-    }
++    const untilMs = Date.parse(request.until);
++    const filters = [url.searchParams.get("numericFilters")];
++    if (Number.isFinite(sinceMs)) filters.push(`created_at_i>=${Math.floor(sinceMs / 1000)}`);
++    if (Number.isFinite(untilMs)) filters.push(`created_at_i<=${Math.floor(untilMs / 1000)}`);
++    url.searchParams.set("numericFilters", filters.filter(Boolean).join(","));
+ 
+-    let response;
+-    try {
+-      response = await this.fetchJson(url.toString());
+-    } catch (error) {
+-      return failed(
++    const hitsById = new Map<string, AlgoliaHit>();
++    const bodies: string[] = [];
++    let collectionFailure: SourceCollectionResult | null = null;
++    let contentType: string | null = null;
++    let advertisedPages = 1;
++    let providerTruncated = false;
++    for (let page = 0; page < Math.min(advertisedPages, maxPages); page += 1) {
++      url.searchParams.set("page", String(page));
++      let response;
++      try {
++        response = await this.fetchJson(url.toString());
++      } catch (error) {
++        collectionFailure = failed(
++          this.version,
++          route,
++          "internal_failure",
++          null,
++          error instanceof Error ? error.message : String(error),
++          startedAt,
++          this.now().toISOString(),
++        );
++        break;
++      }
++      contentType = response.contentType;
++      bodies.push(response.body);
++      if (response.status !== 200) {
++        const classification: FailedOutcome =
++          response.status === 429
++            ? "rate_limit"
++            : response.status === 401 || response.status === 403
++              ? "blocked_access"
++              : "internal_failure";
++        collectionFailure = failed(
++          this.version,
++          route,
++          classification,
++          response.status,
++          `Hacker News (Algolia) answered ${response.status} on page ${page}`,
++          startedAt,
++          this.now().toISOString(),
++          response.status === 429
++            ? retryAfterMilliseconds(response.retryAfter, this.now())
++            : undefined,
++        );
++        break;
++      }
++      let raw: unknown;
++      try {
++        raw = JSON.parse(response.body);
++      } catch (error) {
++        collectionFailure = failed(
++          this.version,
++          route,
++          "parser_failure",
++          response.status,
++          error instanceof Error ? error.message : String(error),
++          startedAt,
++          this.now().toISOString(),
++        );
++        break;
++      }
++      const checked = AlgoliaPageSchema.safeParse(raw);
++      if (!checked.success || (checked.data.page !== undefined && checked.data.page !== page)) {
++        collectionFailure = failed(
++          this.version,
++          route,
++          "response_shape_change",
++          response.status,
++          `Hacker News returned an invalid hits page ${page}`,
++          startedAt,
++          this.now().toISOString(),
++        );
++        break;
++      }
++      const parsed = checked.data;
++      advertisedPages = Math.max(advertisedPages, parsed.nbPages ?? 1);
++      if (parsed.nbHits !== undefined && parsed.nbHits > (parsed.nbPages ?? 1) * pageSize)
++        providerTruncated = true;
++      for (const hit of parsed.hits) {
++        const publishedMs = hit.created_at ? Date.parse(hit.created_at) : Number.NaN;
++        if (
++          Number.isFinite(publishedMs) &&
++          ((Number.isFinite(sinceMs) && publishedMs < sinceMs) ||
++            (Number.isFinite(untilMs) && publishedMs > untilMs))
++        )
++          continue;
++        hitsById.set(hit.objectID, hit);
++      }
++    }
++    if (!collectionFailure && (advertisedPages > maxPages || providerTruncated)) {
++      collectionFailure = failed(
+         this.version,
+         route,
+-        "internal_failure",
+-        null,
+-        error instanceof Error ? error.message : String(error),
++        "unsupported_capability",
++        200,
++        "Hacker News results are truncated by the 1,000-hit / ten-page collection limit; narrow the time window.",
+         startedAt,
+         this.now().toISOString(),
+       );
+     }
++    const hits = [...hitsById.values()];
+     const finishedAt = this.now().toISOString();
+-    if (response.status !== 200) {
+-      const classification: FailedOutcome =
+-        response.status === 429
+-          ? "rate_limit"
+-          : response.status === 401 || response.status === 403
+-            ? "blocked_access"
+-            : "internal_failure";
+-      return failed(
+-        this.version,
+-        route,
+-        classification,
+-        response.status,
+-        `Hacker News (Algolia) answered ${response.status}`,
+-        startedAt,
+-        finishedAt,
+-        response.status === 429
+-          ? retryAfterMilliseconds(response.retryAfter, this.now())
+-          : undefined,
+-      );
+-    }
+-
+-    let parsed: { hits?: AlgoliaHit[] };
+-    try {
+-      parsed = JSON.parse(response.body) as { hits?: AlgoliaHit[] };
+-    } catch (error) {
+-      return failed(
+-        this.version,
+-        route,
+-        "parser_failure",
+-        response.status,
+-        error instanceof Error ? error.message : String(error),
+-        startedAt,
+-        finishedAt,
+-      );
+-    }
+-    const hits = (Array.isArray(parsed.hits) ? parsed.hits : []).filter((hit) => {
+-      const publishedMs = hit.created_at ? Date.parse(hit.created_at) : Number.NaN;
+-      return (
+-        typeof hit.objectID === "string" &&
+-        hit.objectID !== "" &&
+-        (!Number.isFinite(sinceMs) || !Number.isFinite(publishedMs) || publishedMs >= sinceMs)
+-      );
+-    });
+     const retrievedAt = this.now().toISOString();
+     const items: SourceItem[] = hits.map((hit) => {
+-      const objectID = hit.objectID as string;
++      const objectID = hit.objectID;
+       const title = hit.title ?? hit.story_title ?? null;
+       const body = hit.story_text ?? hit.comment_text ?? null;
+       return {
+@@ -202,6 +258,22 @@ export class HnAlgoliaSourceAdapter implements SourceAdapter {
+       } satisfies SourceItem;
+     });
+ 
++    if (collectionFailure)
++      return {
++        ...collectionFailure,
++        items,
++        diagnostic: {
++          ...collectionFailure.diagnostic,
++          contentType,
++          responseHash: bodies.length > 0 ? responseHash(bodies.join("\n")) : "",
++          parserStage:
++            collectionFailure.outcome === "parser_failure" ||
++            collectionFailure.outcome === "response_shape_change" ||
++            collectionFailure.outcome === "unsupported_capability"
++              ? "adapter_boundary"
++              : "fetch",
++        },
++      };
+     return {
+       kind: "completed",
+       outcome: items.length > 0 ? "items_found" : "legitimate_empty",
+@@ -210,10 +282,10 @@ export class HnAlgoliaSourceAdapter implements SourceAdapter {
+       diagnostic: {
+         classification: items.length > 0 ? "items_found" : "legitimate_empty",
+         route,
+-        status: response.status,
+-        contentType: response.contentType,
++        status: 200,
++        contentType,
+         parserStage: "adapter_boundary",
+-        responseHash: responseHash(response.body),
++        responseHash: responseHash(bodies.join("\n")),
+         adapterVersion: this.version,
+         startedAt,
+         finishedAt,
+diff --git a/apps/server/src/modules/content-research/host.ts b/apps/server/src/modules/content-research/host.ts
+index 63f32472..a219e5be 100644
+--- a/apps/server/src/modules/content-research/host.ts
++++ b/apps/server/src/modules/content-research/host.ts
+@@ -3,6 +3,7 @@ import { z } from "zod/v3";
+ import {
+   CONTENT_RESEARCH_MODULE_ID,
+   CONTENT_RESEARCH_MODULE_VERSION,
++  NAMED_PERSON_HANDLE_HINTS_SCHEMA,
+   type ContentResearchIndex,
+   type ContentResearchRunResult,
+   type NamedPerson,
+@@ -553,9 +554,14 @@ export class ContentResearchHost implements HostedModule {
+ 
+     app.post("/api/content-research/people", async (request, reply) => {
+       const body = (request.body ?? {}) as { profileId?: unknown; handleHints?: unknown };
+-      const handleHints = (body.handleHints as NamedPerson["handleHints"] | undefined) ?? {
+-        blogRssHints: [],
+-      };
++      const parsedHints = NAMED_PERSON_HANDLE_HINTS_SCHEMA.safeParse(body.handleHints ?? {});
++      if (!parsedHints.success) {
++        reply.code(400);
++        return {
++          error: "Handle hints must contain strings and an array of site or feed addresses.",
++        };
++      }
++      const handleHints = parsedHints.data;
+       try {
+         const person = this.addPerson({
+           profileId: typeof body.profileId === "string" ? body.profileId : "",
+diff --git a/apps/server/src/modules/content-research/module.ts b/apps/server/src/modules/content-research/module.ts
+index 2c82d135..a7ff2001 100644
+--- a/apps/server/src/modules/content-research/module.ts
++++ b/apps/server/src/modules/content-research/module.ts
+@@ -351,33 +351,25 @@ function attributeItemsPerPerson(
+   collected: CollectedPersonTarget[],
+   people: NamedPerson[],
+ ): { perPerson: PersonItems; uniqueItems: SourceItem[] } {
+-  /* Dedup is global on canonicalUrl, but attribution is per Person: the same
+-     post reaches two people through different adapters, and each must keep the
+-     adapter that actually found it or the second is labelled with the first
+-     Person's platform (spec #116 story 11's co-authored post). */
+-  const global = new Map<string, { item: SourceItem; adapterByPerson: Map<string, string> }>();
++  // Storage deduplicates URLs globally; scoring keeps the observation that
++  // actually reached each person, including its engagement and evidence route.
++  const global = new Map<string, SourceItem>();
++  const observations = new Map<string, Map<string, { item: SourceItem; adapterId: string }>>();
+   for (const entry of collected) {
++    const personItems =
++      observations.get(entry.personId) ??
++      new Map<string, { item: SourceItem; adapterId: string }>();
++    observations.set(entry.personId, personItems);
+     for (const item of entry.result.items) {
+-      const existing = global.get(item.canonicalUrl);
+-      if (existing) {
+-        if (!existing.adapterByPerson.has(entry.personId))
+-          existing.adapterByPerson.set(entry.personId, entry.adapter.id);
+-      } else {
+-        global.set(item.canonicalUrl, {
+-          item,
+-          adapterByPerson: new Map([[entry.personId, entry.adapter.id]]),
+-        });
+-      }
++      if (!global.has(item.canonicalUrl)) global.set(item.canonicalUrl, item);
++      if (!personItems.has(item.canonicalUrl))
++        personItems.set(item.canonicalUrl, { item, adapterId: entry.adapter.id });
+     }
+   }
+   const perPerson: PersonItems = new Map();
+-  for (const person of people) perPerson.set(person.id, { person, items: [] });
+-  for (const value of global.values()) {
+-    for (const [personId, adapterId] of value.adapterByPerson) {
+-      perPerson.get(personId)?.items.push({ item: value.item, adapterId });
+-    }
+-  }
+-  return { perPerson, uniqueItems: [...global.values()].map((value) => value.item) };
++  for (const person of people)
++    perPerson.set(person.id, { person, items: [...(observations.get(person.id)?.values() ?? [])] });
++  return { perPerson, uniqueItems: [...global.values()] };
+ }
+ 
+ /**
+@@ -444,10 +436,20 @@ async function extractHooksFor(
+     });
+     try {
+       const hookResult = await hookExtractor.extract({ personName: report.personName, items });
+-      for (const item of report.items) {
++      const quote = hookResult.evidenceQuote;
++      for (const [index, item] of report.items.entries()) {
+         item.hook = hookResult.hook;
+-        if (hookResult.evidenceQuote) item.evidenceQuote = hookResult.evidenceQuote;
++        const evidence = items[index]!;
++        item.evidenceQuote =
++          quote &&
++          [evidence.title, evidence.excerpt, evidence.transcript].some((text) =>
++            text?.includes(quote),
++          )
++            ? quote
++            : null;
+       }
++      if (quote && !report.items.some((item) => item.evidenceQuote))
++        ctx.event("hook_quote_rejected", { personId: report.personId });
+       ctx.event("hook_extracted", { personId: report.personId });
+     } catch (error) {
+       ctx.event("hook_failed", {
+@@ -888,14 +890,33 @@ export function peopleDiscoveryModule(
+           }
+         }
+         ctx.event("discovery_search_done", { results: searchResults.length });
++        const recentItems = deps.store.listItems(50);
+         const proposals = await deps.discoverer.discover({
+           brandProfile: deps.brandProfile(),
+           approvedPeople: approvedPeople.map((p) => ({ name: p.name })),
+-          recentItems: deps.store.listItems(50),
++          recentItems,
+           searchResults,
+         });
++        const suppliedUrls = new Set(
++          [
++            ...recentItems.map((item) => item.canonicalUrl),
++            ...searchResults.map((result) => result.url),
++          ].filter((url) => /^https?:\/\//i.test(url)),
++        );
++        const grounded = proposals
++          .map((proposal) => ({
++            ...proposal,
++            supportingUrls: [
++              ...new Set(proposal.supportingUrls.filter((url) => suppliedUrls.has(url))),
++            ],
++          }))
++          .filter((proposal) => proposal.supportingUrls.length > 0);
++        ctx.event("discovery_evidence_checked", {
++          proposed: proposals.length,
++          grounded: grounded.length,
++        });
+         const saved = deps.store.saveSuggestions(
+-          proposals.map((p) => ({
++          grounded.map((p) => ({
+             name: p.name,
+             reason: p.reason,
+             supportingUrls: p.supportingUrls,
+diff --git a/apps/server/src/modules/content-research/store.ts b/apps/server/src/modules/content-research/store.ts
+index c9016fc0..3a73b206 100644
+--- a/apps/server/src/modules/content-research/store.ts
++++ b/apps/server/src/modules/content-research/store.ts
+@@ -5,8 +5,9 @@ import {
+   readdirSync,
+   renameSync,
+   writeFileSync,
++  unlinkSync,
+ } from "node:fs";
+-import { randomBytes } from "node:crypto";
++import { createHash, randomBytes } from "node:crypto";
+ import { join } from "node:path";
+ import type {
+   ContentResearchBaseline,
+@@ -465,9 +466,24 @@ export class ContentResearchStore {
+   storeItems(items: { canonicalUrl: string; payload: string }[]): void {
+     mkdirSync(this.itemsDir, { recursive: true });
+     for (const { canonicalUrl, payload } of items) {
+-      const hash = Buffer.from(canonicalUrl).toString("base64url").slice(0, 16);
++      const hash = createHash("sha256").update(canonicalUrl).digest("hex");
+       const path = join(this.itemsDir, `${hash}.json`);
+       this.writeAtomic(path, payload);
++      // Retire a legacy prefix file only when it holds this exact URL. Other
++      // URLs that shared the prefix must survive, and old files remain readable.
++      const legacy = join(
++        this.itemsDir,
++        `${Buffer.from(canonicalUrl).toString("base64url").slice(0, 16)}.json`,
++      );
++      if (existsSync(legacy)) {
++        let item: SourceItem | null = null;
++        try {
++          item = JSON.parse(readFileSync(legacy, "utf8")) as SourceItem;
++        } catch {
++          // Leave unreadable legacy evidence alone, as listAllItems does.
++        }
++        if (item?.canonicalUrl === canonicalUrl) unlinkSync(legacy);
++      }
+     }
+   }
+ 
+diff --git a/apps/web/src/pages/ContentResearchPage.tsx b/apps/web/src/pages/ContentResearchPage.tsx
+index b86b1b80..a1fe7913 100644
+--- a/apps/web/src/pages/ContentResearchPage.tsx
++++ b/apps/web/src/pages/ContentResearchPage.tsx
+@@ -77,6 +77,7 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+   const [error, setError] = useState<string | null>(null);
+   const [notice, setNotice] = useState<string | null>(null);
+   const [busy, setBusy] = useState(false);
++  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+   const [platform, setPlatform] = useState<PlatformFilter>("all");
+   const [showGated, setShowGated] = useState(false);
+@@ -106,8 +107,10 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+       setSuggestions(sug);
+       setProfiles(prf);
+       setError(null);
++      return true;
+     } catch (err) {
+       setError(errorMessage(err));
++      return false;
+     }
+   }, [client]);
+ 
+@@ -115,6 +118,35 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+     void refresh();
+   }, [refresh]);
+ 
++  const hasActiveRuns =
++    Boolean(activeRunId) ||
++    Boolean(index?.runs.some((run) => run.status === "pending" || run.status === "running"));
++
++  useEffect(() => {
++    if (
++      activeRunId &&
++      index?.runs.some(
++        (run) => run.runId === activeRunId && run.status !== "pending" && run.status !== "running",
++      )
++    )
++      setActiveRunId(null);
++  }, [activeRunId, index]);
++
++  useEffect(() => {
++    if (!hasActiveRuns) return;
++    let stopped = false;
++    let timer: ReturnType<typeof setTimeout>;
++    const poll = async () => {
++      await refresh();
++      if (!stopped) timer = setTimeout(() => void poll(), 2000);
++    };
++    timer = setTimeout(() => void poll(), 2000);
++    return () => {
++      stopped = true;
++      clearTimeout(timer);
++    };
++  }, [hasActiveRuns, refresh]);
++
+   // Keep selected person honest when the index changes.
+   useEffect(() => {
+     if (!index || index.byPerson.length === 0) return;
+@@ -126,23 +158,30 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+   const currentPerson =
+     index?.byPerson.find((entry) => entry.personId === selectedPersonId) ?? null;
+ 
+-  const gatedRuns = (index?.runs ?? []).filter((run) => run.status !== "done");
+-
+   /* Archived watches are gone from this surface; pausing or resuming them is
+      not offered (#134 review): an archived watch's configuration is already
+      resolved by its removal. */
+   const watchRows = (allPeople ?? []).filter((person) => person.archivedAt === null);
+ 
+-  const act = async (action: () => Promise<unknown>, message: string) => {
++  const act = async (action: () => Promise<unknown>, message: string): Promise<boolean> => {
++    if (busy) return false;
+     setBusy(true);
+     setError(null);
+     setNotice(null);
+     try {
+-      await action();
+-      await refresh();
+-      setNotice(message);
++      const result = await action();
++      if (
++        result &&
++        typeof result === "object" &&
++        "runId" in result &&
++        typeof result.runId === "string"
++      )
++        setActiveRunId(result.runId);
++      if (await refresh()) setNotice(message);
++      return true;
+     } catch (err) {
+       setError(errorMessage(err));
++      return false;
+     } finally {
+       setBusy(false);
+     }
+@@ -150,6 +189,7 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+ 
+   const handleAddPerson = async (event: React.FormEvent) => {
+     event.preventDefault();
++    if (busy) return;
+     const profileId = newProfileId.trim();
+     if (!profileId) {
+       setAddError("Select a confirmed Person Profile — or create one under Person Profiles first.");
+@@ -173,14 +213,16 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+     };
+     const hasHint = site || youtubeChannelId || hnUsername;
+     const profile = profiles?.find((candidate) => candidate.id === profileId);
+-    await act(
++    const added = await act(
+       () => client.addContentResearchPerson(profileId, hasHint ? handleHints : undefined),
+       `Watching ${profile?.fullName ?? profileId}.`,
+     );
+-    setNewProfileId("");
+-    setNewSite("");
+-    setNewYoutube("");
+-    setNewHn("");
++    if (added) {
++      setNewProfileId("");
++      setNewSite("");
++      setNewYoutube("");
++      setNewHn("");
++    }
+   };
+ 
+   const toggleReport = (runId: string) => {
+@@ -210,6 +252,11 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+         <p role="status" className={error ? "field-error" : "muted"}>
+           {error ?? "Loading Content Research…"}
+         </p>
++        {error && (
++          <button type="button" onClick={() => void refresh()}>
++            Retry loading
++          </button>
++        )}
+       </section>
+     );
+   }
+@@ -258,6 +305,23 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+         )}
+       </div>
+ 
++      {error && (
++        <button type="button" onClick={() => void refresh()}>
++          Retry loading
++        </button>
++      )}
++      {hasActiveRuns && (
++        <p role="status">
++          Research is running. Results update automatically.
++          {activeRunId && (
++            <>
++              {" "}
++              <Link to={`/runs/${activeRunId}`}>Open Run</Link>
++            </>
++          )}
++        </p>
++      )}
++
+       {/* Controls */}
+       <div className="toolbar research-toolbar">
+         <button
+@@ -676,11 +740,11 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+         </>
+       )}
+ 
+-      {/* Collapsed gated/skipped Runs */}
++      {/* Runs remain reachable even when a completed collection was partial. */}
+       <section className="card" aria-labelledby="gated-heading">
+-        <h2 id="gated-heading">Gated / skipped Runs</h2>
+-        {gatedRuns.length === 0 ? (
+-          <p className="muted">No gated or skipped runs.</p>
++        <h2 id="gated-heading">Research Runs</h2>
++        {index.runs.length === 0 ? (
++          <p className="muted">No research runs yet.</p>
+         ) : (
+           <>
+             <button
+@@ -688,12 +752,12 @@ export function ContentResearchPage({ client = contentApi }: { client?: ContentC
+               onClick={() => setShowGated((value) => !value)}
+               aria-expanded={showGated}
+             >
+-              {showGated ? "Hide" : "Show"} {gatedRuns.length} run
+-              {gatedRuns.length === 1 ? "" : "s"}
++              {showGated ? "Hide" : "Show"} {index.runs.length} run
++              {index.runs.length === 1 ? "" : "s"}
+             </button>
+             {showGated && (
+               <ul className="research-gated-list">
+-                {gatedRuns.map((run) => (
++                {index.runs.map((run) => (
+                   <li key={run.runId} className="research-gated-row">
+                     <Link to={`/runs/${run.runId}`}>{run.runId.slice(0, 8)}</Link>{" "}
+                     <span className="status-badge status-skipped">{run.status}</span>{" "}
+diff --git a/tests/src/modules/content-research.test.ts b/tests/src/modules/content-research.test.ts
+index 6df0a909..3e2aebfe 100644
+--- a/tests/src/modules/content-research.test.ts
++++ b/tests/src/modules/content-research.test.ts
+@@ -324,6 +324,9 @@ interface RunResultShape {
+       resonanceScore: number;
+       resonanceBasis: string;
+       weightedCount: number;
++      counts: { views?: number };
++      evidenceUrl: string;
++      evidenceQuote: string | null;
+     }[];
+   }[];
+   adapters: { adapterId: string; outcome: string; errorClassifications: string[] }[];
+@@ -791,7 +794,13 @@ describe("Content Research", () => {
+       },
+     };
+     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+-    const { runs, host, people } = makeHarness({ adapters: [rss], discoverer });
++    const { runs, host, people } = makeHarness({
++      adapters: [rss],
++      discoverer,
++      searchPublic: async () => [
++        { url: "https://ben.example/post", title: "Supplied source", snippet: "Co-mention" },
++      ],
++    });
+     watchProfile(host, people, {
+       fullName: "Ben",
+       handleHints: { blogRssHints: ["https://ben.example/feed"] },
+@@ -839,7 +848,13 @@ describe("Content Research", () => {
+       ],
+     };
+     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+-    const { host, people } = makeHarness({ adapters: [rss], discoverer });
++    const { host, people } = makeHarness({
++      adapters: [rss],
++      discoverer,
++      searchPublic: async () => [
++        { url: "https://example.com/radia", title: "Supplied source", snippet: "Co-mention" },
++      ],
++    });
+     watchProfile(host, people, {
+       fullName: "Ben",
+       handleHints: { blogRssHints: ["https://ben.example/feed"] },
+@@ -991,7 +1006,18 @@ describe("Content Research", () => {
+       ],
+     };
+     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+-    const { host, people } = makeHarness({ adapters: [rss], discoverer, discoverFeeds });
++    const { host, people } = makeHarness({
++      adapters: [rss],
++      discoverer,
++      discoverFeeds,
++      searchPublic: async () => [
++        {
++          url: "https://grace.example/posts/compilers",
++          title: "Supplied source",
++          snippet: "Co-mention",
++        },
++      ],
++    });
+     watchProfile(host, people, { fullName: "Ben", handleHints: { blogRssHints: [] } });
+ 
+     await host.discoverNow();
+@@ -1165,7 +1191,13 @@ describe("Profile-backed watches (#134)", () => {
+         },
+       ],
+     };
+-    const { host, people } = makeHarness({ adapters: [rss], discoverer });
++    const { host, people } = makeHarness({
++      adapters: [rss],
++      discoverer,
++      searchPublic: async () => [
++        { url: "https://grace.example/post", title: "Supplied source", snippet: "Co-mention" },
++      ],
++    });
+     watchProfile(host, people, { fullName: "Ada Lovelace" });
+     await host.discoverNow();
+     await host.idle();
+@@ -1410,3 +1442,213 @@ describe("Profile-backed watches (#134)", () => {
+     expect(() => host.repointWatch(ben.id, adaProfile.id)).toThrow(/pause it before re-pointing/);
+   });
+ });
++
++describe("Content Research evidence integrity", () => {
++  it("retains distinct same-site articles and updates only the matching article", () => {
++    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-research-store-"));
++    const store = new ContentResearchStore(workspaceDir, now);
++    const first = makeItem({
++      url: "https://same.example/posts/one",
++      title: "One",
++      adapterId: "rss",
++    });
++    const second = makeItem({
++      url: "https://same.example/posts/two",
++      title: "Two",
++      adapterId: "rss",
++    });
++    store.storeItems(
++      [first, second].map((item) => ({
++        canonicalUrl: item.canonicalUrl,
++        payload: JSON.stringify(item),
++      })),
++    );
++    expect(
++      store
++        .listAllItems()
++        .map((item) => item.title)
++        .sort(),
++    ).toEqual(["One", "Two"]);
++    store.storeItems([
++      {
++        canonicalUrl: first.canonicalUrl,
++        payload: JSON.stringify({ ...first, title: "One updated" }),
++      },
++    ]);
++    expect(
++      store
++        .listAllItems()
++        .map((item) => item.title)
++        .sort(),
++    ).toEqual(["One updated", "Two"]);
++  });
++
++  it("scores each person's own observation of a shared URL with its own provenance", async () => {
++    const shared = "https://www.youtube.com/watch?v=shared";
++    const rss = makeAdapter({
++      id: "rss",
++      itemsFor: () => [
++        makeItem({
++          url: shared,
++          title: "Feed observation",
++          adapterId: "rss",
++          counts: { views: 10 },
++        }),
++      ],
++    });
++    const youtube = makeAdapter({
++      id: "youtube",
++      itemsFor: () => [
++        makeItem({
++          url: shared,
++          title: "Video observation",
++          adapterId: "youtube",
++          counts: { views: 900 },
++        }),
++      ],
++    });
++    const { host, runs, people } = makeHarness({ adapters: [rss, youtube] });
++    const ben = watchProfile(host, people, {
++      fullName: "Ben",
++      handleHints: { blogRssHints: ["https://ben.example/feed"] },
++    });
++    const ava = watchProfile(host, people, {
++      fullName: "Ava",
++      handleHints: { blogRssHints: [], youtubeChannelId: "UC_ava" },
++    });
++    const runId = await host.researchNow();
++    await host.idle();
++    const result = readResult(runs, runId);
++    expect(result.reports.find((r) => r.personId === ben.id)?.items[0]).toMatchObject({
++      platform: "rss",
++      counts: { views: 10 },
++      evidenceUrl: "fixture:rss",
++    });
++    expect(result.reports.find((r) => r.personId === ava.id)?.items[0]).toMatchObject({
++      platform: "youtube",
++      counts: { views: 900 },
++      evidenceUrl: "fixture:youtube",
++    });
++  });
++
++  it.each(["Body of One", "invented quotation"])(
++    "attaches only a verbatim quote to its supporting item: %s",
++    async (quote) => {
++      const rss = makeAdapter({
++        id: "rss",
++        itemsFor: () => [
++          makeItem({ url: "https://ben.example/one", title: "One", adapterId: "rss" }),
++          makeItem({ url: "https://ben.example/two", title: "Two", adapterId: "rss" }),
++        ],
++      });
++      const hooks = makeHookExtractor();
++      hooks.extract = async () => ({ hook: "A grounded hook", evidenceQuote: quote });
++      const { host, runs, people } = makeHarness({ adapters: [rss], hookExtractor: hooks });
++      watchProfile(host, people, {
++        fullName: "Ben",
++        handleHints: { blogRssHints: ["https://ben.example/feed"] },
++      });
++      const runId = await host.researchNow();
++      await host.idle();
++      const items = readResult(runs, runId).reports[0].items;
++      expect(items.find((item) => item.canonicalUrl.endsWith("/one"))?.evidenceQuote).toBe(
++        quote === "Body of One" ? quote : null,
++      );
++      expect(items.find((item) => item.canonicalUrl.endsWith("/two"))?.evidenceQuote).toBeNull();
++    },
++  );
++
++  it("rejects invented discovery references while retaining supplied source URLs", async () => {
++    const source = "https://ben.example/post";
++    const discoverer: PeopleDiscoverer = {
++      discover: async () => [
++        {
++          name: "Grounded Person",
++          reason: "mentioned",
++          supportingUrls: [source, "https://invented.example/one"],
++          relationshipToBrand: "relevant",
++          source: "co-mention",
++        },
++        {
++          name: "Invented Person",
++          reason: "model recall",
++          supportingUrls: ["https://invented.example/two"],
++          relationshipToBrand: "unknown",
++          source: "co-mention",
++        },
++      ],
++    };
++    const { host, people } = makeHarness({
++      adapters: [],
++      discoverer,
++      searchPublic: async () => [
++        { url: source, title: "Known source", snippet: "mentions a person" },
++      ],
++    });
++    watchProfile(host, people, { fullName: "Ben" });
++    await host.discoverNow();
++    await host.idle();
++    expect(host.listSuggestions().map((s) => ({ name: s.name, urls: s.supportingUrls }))).toEqual([
++      { name: "Grounded Person", urls: [source] },
++    ]);
++  });
++});
++
++describe("Content Research legacy item compatibility", () => {
++  it("keeps legacy evidence readable and retires only an exact matching legacy URL", () => {
++    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-research-legacy-"));
++    const store = new ContentResearchStore(workspaceDir, now);
++    const one = makeItem({
++      url: "https://same.example/one",
++      title: "One legacy",
++      adapterId: "rss",
++    });
++    const two = makeItem({ url: "https://same.example/two", title: "Two new", adapterId: "rss" });
++    const dir = join(workspaceDir, "content-research", "items");
++    mkdirSync(dir, { recursive: true });
++    const legacy = join(
++      dir,
++      `${Buffer.from(one.canonicalUrl).toString("base64url").slice(0, 16)}.json`,
++    );
++    writeFileSync(legacy, JSON.stringify(one));
++    expect(store.listAllItems().map((item) => item.title)).toEqual(["One legacy"]);
++    store.storeItems([{ canonicalUrl: two.canonicalUrl, payload: JSON.stringify(two) }]);
++    expect(
++      store
++        .listAllItems()
++        .map((item) => item.title)
++        .sort(),
++    ).toEqual(["One legacy", "Two new"]);
++    store.storeItems([
++      { canonicalUrl: one.canonicalUrl, payload: JSON.stringify({ ...one, title: "One updated" }) },
++    ]);
++    expect(
++      store
++        .listAllItems()
++        .map((item) => item.title)
++        .sort(),
++    ).toEqual(["One updated", "Two new"]);
++    expect(readdirSync(dir)).toHaveLength(2);
++  });
++});
++
++describe("Content Research watch input boundaries", () => {
++  it("rejects malformed handle hints before creating a watch", async () => {
++    const { default: Fastify } = await import("fastify");
++    const { host, people } = makeHarness({ adapters: [] });
++    const profile = people.create({ fullName: "Maya", primaryEmail: "maya@example.com" });
++    const app = Fastify();
++    host.routes(app);
++    try {
++      const response = await app.inject({
++        method: "POST",
++        url: "/api/content-research/people",
++        payload: { profileId: profile.id, handleHints: { blogRssHints: "not an array" } },
++      });
++      expect(response.statusCode).toBe(400);
++      expect(host.listAllPeople()).toEqual([]);
++    } finally {
++      await app.close();
++    }
++  });
++});
+diff --git a/tests/src/unit/content-ux-regressions.test.tsx b/tests/src/unit/content-ux-regressions.test.tsx
+index d2093311..822adbcd 100644
+--- a/tests/src/unit/content-ux-regressions.test.tsx
++++ b/tests/src/unit/content-ux-regressions.test.tsx
+@@ -423,3 +423,110 @@ describe("Person dossier pre-research state", () => {
+     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(0);
+   });
+ });
++
++describe("Content Research mutation recovery", () => {
++  async function fillWatch(container: HTMLDivElement) {
++    const select = container.querySelector<HTMLSelectElement>(
++      'select[aria-label="Person Profile"]',
++    )!;
++    await act(async () => {
++      select.value = "maya";
++      select.dispatchEvent(new Event("change", { bubbles: true }));
++      setInputValue(
++        container.querySelector<HTMLInputElement>('input[aria-label="Site or feed address"]')!,
++        "https://maya.example/feed",
++      );
++    });
++    return select.closest("form")!;
++  }
++
++  it("keeps watch inputs after refusal so the operator can correct and retry", async () => {
++    vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
++    const client = researchClient({
++      addContentResearchPerson: async () => {
++        throw new Error("Feed temporarily unavailable");
++      },
++    });
++    const container = await mountPage(createElement(ContentResearchPage, { client }));
++    const form = await fillWatch(container);
++    await act(async () => {
++      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
++    });
++    expect(
++      container.querySelector<HTMLSelectElement>('select[aria-label="Person Profile"]')?.value,
++    ).toBe("maya");
++    expect(
++      container.querySelector<HTMLInputElement>('input[aria-label="Site or feed address"]')?.value,
++    ).toBe("https://maya.example/feed");
++    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
++      "Feed temporarily unavailable",
++    );
++  });
++
++  it("does not submit a second watch while the first submission is pending", async () => {
++    vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
++    let finish: ((person: NamedPerson) => void) | undefined;
++    const add = vi.fn(
++      () =>
++        new Promise<NamedPerson>((resolve) => {
++          finish = resolve;
++        }),
++    );
++    const container = await mountPage(
++      createElement(ContentResearchPage, {
++        client: researchClient({ addContentResearchPerson: add }),
++      }),
++    );
++    const form = await fillWatch(container);
++    await act(async () => {
++      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
++    });
++    await act(async () => {
++      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
++    });
++    const calls = add.mock.calls.length;
++    await act(async () => finish?.(watchFixture()));
++    expect(calls).toBe(1);
++  });
++
++  it("does not announce successful refreshed results when the refresh failed", async () => {
++    vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
++    const index = vi
++      .fn()
++      .mockResolvedValueOnce(researchIndex({ research: null, discovery: null }))
++      .mockRejectedValue(new Error("Index unavailable"));
++    const container = await mountPage(
++      createElement(ContentResearchPage, {
++        client: researchClient({
++          contentResearchIndex: index,
++          runContentResearch: async () => ({ runId: "started" }),
++        }),
++      }),
++    );
++    const run = [...container.querySelectorAll("button")].find(
++      (button) => button.textContent === "Run Now",
++    )!;
++    await act(async () => run.click());
++    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Index unavailable");
++    expect(container.textContent).not.toContain("Content Research run started.");
++  });
++
++  it("offers retry after an initial index load failure", async () => {
++    vi.spyOn(peopleApi, "people").mockResolvedValue([personFixture()]);
++    const index = vi
++      .fn()
++      .mockRejectedValueOnce(new Error("Index unavailable"))
++      .mockResolvedValue(researchIndex({ research: null, discovery: null }));
++    const container = await mountPage(
++      createElement(ContentResearchPage, {
++        client: researchClient({ contentResearchIndex: index }),
++      }),
++    );
++    const retry = [...container.querySelectorAll("button")].find(
++      (button) => button.textContent === "Retry loading",
++    );
++    expect(retry).toBeDefined();
++    await act(async () => retry!.click());
++    expect(container.textContent).toContain("Run Now");
++  });
++});
+diff --git a/tests/src/modules/content-research-hn.test.ts b/tests/src/modules/content-research-hn.test.ts
+new file mode 100644
+index 00000000..7b64682c
+--- /dev/null
++++ b/tests/src/modules/content-research-hn.test.ts
+@@ -0,0 +1,196 @@
++import { describe, expect, it, vi } from "vitest";
++import { HnAlgoliaSourceAdapter } from "../../../apps/server/src/modules/content-research/adapters/hn";
++import type { PublicHttpResponse } from "../../../apps/server/src/source-adapters/http";
++import { responseHash } from "../../../apps/server/src/source-adapters/http";
++
++const now = () => new Date("2026-10-08T12:00:00.000Z");
++const request = {
++  target: { id: "hn-person", url: "https://hn.algolia.com/api/v1/search_by_date?tags=author_test" },
++  since: "2026-10-01T00:00:00.000Z",
++  until: "2026-10-07T00:00:00.000Z",
++};
++function hit(id: string, date = "2026-10-05T00:00:00.000Z") {
++  return { objectID: id, title: `Story ${id}`, created_at: date, points: 7 };
++}
++function response(data: unknown, status = 200): PublicHttpResponse {
++  return {
++    url: request.target.url,
++    status,
++    contentType: "application/json",
++    etag: null,
++    lastModified: null,
++    retryAfter: null,
++    body: JSON.stringify(data),
++  };
++}
++
++describe("Content Research HN coverage", () => {
++  it("collects every advertised page within its bound and deduplicates repeated hits", async () => {
++    const fetch = vi.fn(async (value: string) => {
++      const page = Number(new URL(value).searchParams.get("page") ?? 0);
++      return response({
++        page,
++        nbPages: 2,
++        nbHits: 3,
++        hits: page === 0 ? [hit("1"), hit("2")] : [hit("2"), hit("3")],
++      });
++    });
++    const result = await new HnAlgoliaSourceAdapter(fetch, now).collect(request);
++    expect(fetch).toHaveBeenCalledTimes(2);
++    expect(result.items.map((item) => item.externalId)).toEqual(["hn:1", "hn:2", "hn:3"]);
++    expect(result.kind).toBe("completed");
++  });
++
++  it("bounds both ends of the requested interval in the request and returned items", async () => {
++    const fetch = vi.fn(async (_url: string) =>
++      response({
++        hits: [
++          hit("old", "2026-09-30T00:00:00Z"),
++          hit("inside"),
++          hit("future", "2026-10-09T00:00:00Z"),
++        ],
++      }),
++    );
++    const result = await new HnAlgoliaSourceAdapter(fetch, now).collect(request);
++    const filters = new URL(fetch.mock.calls[0][0]).searchParams.get("numericFilters");
++    expect(filters).toContain(`created_at_i>=${Date.parse(request.since) / 1000}`);
++    expect(filters).toContain(`created_at_i<=${Date.parse(request.until) / 1000}`);
++    expect(result.items.map((item) => item.externalId)).toEqual(["hn:inside"]);
++  });
++
++  it.each([{}, { hits: "changed" }, { hits: [null] }, { hits: [{ title: "missing id" }] }])(
++    "does not call malformed successful responses legitimate empty: %j",
++    async (data) => {
++      const result = await new HnAlgoliaSourceAdapter(async () => response(data), now).collect(
++        request,
++      );
++      expect(result).toMatchObject({
++        kind: "failed",
++        outcome: "response_shape_change",
++        checkpoint: null,
++        diagnostic: {
++          contentType: "application/json",
++          responseHash: responseHash(JSON.stringify(data)),
++          parserStage: "adapter_boundary",
++        },
++      });
++    },
++  );
++
++  it("preserves earlier pages and leaves no checkpoint after a later page rate limit", async () => {
++    const fetch = vi.fn(async (value: string) =>
++      Number(new URL(value).searchParams.get("page") ?? 0) === 0
++        ? response({ hits: [hit("1")], nbPages: 2, nbHits: 2 })
++        : { ...response({}, 429), retryAfter: "3" },
++    );
++    const result = await new HnAlgoliaSourceAdapter(fetch, now).collect(request);
++    expect(result).toMatchObject({
++      kind: "failed",
++      outcome: "rate_limit",
++      checkpoint: null,
++      diagnostic: {
++        retryAfterMs: 3000,
++        contentType: "application/json",
++        responseHash: responseHash(
++          [JSON.stringify({ hits: [hit("1")], nbPages: 2, nbHits: 2 }), "{}"].join("\n"),
++        ),
++        parserStage: "fetch",
++      },
++    });
++    expect(result.items.map((item) => item.externalId)).toEqual(["hn:1"]);
++  });
++
++  it("reports truncation and preserves collected items when the page budget is exhausted", async () => {
++    const fetch = vi.fn(async (value: string) => {
++      const page = Number(new URL(value).searchParams.get("page") ?? 0);
++      return response({ page, nbPages: 11, nbHits: 1100, hits: [hit(String(page))] });
++    });
++    const result = await new HnAlgoliaSourceAdapter(fetch, now).collect(request);
++    expect(fetch).toHaveBeenCalledTimes(10);
++    expect(result).toMatchObject({
++      kind: "failed",
++      outcome: "unsupported_capability",
++      checkpoint: null,
++      diagnostic: {
++        contentType: "application/json",
++        responseHash: responseHash(
++          Array.from({ length: 10 }, (_, page) =>
++            JSON.stringify({ page, nbPages: 11, nbHits: 1100, hits: [hit(String(page))] }),
++          ).join("\n"),
++        ),
++        parserStage: "adapter_boundary",
++      },
++    });
++    expect(result.items).toHaveLength(10);
++    expect(result.diagnostic.causeChain.join(" ")).toMatch(/limit|truncat|budget/i);
++  });
++
++  it("keeps a valid empty page a successful empty collection", async () => {
++    const result = await new HnAlgoliaSourceAdapter(
++      async () => response({ hits: [], nbPages: 0, nbHits: 0 }),
++      now,
++    ).collect(request);
++    expect(result).toMatchObject({ kind: "completed", outcome: "legitimate_empty", items: [] });
++  });
++});
++
++describe("Content Research HN failure holdouts", () => {
++  it("reports provider truncation below the local page budget", async () => {
++    const adapter = new HnAlgoliaSourceAdapter(
++      async () => response({ hits: [hit("1")], nbPages: 1, nbHits: 150 }),
++      now,
++    );
++    const result = await adapter.collect(request);
++    expect(result).toMatchObject({
++      kind: "failed",
++      outcome: "unsupported_capability",
++      checkpoint: null,
++    });
++    expect(result.items).toHaveLength(1);
++  });
++
++  it("retains the first page when the next page has invalid JSON", async () => {
++    const adapter = new HnAlgoliaSourceAdapter(
++      async (value) =>
++        new URL(value).searchParams.get("page") === "0"
++          ? response({ hits: [hit("1")], nbPages: 2, nbHits: 2 })
++          : { ...response({}), body: "{broken" },
++      now,
++    );
++    const result = await adapter.collect(request);
++    expect(result).toMatchObject({
++      kind: "failed",
++      outcome: "parser_failure",
++      checkpoint: null,
++      diagnostic: {
++        contentType: "application/json",
++        responseHash: responseHash(
++          [JSON.stringify({ hits: [hit("1")], nbPages: 2, nbHits: 2 }), "{broken"].join("\n"),
++        ),
++        parserStage: "adapter_boundary",
++      },
++    });
++    expect(result.items.map((item) => item.externalId)).toEqual(["hn:1"]);
++  });
++
++  it("retains earlier response evidence when the next fetch throws", async () => {
++    const firstPage = { hits: [hit("1")], nbPages: 2, nbHits: 2 };
++    const adapter = new HnAlgoliaSourceAdapter(async (value) => {
++      if (new URL(value).searchParams.get("page") === "0") return response(firstPage);
++      throw new Error("connection closed");
++    }, now);
++    const result = await adapter.collect(request);
++    expect(result).toMatchObject({
++      kind: "failed",
++      outcome: "internal_failure",
++      checkpoint: null,
++      diagnostic: {
++        contentType: "application/json",
++        responseHash: responseHash(JSON.stringify(firstPage)),
++        parserStage: "fetch",
++        causeChain: ["connection closed"],
++      },
++    });
++    expect(result.items.map((item) => item.externalId)).toEqual(["hn:1"]);
++  });
++});
+diff --git a/tests/e2e/content-research-recovery.spec.ts b/tests/e2e/content-research-recovery.spec.ts
+new file mode 100644
+index 00000000..7cde0e5c
+--- /dev/null
++++ b/tests/e2e/content-research-recovery.spec.ts
+@@ -0,0 +1,65 @@
++import { test, expect } from "./fixture";
++import type { ContentResearchIndex } from "@chief-of-staff-demo/shared";
++
++for (const action of [
++  { label: "Run Now", path: "run" },
++  { label: "Backfill 7d", path: "backfill" },
++  { label: "Discover Now", path: "discover" },
++]) {
++  test(`Content Research updates ${action.label} results without reloading`, async ({ page }) => {
++    // Controlled asynchronous API responses isolate the browser's lifecycle;
++    // adapter collection and durable reports are covered by the module tests.
++    let started = false;
++    let readsAfterStart = 0;
++    await page.route("**/api/content-research/index", async (route) => {
++      const complete = started && ++readsAfterStart >= 2;
++      const index: ContentResearchIndex = {
++        waiting: { research: null, discovery: null },
++        runs: started
++          ? [
++              {
++                runId: "async-research",
++                intake: "content-research-daily",
++                status: complete ? "done" : "running",
++                createdAt: "2026-10-08T12:00:00.000Z",
++                summary: complete ? "Research complete" : "Collecting",
++              },
++            ]
++          : [],
++        byPerson: complete
++          ? [
++              {
++                personId: "fixture-person",
++                personName: "Completed research person",
++                reports: [
++                  {
++                    runId: "async-research",
++                    generatedAt: "2026-10-08T12:00:00.000Z",
++                    resonanceScoreMax: 0,
++                    items: [],
++                  },
++                ],
++              },
++            ]
++          : [],
++      };
++      await route.fulfill({ json: index });
++    });
++    await page.route(`**/api/content-research/${action.path}`, async (route) => {
++      started = true;
++      await route.fulfill({ json: { runId: "async-research" } });
++    });
++    await page.goto("/content-research");
++    await page.getByRole("button", { name: action.label, exact: true }).click();
++    await expect(
++      page.getByRole("heading", { name: "Completed research person", exact: true }),
++    ).toBeVisible({ timeout: 5000 });
++    await expect(page.getByText("Research is running.", { exact: false })).toHaveCount(0);
++    await page.getByRole("button", { name: "Show 1 run", exact: true }).click();
++    await expect(page.locator(".research-gated-row")).toContainText("done");
++    await expect(page.locator(".research-gated-row a")).toHaveAttribute(
++      "href",
++      "/runs/async-research",
++    );
++  });
++}

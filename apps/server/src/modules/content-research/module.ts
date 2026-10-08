@@ -351,33 +351,25 @@ function attributeItemsPerPerson(
   collected: CollectedPersonTarget[],
   people: NamedPerson[],
 ): { perPerson: PersonItems; uniqueItems: SourceItem[] } {
-  /* Dedup is global on canonicalUrl, but attribution is per Person: the same
-     post reaches two people through different adapters, and each must keep the
-     adapter that actually found it or the second is labelled with the first
-     Person's platform (spec #116 story 11's co-authored post). */
-  const global = new Map<string, { item: SourceItem; adapterByPerson: Map<string, string> }>();
+  // Storage deduplicates URLs globally; scoring keeps the observation that
+  // actually reached each person, including its engagement and evidence route.
+  const global = new Map<string, SourceItem>();
+  const observations = new Map<string, Map<string, { item: SourceItem; adapterId: string }>>();
   for (const entry of collected) {
+    const personItems =
+      observations.get(entry.personId) ??
+      new Map<string, { item: SourceItem; adapterId: string }>();
+    observations.set(entry.personId, personItems);
     for (const item of entry.result.items) {
-      const existing = global.get(item.canonicalUrl);
-      if (existing) {
-        if (!existing.adapterByPerson.has(entry.personId))
-          existing.adapterByPerson.set(entry.personId, entry.adapter.id);
-      } else {
-        global.set(item.canonicalUrl, {
-          item,
-          adapterByPerson: new Map([[entry.personId, entry.adapter.id]]),
-        });
-      }
+      if (!global.has(item.canonicalUrl)) global.set(item.canonicalUrl, item);
+      if (!personItems.has(item.canonicalUrl))
+        personItems.set(item.canonicalUrl, { item, adapterId: entry.adapter.id });
     }
   }
   const perPerson: PersonItems = new Map();
-  for (const person of people) perPerson.set(person.id, { person, items: [] });
-  for (const value of global.values()) {
-    for (const [personId, adapterId] of value.adapterByPerson) {
-      perPerson.get(personId)?.items.push({ item: value.item, adapterId });
-    }
-  }
-  return { perPerson, uniqueItems: [...global.values()].map((value) => value.item) };
+  for (const person of people)
+    perPerson.set(person.id, { person, items: [...(observations.get(person.id)?.values() ?? [])] });
+  return { perPerson, uniqueItems: [...global.values()] };
 }
 
 /**
@@ -444,10 +436,20 @@ async function extractHooksFor(
     });
     try {
       const hookResult = await hookExtractor.extract({ personName: report.personName, items });
-      for (const item of report.items) {
+      const quote = hookResult.evidenceQuote;
+      for (const [index, item] of report.items.entries()) {
         item.hook = hookResult.hook;
-        if (hookResult.evidenceQuote) item.evidenceQuote = hookResult.evidenceQuote;
+        const evidence = items[index]!;
+        item.evidenceQuote =
+          quote &&
+          [evidence.title, evidence.excerpt, evidence.transcript].some((text) =>
+            text?.includes(quote),
+          )
+            ? quote
+            : null;
       }
+      if (quote && !report.items.some((item) => item.evidenceQuote))
+        ctx.event("hook_quote_rejected", { personId: report.personId });
       ctx.event("hook_extracted", { personId: report.personId });
     } catch (error) {
       ctx.event("hook_failed", {
@@ -888,14 +890,33 @@ export function peopleDiscoveryModule(
           }
         }
         ctx.event("discovery_search_done", { results: searchResults.length });
+        const recentItems = deps.store.listItems(50);
         const proposals = await deps.discoverer.discover({
           brandProfile: deps.brandProfile(),
           approvedPeople: approvedPeople.map((p) => ({ name: p.name })),
-          recentItems: deps.store.listItems(50),
+          recentItems,
           searchResults,
         });
+        const suppliedUrls = new Set(
+          [
+            ...recentItems.map((item) => item.canonicalUrl),
+            ...searchResults.map((result) => result.url),
+          ].filter((url) => /^https?:\/\//i.test(url)),
+        );
+        const grounded = proposals
+          .map((proposal) => ({
+            ...proposal,
+            supportingUrls: [
+              ...new Set(proposal.supportingUrls.filter((url) => suppliedUrls.has(url))),
+            ],
+          }))
+          .filter((proposal) => proposal.supportingUrls.length > 0);
+        ctx.event("discovery_evidence_checked", {
+          proposed: proposals.length,
+          grounded: grounded.length,
+        });
         const saved = deps.store.saveSuggestions(
-          proposals.map((p) => ({
+          grounded.map((p) => ({
             name: p.name,
             reason: p.reason,
             supportingUrls: p.supportingUrls,
