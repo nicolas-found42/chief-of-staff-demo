@@ -43,6 +43,8 @@ export interface RunHandle {
   readonly id: string;
   /** A snapshot. Runs is the only writer, so a held copy is never authoritative. */
   read(): Readonly<RunMeta>;
+  /** Read the timeline without loading the result or enumerating artifacts. */
+  events(): RunEvent[];
   /** Enter a Stage: the Run is running, and the start is logged. */
   started(stage: string): void;
   /** Leave a Stage as failed, with the wording the failing module supplied. */
@@ -259,6 +261,10 @@ class RunHandleImpl implements RunHandle {
 
   read(): Readonly<RunMeta> {
     return readMeta(this.dir);
+  }
+
+  events(): RunEvent[] {
+    return readEvents(this.dir);
   }
 
   /** Every transition goes through here, so status and timeline cannot drift apart. */

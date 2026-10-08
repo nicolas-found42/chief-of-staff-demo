@@ -135,6 +135,31 @@ describe("Content Research HN coverage", () => {
 });
 
 describe("Content Research HN failure holdouts", () => {
+  it.each([
+    {},
+    { nbPages: 1 },
+    { nbHits: 100 },
+    { nbPages: 0, nbHits: 100 },
+    { nbPages: 1, nbHits: 99 },
+  ])("retains an ambiguous full page without declaring completion: %j", async (metadata) => {
+    const result = await new HnAlgoliaSourceAdapter(
+      async () =>
+        response({
+          hits: Array.from({ length: 100 }, (_, index) => hit(String(index))),
+          ...metadata,
+        }),
+      now,
+    ).collect(request);
+    expect(result).toMatchObject({
+      kind: "failed",
+      outcome: "response_shape_change",
+      checkpoint: null,
+      diagnostic: { affectedCapabilities: ["items"] },
+    });
+    expect(result.items).toHaveLength(100);
+    expect(result.diagnostic.causeChain.join(" ")).toMatch(/pagination/i);
+  });
+
   it("reports provider truncation below the local page budget", async () => {
     const adapter = new HnAlgoliaSourceAdapter(
       async () => response({ hits: [hit("1")], nbPages: 1, nbHits: 150 }),

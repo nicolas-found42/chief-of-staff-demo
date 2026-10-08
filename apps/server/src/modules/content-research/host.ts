@@ -517,7 +517,7 @@ export class ContentResearchHost implements HostedModule {
         hasPeople &&
         dailyDue &&
         state.lastSuccessfulDailyPeriod !== dailyPeriod &&
-        !this.periodRunExists(CONTENT_RESEARCH_INTAKE, dailyPeriod)
+        !this.dailyPeriodOccupied(dailyPeriod, local.toMillis())
       ) {
         await this.researchNow("scheduled", dailyPeriod);
       }
@@ -547,6 +547,26 @@ export class ContentResearchHost implements HostedModule {
       const run = this.deps.runs.open(summary.id)?.read();
       return run?.intake === intake && run.externalId === period;
     });
+  }
+
+  private dailyPeriodOccupied(period: string, nowMs: number): boolean {
+    const runs = this.deps.runs
+      .list({ module: this.id })
+      .runs.filter((summary) => summary.intake === CONTENT_RESEARCH_INTAKE)
+      .map((summary) => this.deps.runs.open(summary.id))
+      .filter((run) => run?.read().externalId === period);
+    if (runs.length === 0) return false;
+    if (runs.length >= 3 || runs.some((run) => run?.read().status !== "done")) return true;
+    const deferred = runs
+      .flatMap((run) => run?.events() ?? [])
+      .filter((event) => event.type === "daily_progress_deferred");
+    if (deferred.length !== runs.length) return true;
+    const lastAttempt = Math.max(
+      ...deferred.map((event) =>
+        Date.parse(typeof event.detail?.until === "string" ? event.detail.until : event.at),
+      ),
+    );
+    return nowMs - lastAttempt < 5 * 60 * 1000;
   }
   routes(app: FastifyInstance): void {
     app.get("/api/content-research/people", async () => this.listPeople());
