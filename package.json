@@ -55,7 +55,7 @@
     "@types/node": "^26.6.5",
     "knip": "^6.41.0",
     "lint-staged": "^17.6.0",
-    "npm-run-all2": "^9.0.3",
+    "npm-run-all2": "^9.0.4",
     "oxlint": "^1.88.0",
     "oxlint-plugin-eslint": "^1.88.0",
     "oxlint-tsgolint": "7.0.2004",
