@@ -18,7 +18,7 @@
     "googleapis": "^190.0.0",
     "jsdom": "^31.0.1",
     "jszip": "^3.10.2",
-    "oxc-parser": "^0.157.0",
+    "oxc-parser": "^0.158.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5",
