@@ -21,8 +21,8 @@
     "oxc-parser": "^0.157.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.5",
-    "undici": "^8.12.4",
+    "react-router-dom": "^7.18.6",
+    "undici": "^8.13.0",
     "vitest": "^5.1.0",
     "zod": "^4.6.7"
   }
